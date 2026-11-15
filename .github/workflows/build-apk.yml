@@ -1,6 +1,6 @@
-# Builds the Android app. On main, the APK is also published as a GitHub release
-# (tag = VERSION in server/app.py), so the latest one is always at
-# https://github.com/<owner>/<repo>/releases/latest/download/MusicFlowPlay.apk
+# Builds the Android app (APK) and the Windows app (exe). On main, both are published as a GitHub release
+# (tag = VERSION in server/app.py), so the latest ones are always at
+# https://github.com/<owner>/<repo>/releases/latest/download/MusicFlowPlay.apk (and MusicFlowPlay.exe)
 name: Build APK
 
 on:
@@ -160,8 +160,44 @@ jobs:
           name: emulator-results
           path: out/
 
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build MusicFlowPlay.exe
+        run: |
+          python -m pip install -q -r requirements.txt pyinstaller
+          python -m PyInstaller --noconfirm --onefile --name MusicFlowPlay --icon NONE --distpath dist --workpath build --specpath build `
+            --paths server --paths musicflow/core --add-data "$PWD\web\*;." --hidden-import library server/app.py
+
+      - name: Start the exe and load the page
+        shell: pwsh
+        run: |
+          $env:MFP_DATA_DIR = "$PWD\exe-data"
+          $p = Start-Process dist\MusicFlowPlay.exe -ArgumentList "--no-browser" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
+            Start-Sleep 2
+            try { $r = Invoke-WebRequest http://127.0.0.1:5091/ -UseBasicParsing -TimeoutSec 5; $ok = $r.Content -match "MusicFlow Play" } catch {}
+          }
+          Stop-Process $p -Force
+          if (-not $ok) { throw "the exe did not serve the player page" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlowPlay-exe
+          path: dist/MusicFlowPlay.exe
+
   release:
-    needs: build
+    needs: [build, windows]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -171,15 +207,19 @@ jobs:
         with:
           name: MusicFlowPlay-apk
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: MusicFlowPlay-exe
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.build.outputs.version }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$TAG" MusicFlowPlay.apk --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" MusicFlowPlay.apk MusicFlowPlay.exe --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" MusicFlowPlay.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            gh release create "$TAG" MusicFlowPlay.apk MusicFlowPlay.exe --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title "MusicFlow Play ${TAG#v}" \
-              --notes "Android: download MusicFlowPlay.apk below, open it and allow installing from this source. Changes: see CHANGELOG.md."
+              --notes "Android: download MusicFlowPlay.apk below, open it and allow installing from this source. Windows: download MusicFlowPlay.exe and double-click it (if Windows warns: More info, Run anyway). Changes: see CHANGELOG.md."
           fi
