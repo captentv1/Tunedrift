@@ -186,3 +186,44 @@ def test_download_tab_module_installs_from_a_zip(tmp_path, monkeypatch):
     assert _wait_module(me)["state"] == "error" and not (tmp_path / "data" / "evil.py").exists()
     assert me.module_version() == "9.9"
     sys.path.remove(str(ROOT / "server"))
+
+
+def test_lyrics_sync_only_takes_checked_lyrics(monkeypatch):
+    sys.path[:0] = [str(ROOT / "server"), str(ROOT / "musicflow" / "core")]
+    import lyrics
+    import lyrics_sync
+    synced = "[00:01.00]Hello\n[03:15.00]End"
+    good = {"trackName": "Blinding Lights", "artistName": "The Weeknd", "duration": 200, "syncedLyrics": synced, "plainLyrics": "Hello\nEnd"}
+    answers = {"get": None, "search": []}
+    monkeypatch.setattr(lyrics, "_get", lambda url: answers["get" if "/get?" in url else "search"])
+
+    answers["get"] = good
+    assert lyrics_sync.find("Blinding Lights (Remastered)", "The Weeknd, Guest", 201)["synced"] == synced
+    # Wrong song, wrong artist, other length, no synced lyrics, timings past the end: refused.
+    for bad in ({"trackName": "Save Your Tears"}, {"artistName": "Someone Else"}, {"duration": 260},
+                {"syncedLyrics": ""}, {"syncedLyrics": "[00:01.00]a\n[04:00.00]b"}):
+        answers["get"] = dict(good, **bad)
+        assert lyrics_sync.find("Blinding Lights", "The Weeknd", 200) is None, bad
+    answers["get"], answers["search"] = None, [dict(good, duration=150), good]
+    assert lyrics_sync.find("Blinding Lights", "The Weeknd", 199)
+    for p in (str(ROOT / "server"), str(ROOT / "musicflow" / "core")):
+        sys.path.remove(p)
+
+
+def test_lyrics_sync_replaces_the_old_lyrics(client, monkeypatch):
+    import time
+    import lyrics_sync
+    new = {"synced": "[00:00.20]New words", "plain": "New words"}
+    monkeypatch.setattr(lyrics_sync, "find", lambda title, artist, length: new if title == "First Song" else None)
+    assert client.post("/api/lyrics-sync", json={}, headers=client.h).status_code == 200
+    for _ in range(100):
+        st = client.get("/api/lyrics-sync", headers=client.h).get_json()
+        if not st["running"]:
+            break
+        time.sleep(0.05)
+    assert (st["total"], st["updated"], st["not_found"]) == (2, 1, 1)
+    tid = next(t["id"] for t in client.get("/api/tracks", headers=client.h).get_json()["tracks"] if t["title"] == "First Song")
+    got = client.get(f"/api/lyrics/{tid}", headers=client.h).get_json()
+    assert got["synced"] == new["synced"]
+    path = next(t["path"] for t in client.mod.index.all() if t["id"] == tid)
+    assert Path(path).with_suffix(".lrc").read_text(encoding="utf-8") == new["synced"]

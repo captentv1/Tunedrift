@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 — 2026-11-16 (Lyrics synchronization)
+
+- **Lyrics synchronization** (Settings): one button finds synced lyrics (LRCLIB) for every song of the
+  library and replaces the old ones: the `.lrc` next to the song and the lyrics inside the file. A
+  match is used only when it is checked: same title, same artist, length within 3 seconds, and the
+  last line fits inside the song. Songs without a sure match keep their lyrics. Progress is shown,
+  and it can be stopped. On Android without access to all files, the player keeps the new lyrics
+  itself and shows them.
+
 ## 0.6.0 — 2026-11-15 (Download tab on demand)
 
 - **The Download tab is installed with a button**: the Android app and the Windows exe no longer

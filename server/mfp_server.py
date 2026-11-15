@@ -24,7 +24,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -235,7 +235,7 @@ def api_lyrics(tid):
     found = file_lyrics(t["path"])
     source = "file" if (found["synced"] or found["plain"]) else ""
     online = lyrics_cache.data.get(tid)
-    if online and (not found["synced"] and online.get("synced") or not source):
+    if online and (online.get("verified") or not found["synced"] and online.get("synced") or not source):
         found, source = {"synced": online.get("synced") or "", "plain": online.get("plain") or ""}, "online"
     return jsonify(dict(found, source=source))
 
@@ -262,6 +262,39 @@ def api_lyrics_find(tid):
             return jsonify(dict(entry, source="online", error=problem))
         index.refresh(tid)
     return jsonify(dict(entry, source="online"))
+
+
+@app.route("/api/lyrics-sync", methods=["GET", "POST"])
+def api_lyrics_sync():
+    """Lyrics synchronization of the whole library (Settings). POST {"stop": true} stops it."""
+    import lyrics_sync
+    if request.method == "POST":
+        if (request.get_json(silent=True) or {}).get("stop"):
+            lyrics_sync.stop()
+        else:
+            lyrics_sync.start(index.all(), _save_synced, _save_lyrics_cache)
+    return jsonify(lyrics_sync.STATUS)
+
+
+def _save_synced(t: dict, found: dict) -> str:
+    """Replaces a song's lyrics: the .lrc next to it and the lyrics in the file. Where the folder can't be
+    written (Android without access to all files), the lyrics are kept by the player instead."""
+    with lyrics_cache.lock:
+        lyrics_cache.data[t["id"]] = dict(found, verified=True)
+        if len(lyrics_cache.data) % 25 == 0:
+            lyrics_cache.save()
+    lyrics.embed(t["path"], found)  # also writes the .lrc; may fail on a read-only folder
+    with _sync_lock:
+        index.refresh(t["id"])
+    return ""
+
+
+_sync_lock = threading.Lock()
+
+
+def _save_lyrics_cache() -> None:
+    with lyrics_cache.lock:
+        lyrics_cache.save()
 
 
 @app.route("/api/collections")
