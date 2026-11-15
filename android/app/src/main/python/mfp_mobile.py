@@ -14,15 +14,21 @@ def start(data_dir: str, token_value: str, default_folders: str, browse_roots: s
     app.app.run(host="127.0.0.1", port=app.PORT, debug=False, threaded=True, use_reloader=False)
 
 
-def start_musicflow(dest: str, config_path: str, token_value: str) -> bool:
-    """Starts MusicFlow (search and download, its own Android server) for the Download tab."""
+def start_musicflow(dest: str, config_path: str, token_value: str, test: bool = False) -> bool:
+    """Starts MusicFlow (search and download, its own Android server) for the Download tab, once its module
+    is installed (a button in the Download tab downloads it)."""
     import threading
     import mfp_server
-    import mobile_app as mf  # MusicFlow's Android server (submodule)
     import musicflow_embed
-    # Security: like the player, MusicFlow never writes its token into a page; the app gives it to the frame.
-    mf.configure(dest, config_path, token_value, False)
-    musicflow_embed.for_player(mf.app)
-    threading.Thread(target=mf.start_server, daemon=True).start()
-    mfp_server.use_musicflow(dest, musicflow_embed.URL)
+
+    def run():
+        import mobile_app as mf  # MusicFlow's Android server, from the module
+        # Security: like the player, MusicFlow never writes its token into a page; the app gives it to the frame.
+        mf.configure(dest, config_path, token_value, False)
+        musicflow_embed.for_player(mf.app)
+        threading.Thread(target=mf.start_server, daemon=True).start()
+        mfp_server.use_musicflow(dest, musicflow_embed.URL)
+
+    mfp_server.CONFIG["module_url_any"] = bool(test)
+    musicflow_embed.prepare(run, mfp_server.VERSION, mfp_server.RELEASES)
     return True

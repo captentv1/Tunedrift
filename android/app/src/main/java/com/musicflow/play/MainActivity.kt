@@ -166,7 +166,7 @@ class MainActivity : AppCompatActivity() {
     private fun startMusicFlow() {
         try {
             Python.getInstance().getModule("mfp_mobile").callAttr(
-                "start_musicflow", musicFlowDir().absolutePath, File(filesDir, "musicflow-config.json").absolutePath, MF_TOKEN
+                "start_musicflow", musicFlowDir().absolutePath, File(filesDir, "musicflow-config.json").absolutePath, MF_TOKEN, BuildConfig.WEB_DEBUG
             )
         } catch (e: Exception) {
             Log.e("MFP", "MusicFlow (Download tab) did not start", e)
