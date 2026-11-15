@@ -279,6 +279,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun setLightStatusBar(light: Boolean) {
+            runOnUiThread {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = light
+                    isAppearanceLightNavigationBars = light
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun pickFolder() {
             if (!isLocalPage) return
             runOnUiThread {
