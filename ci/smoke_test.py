@@ -164,6 +164,21 @@ for ext in FORMATS:
     print(f"{ext}: {results[ext]}")
 screenshot("formats")
 
+# The fallback that plays a song from memory (used when a stream does not start) must work too.
+tid = js("L.list.find(t => t.title === 'Fmt flac').id")
+js(f"Player.playList(['{tid}'], 0, false)")
+time.sleep(1)
+js(f"Player.blobTried = null; Player.playFromMemory('{tid}', 'test')")
+state = {}
+for _ in range(20):
+    time.sleep(1.5)
+    state = js(STATE) or {}
+    if state.get("src", "").startswith("blob:") and state.get("t", 0) > 2:
+        break
+print("from memory:", state)
+if not (state.get("src", "").startswith("blob:") and state.get("t", 0) > 2 and not state.get("err")):
+    results["flac from memory"] = f"FAILED {state}"
+
 js("Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false)")
 
 
