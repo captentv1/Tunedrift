@@ -14,7 +14,7 @@
     --accent:#29E0E8; --accent-ink:#00191b; --err:#E5484D; --fav:#ff4f7b;
     --t1:rgba(41,224,232,.08); --t2:rgba(41,224,232,.16);
     --bar-h:76px; --nav-h:0px;
-    --safe-b:env(safe-area-inset-bottom, 0px);
+    --safe-b:env(safe-area-inset-bottom, 0px); --sa-t:env(safe-area-inset-top, 0px);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%;font-family:"Segoe UI",Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
@@ -135,9 +135,11 @@
     transform:translateY(100%);transition:transform .28s ease;visibility:hidden}
   #np.open{transform:none;visibility:visible}
   #np .bgblur{position:absolute;inset:-40px;background:center/cover no-repeat;filter:blur(50px) brightness(.35) saturate(1.3);z-index:-1;opacity:.9}
-  #np header{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 6px}
+  #np header{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--sa-t)) 16px 6px}
   #np header .title{flex:1;text-align:center;font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px}
   #np .body{flex:1;display:grid;grid-template-columns:minmax(260px,440px) minmax(0,1fr);gap:40px;padding:10px 40px 24px;min-height:0;max-width:1200px;width:100%;margin:0 auto}
+  #np-art,#np header{touch-action:none;cursor:pointer}
+  @media (max-width:760px){#bar{touch-action:none}}
   #np .left{display:flex;flex-direction:column;justify-content:center;gap:18px;min-width:0}
   #np .left .art{width:100%;aspect-ratio:1;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.6)}
   #np .meta{display:flex;align-items:center;gap:10px}
@@ -198,7 +200,7 @@
     :root{--bar-h:64px;--nav-h:58px}
     #app{grid-template-columns:1fr;grid-template-rows:auto 1fr}
     #side{display:none}
-    #topbar{grid-column:1;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;flex-wrap:nowrap}
+    #topbar{grid-column:1;padding:calc(8px + var(--sa-t)) 12px 8px;flex-wrap:nowrap}
     .logo .name{display:none}
     #main{padding:16px 14px 24px}
     .head .art{width:96px;height:96px}
@@ -229,7 +231,126 @@
   }
   .np-switch{display:none;justify-content:center;gap:6px}
   @media (prefers-reduced-motion:reduce){#np{transition:none}body.is-playing .row.playing .eq{animation:none}}
+
+  /* Themes from MusicFlow (same names and colors) */
+  html[data-theme="sky"]{
+    --bg:#070d18; --panel:#0e1a2e; --panel2:#152540; --border:#1e3358;
+    --ink:#e8f0ff; --muted:#7c8db0; --line:#2f5b96;
+    --accent:#5AA9FF; --gold:#8AB4F8; --ok:#19C37D; --err:#E5484D;
+    --t1:rgba(90,169,255,.09); --t2:rgba(90,169,255,.17); --t3:rgba(90,169,255,.27);
+    --glow:0 0 10px rgba(90,169,255,.35);
+  }
+
+  html[data-theme="origin"]{
+    --bg:#1b1b24; --panel:#23232f; --panel2:#2b2b39; --border:#36364a;
+    --ink:#e9e9f2; --muted:#9b9bb0; --line:#5b6b8c;
+    --accent:#ff6d5a; --gold:#ff8a3d; --ok:#3ecf8e; --err:#ff5d6c;
+    --t1:rgba(255,109,90,.09); --t2:rgba(255,109,90,.17); --t3:rgba(255,109,90,.27);
+    --glow:0 0 10px rgba(255,109,90,.3);
+  }
+
+  html[data-theme="white"]{
+    --bg:#f4f6f9; --panel:#ffffff; --panel2:#eef2f7; --border:#d3dbe6;
+    --ink:#15202b; --muted:#5c6b7f; --line:#9db4cd;
+    --accent:#0b6fb8; --gold:#b26a00; --ok:#0f8a52; --err:#c62839;
+    --t1:rgba(11,111,184,.07); --t2:rgba(11,111,184,.13); --t3:rgba(11,111,184,.20);
+    --glow:0 0 10px rgba(11,111,184,.22);
+  }
+  html[data-theme^="glass"]{
+    --bg:#0c0a1f; --grid:transparent; --panel:rgba(255,255,255,.075); --panel2:rgba(255,255,255,.10);
+    --ink:#f4f2ff; --muted:rgba(232,228,255,.68); --line:rgba(255,255,255,.35);
+    --accent:#a78bfa; --gold:#fbbf77; --ok:#5eead4; --err:#fb7185; --border:rgba(255,255,255,.16);
+    --t1:rgba(167,139,250,.10); --t2:rgba(167,139,250,.18); --t3:rgba(167,139,250,.28);
+    --glow:0 0 18px rgba(167,139,250,.35);
+    --glass:rgba(255,255,255,.075); --glass-strong:rgba(255,255,255,.12); --blur:blur(22px) saturate(170%);
+  }
+  html[data-theme^="glass"]{background:var(--backdrop)!important}
+  html[data-theme^="glass"] body{background:transparent!important;background-image:none!important;min-height:100vh}
+
+  html[data-theme^="glass"] body::before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(42% 34% at 15% 20%, var(--b1), transparent 70%),
+      radial-gradient(38% 32% at 85% 30%, var(--b2), transparent 70%),
+      radial-gradient(44% 38% at 70% 80%, var(--b3), transparent 70%),
+      radial-gradient(34% 30% at 18% 62%, var(--b4), transparent 70%);
+    filter:blur(30px);animation:mf-derive 26s ease-in-out infinite alternate}
+  @keyframes mf-derive{0%{transform:translate(0,0) scale(1)}50%{transform:translate(3%,-2%) scale(1.06)}100%{transform:translate(-3%,2%) scale(1.02)}}
+  html.no-anim[data-theme^="glass"] body::before{animation:none}
+
+  html[data-theme^="glass"]{--backdrop:#0c0a1f;--option-bg:#1b1640;
+    --b1:rgba(139,92,246,.75);--b2:rgba(59,130,246,.62);--b3:rgba(236,72,153,.55);--b4:rgba(20,184,166,.45);
+    --g1:#8b5cf6;--g2:#6366f1;--g3:#3b82f6;--gshadow:rgba(99,102,241,.40);--t-a:#c4b5fd;--t-b:#93c5fd}
+  html[data-theme="glass-aurora"]{--backdrop:#1a0b16;--option-bg:#2a1222;--accent:#fb7185;--t2:rgba(251,113,133,.22);
+    --b1:rgba(244,63,94,.70);--b2:rgba(251,146,60,.60);--b3:rgba(168,85,247,.55);--b4:rgba(250,204,21,.35);
+    --g1:#f43f5e;--g2:#f97316;--g3:#a855f7;--gshadow:rgba(244,63,94,.40);--t-a:#fda4af;--t-b:#fdba74}
+  html[data-theme="glass-ocean"]{--backdrop:#04131c;--option-bg:#0b2230;--accent:#22d3ee;--t2:rgba(34,211,238,.22);
+    --b1:rgba(6,182,212,.65);--b2:rgba(59,130,246,.60);--b3:rgba(16,185,129,.45);--b4:rgba(99,102,241,.40);
+    --g1:#06b6d4;--g2:#0ea5e9;--g3:#3b82f6;--gshadow:rgba(14,165,233,.40);--t-a:#67e8f9;--t-b:#93c5fd}
+  html[data-theme="glass-forest"]{--backdrop:#06140d;--option-bg:#0e2418;--accent:#4ade80;--t2:rgba(74,222,128,.22);
+    --b1:rgba(34,197,94,.60);--b2:rgba(20,184,166,.55);--b3:rgba(132,204,22,.40);--b4:rgba(6,95,70,.60);
+    --g1:#22c55e;--g2:#10b981;--g3:#14b8a6;--gshadow:rgba(16,185,129,.40);--t-a:#86efac;--t-b:#5eead4}
+  html[data-theme="glass-sunset"]{--backdrop:#1c0d08;--option-bg:#2b160d;--accent:#fb923c;--t2:rgba(251,146,60,.22);
+    --b1:rgba(249,115,22,.70);--b2:rgba(239,68,68,.55);--b3:rgba(236,72,153,.50);--b4:rgba(234,179,8,.45);
+    --g1:#f97316;--g2:#ef4444;--g3:#ec4899;--gshadow:rgba(249,115,22,.40);--t-a:#fdba74;--t-b:#f9a8d4}
+  html[data-theme="glass-night"]{--backdrop:#05060f;--option-bg:#10122a;--accent:#818cf8;--t2:rgba(129,140,248,.22);
+    --b1:rgba(49,46,129,.80);--b2:rgba(30,58,138,.70);--b3:rgba(88,28,135,.55);--b4:rgba(15,23,42,.80);
+    --g1:#6366f1;--g2:#4f46e5;--g3:#7c3aed;--gshadow:rgba(79,70,229,.40);--t-a:#a5b4fc;--t-b:#c4b5fd}
+  html[data-theme="glass-neon"]{--backdrop:#020204;--option-bg:#111;--accent:#f0abfc;--t2:rgba(240,171,252,.25);
+    --b1:rgba(217,70,239,.70);--b2:rgba(6,182,212,.65);--b3:rgba(236,72,153,.55);--b4:rgba(132,204,22,.35);
+    --g1:#d946ef;--g2:#a855f7;--g3:#06b6d4;--gshadow:rgba(217,70,239,.50);--t-a:#f0abfc;--t-b:#67e8f9}
+  html[data-theme="glass-gold"]{--backdrop:#0b0905;--option-bg:#1a160c;--accent:#e9c46a;--t2:rgba(233,196,106,.22);
+    --b1:rgba(202,138,4,.45);--b2:rgba(120,53,15,.55);--b3:rgba(234,179,8,.30);--b4:rgba(68,64,60,.60);
+    --g1:#eab308;--g2:#ca8a04;--g3:#a16207;--gshadow:rgba(202,138,4,.40);--t-a:#fde68a;--t-b:#fcd34d}
+
+  html[data-theme="glass-light"], html[data-theme="glass-sakura"]{
+    --ink:#1c1733;--muted:rgba(28,23,51,.62);--border:rgba(28,23,51,.12);--line:rgba(28,23,51,.25);
+    --glass:rgba(255,255,255,.55);--glass-strong:rgba(255,255,255,.72);--panel:rgba(255,255,255,.55);--panel2:rgba(255,255,255,.70)}
+  html[data-theme="oled"]{--bg:#000;--grid:transparent;--panel:#0a0a0a;--panel2:#141414;--ink:#f5f5f5;--muted:#9a9a9a;
+    --line:#333;--accent:#1ed760;--ok:#1ed760;--err:#ff5470;--border:#1f1f1f;--t1:rgba(30,215,96,.08);--t2:rgba(30,215,96,.15)}
+  html[data-theme="oled"], html[data-theme="oled"] body{background:#000!important;background-image:none!important}
+  /* MusicFlow Play parts in the glass themes */
+  html[data-theme^="glass"]{--panel3:rgba(255,255,255,.16);--accent-ink:#fff}
+  html[data-theme="glass-light"], html[data-theme="glass-sakura"]{--panel3:rgba(255,255,255,.85)}
+  html[data-theme^="glass"] #topbar, html[data-theme^="glass"] #side, html[data-theme^="glass"] #bar,
+  html[data-theme^="glass"] #bottomnav, html[data-theme^="glass"] .set, html[data-theme^="glass"] #menu,
+  html[data-theme^="glass"] #dialog .box{
+    background:var(--glass)!important;-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);
+    border-color:var(--border)!important;box-shadow:0 10px 40px rgba(8,4,30,.28), inset 0 1px 0 rgba(255,255,255,.12)}
+  html[data-theme^="glass"] #menu, html[data-theme^="glass"] #dialog .box{background:var(--option-bg)!important}
+  html[data-theme^="glass"] #np{background:var(--backdrop)}
+  html[data-theme^="glass"] .set{border-radius:22px}
+  html[data-theme^="glass"] .btn{border-radius:999px}
+  html[data-theme^="glass"] .btn.primary, html[data-theme^="glass"] .cb.play{
+    background:linear-gradient(135deg,var(--g1),var(--g2) 55%,var(--g3))!important;border-color:transparent!important;color:#fff!important;
+    box-shadow:0 8px 24px var(--gshadow)}
+  html[data-theme^="glass"] .logo span{color:var(--t-a)}
+  html[data-theme^="glass"] #search input, html[data-theme^="glass"] input.text, html[data-theme^="glass"] select{
+    background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);border-radius:16px}
+  html[data-theme="glass-light"] #search input, html[data-theme="glass-sakura"] #search input,
+  html[data-theme="glass-light"] input.text, html[data-theme="glass-sakura"] input.text{background:rgba(255,255,255,.7);border-color:rgba(28,23,51,.14)}
+  html[data-theme^="glass"] .row:hover, html[data-theme^="glass"] .nav:hover{background:rgba(255,255,255,.08)}
+  html[data-theme="white"]{--panel3:#e3e9f1;--accent-ink:#fff}
+  html[data-theme="oled"]{--panel3:#1c1c1c;--accent-ink:#000}
+  html[data-theme="oled"] #bar, html[data-theme="oled"] #np{background:#000}
+  html[data-theme="sky"]{--panel3:#1c3050}
+  html[data-theme="origin"]{--panel3:#34344a;--accent-ink:#fff}
+
+  #themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:8px}
+  .theme-opt{position:relative;overflow:hidden;min-height:78px;cursor:pointer;border-radius:16px;border:1px solid var(--border)}
+  .theme-opt .tpreview{position:absolute;inset:0}
+  .theme-opt .tname{position:absolute;left:10px;bottom:7px;font-size:12.5px;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.6);font-weight:700}
+  .theme-opt .tgroup{position:absolute;right:8px;top:7px;font-size:10px;color:#fff;background:rgba(0,0,0,.35);padding:2px 7px;border-radius:999px}
+  .theme-opt.active{outline:3px solid var(--accent);outline-offset:2px}
+  .theme-opt.active::after{content:"✓";position:absolute;right:10px;bottom:5px;color:#fff;font-weight:800;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+  .theme-opt.light .tname, .theme-opt.light.active::after{color:#1c1733;text-shadow:none}
+  /* Android app: the app already keeps the page clear of the status and navigation bars */
+  html.native{--safe-b:0px;--sa-t:0px}
 </style>
+<script>
+if (window.MFPNative) document.documentElement.classList.add('native');
+// Applied before the page is drawn, so it never flashes the default theme.
+try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'white' : '') : th; if (real) document.documentElement.setAttribute('data-theme', real); const z = localStorage.getItem('mfp.textsize'); if (z) document.documentElement.style.zoom = z; } catch (e) {}
+</script>
 </head>
 <body>
 <div id="app">
@@ -381,12 +502,49 @@ const audioUrl = id => `/api/audio/${id}?t=${encodeURIComponent(TOKEN)}`;
 const coverUrl = id => `/api/cover/${id}?t=${encodeURIComponent(TOKEN)}`;
 
 const NATIVE = window.MFPNative || null;
+const THEMES = [
+  {id: "glass", name: "Glass", group: "Glass", colors: ["#2a1f5c", "#8b5cf6", "#3b82f6"]},
+  {id: "glass-aurora", name: "Aurora", group: "Glass", colors: ["#3b0a24", "#f43f5e", "#f97316"]},
+  {id: "glass-ocean", name: "Ocean", group: "Glass", colors: ["#042033", "#06b6d4", "#3b82f6"]},
+  {id: "glass-forest", name: "Forest", group: "Glass", colors: ["#062a17", "#22c55e", "#14b8a6"]},
+  {id: "glass-sunset", name: "Sunset", group: "Glass", colors: ["#3a1408", "#f97316", "#ec4899"]},
+  {id: "glass-night", name: "Night", group: "Glass", colors: ["#05060f", "#312e81", "#7c3aed"]},
+  {id: "glass-neon", name: "Neon", group: "Glass", colors: ["#020204", "#d946ef", "#06b6d4"]},
+  {id: "glass-gold", name: "Gold", group: "Glass", colors: ["#0b0905", "#ca8a04", "#78350f"]},
+  {id: "glass-light", name: "Light glass", group: "Light", colors: ["#eef2ff", "#a5b4fc", "#f9a8d4"]},
+  {id: "glass-sakura", name: "Sakura", group: "Light", colors: ["#fff1f5", "#fbcfe8", "#ddd6fe"]},
+  {id: "oled", name: "OLED black", group: "Minimal", colors: ["#000000", "#000000", "#1ed760"]},
+  {id: "", name: "Jarvis", group: "Classic", colors: ["#000000", "#10242A", "#29E0E8"]},
+  {id: "sky", name: "Sky", group: "Classic", colors: ["#070d18", "#152540", "#5AA9FF"]},
+  {id: "origin", name: "Origin", group: "Classic", colors: ["#1b1b24", "#2b2b39", "#ff6d5a"]},
+  {id: "white", name: "Light", group: "Classic", colors: ["#f4f6f9", "#eef2f7", "#0b6fb8"]},
+  {id: "auto", name: "Automatic", group: "System", colors: ["#0c0a1f", "#8b5cf6", "#eef2ff"]},
+];
+const LIGHT_THEMES = ["white", "glass-light", "glass-sakura"];
+function savedTheme() { try { return localStorage.getItem("mfp.theme") ?? "glass"; } catch { return "glass"; } }
+function applyTheme(id) {
+  const real = id === "auto" ? (matchMedia("(prefers-color-scheme: light)").matches ? "white" : "") : id;
+  if (real) document.documentElement.setAttribute("data-theme", real); else document.documentElement.removeAttribute("data-theme");
+  try { localStorage.setItem("mfp.theme", id); } catch {}
+  const bg = getComputedStyle(document.documentElement).getPropertyValue(real.startsWith("glass") ? "--backdrop" : "--bg").trim();
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta && bg) meta.content = bg;
+  if (NATIVE && NATIVE.setLightStatusBar) try { NATIVE.setLightStatusBar(LIGHT_THEMES.includes(real)); } catch {}
+  for (const el of document.querySelectorAll(".theme-opt")) el.classList.toggle("active", el.dataset.theme === id);
+}
+try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { if (savedTheme() === "auto") applyTheme("auto"); }); } catch {}
+function themeChoices() {
+  const cur = savedTheme();
+  return THEMES.map(t => `<div class="theme-opt${t.id === cur ? " active" : ""}${parseInt(t.colors[0].slice(1, 3), 16) > 200 ? " light" : ""}" data-theme="${t.id}"><div class="tpreview" style="background:radial-gradient(70% 90% at 15% 15%, ${t.colors[1]}, transparent 70%),radial-gradient(70% 90% at 90% 80%, ${t.colors[2]}, transparent 70%),${t.colors[0]}"></div><div class="tname">${t.name}</div><div class="tgroup">${t.group}</div></div>`).join("");
+}
+function setTextSize(z) { document.documentElement.style.zoom = z === "1" ? "" : z; try { localStorage.setItem("mfp.textsize", z); } catch {} }
 const native = (fn, ...args) => { if (NATIVE) try { NATIVE[fn](...args); } catch {} };
 function nativeState() { native("playback", !audio.paused, Math.round((audio.currentTime || 0) * 1000), Math.round((isFinite(audio.duration) ? audio.duration : 0) * 1000)); }
 window.MFP_cmd = (c, v) => {
   if (c === "play") { if (Player.current()) audio.play().catch(() => {}); else Player.toggle(); }
   else if (c === "pause") audio.pause();
   else if (c === "toggle") Player.toggle();
+  else if (c === "shuffle") Player.setShuffle(!Player.shuffle);
+  else if (c === "repeat") Player.cycleRepeat();
   else if (c === "next") Player.next(false);
   else if (c === "prev") Player.prev();
   else if (c === "seek") { audio.currentTime = Math.max(0, v / 1000); updateTime(true); nativeState(); }
@@ -608,6 +766,7 @@ function shuffled(a) { a = a.slice(); for (let k = a.length - 1; k > 0; k--) { c
 function afterQueueChange() { renderQueuePane(); if (route().name === "queue") render(); }
 
 function syncModeButtons() {
+  native("modes", !!Player.shuffle, Player.repeat || "off");
   for (const b of $$('[data-act="shuffle"]')) { b.classList.toggle("on", Player.shuffle); b.classList.toggle("dim", !Player.shuffle); b.title = Player.shuffle ? "Shuffle: on" : "Shuffle: off"; }
   for (const b of $$('[data-act="repeat"]')) {
     const r = Player.repeat; b.classList.toggle("on", r !== "off"); b.classList.toggle("dim", r === "off");
@@ -812,7 +971,36 @@ function openNow(pane) {
 }
 function closeNow(fromPop) { if (!$("#np").classList.contains("open")) return; $("#np").classList.remove("open"); if (!fromPop && history.state && history.state.np) history.back(); }
 window.addEventListener("popstate", () => { if ($("#np").classList.contains("open")) closeNow(true); });
-$("#bar-now").onclick = () => openNow();
+$("#bar-now").onclick = () => { if (Date.now() - lastSwipe > 400) openNow(); };
+
+// Touch gestures. Mini player: swipe up opens the player, left/right = next/previous.
+// Cover in the player: left/right = next/previous, up or double tap = lyrics, down = close, one tap = next song.
+let lastSwipe = 0;
+function swipe(el, handlers) {
+  let x0 = 0, y0 = 0, t0 = 0, id = null, taps = 0, tapTimer = 0;
+  el.addEventListener("pointerdown", e => { if (e.pointerType === "mouse") return; id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = Date.now(); });
+  el.addEventListener("pointercancel", () => { id = null; });
+  el.addEventListener("pointerup", e => {
+    if (e.pointerId !== id) return; id = null;
+    const dx = e.clientX - x0, dy = e.clientY - y0, ax = Math.abs(dx), ay = Math.abs(dy);
+    if (Math.max(ax, ay) > 45 && Date.now() - t0 < 800) {
+      lastSwipe = Date.now();
+      const dir = ax > ay ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+      if (handlers[dir]) handlers[dir]();
+      return;
+    }
+    if (ax < 12 && ay < 12 && (handlers.tap || handlers.doubletap)) {
+      if (e.target.closest("button,input,a")) return;
+      lastSwipe = Date.now();
+      if (++taps === 2) { clearTimeout(tapTimer); taps = 0; if (handlers.doubletap) handlers.doubletap(); return; }
+      tapTimer = setTimeout(() => { taps = 0; if (handlers.tap) handlers.tap(); }, handlers.doubletap ? 280 : 0);
+    }
+  });
+}
+swipe($("#bar"), {up: () => openNow(), left: () => Player.next(false), right: () => Player.prev()});
+swipe($("#np-art"), {left: () => Player.next(false), right: () => Player.prev(), up: () => setPane("lyrics"), down: () => closeNow(),
+  tap: () => Player.next(false), doubletap: () => setPane("lyrics")});
+swipe($("#np header"), {down: () => closeNow()});
 $("#np-close").onclick = () => closeNow();
 for (const b of $$("#np .tab")) b.onclick = () => setPane(b.dataset.pane);
 $("#np-more").onclick = e => { const t = Player.current(); if (t) trackMenu(e.currentTarget, t.id, {}); };
@@ -1114,6 +1302,9 @@ const VIEWS = {
     let st = {};
     try { st = await api("state"); } catch (e) { main.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
     main.innerHTML = `<div class="head"><div class="grow"><h1>Settings</h1><div class="sub">MusicFlow Play ${esc(st.version)}</div></div></div>
+      <div class="set"><h3>Theme</h3><p>The same themes as MusicFlow.</p><div id="themes">${themeChoices()}</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:14px"><span>Text size</span><select id="f-zoom">${[["0.9", "Small"], ["1", "Normal"], ["1.12", "Large"], ["1.25", "Very large"]].map(([v, n]) => `<option value="${v}"${(localStorage.getItem("mfp.textsize") || "1") === v ? " selected" : ""}>${n}</option>`).join("")}</select></div></div>
+      <div class="set"><h3>Gestures (phone)</h3><p style="margin:0">Mini player: swipe up to open, left/right for next/previous · Cover: swipe left/right for next/previous, swipe up or double tap for lyrics, one tap for the next song, swipe down to close</p></div>
       <div class="set"><h3>Music folders</h3><p>Songs in these folders and their subfolders are shown in the library. Files are never changed, except when you choose “Save into the file” for lyrics.</p>
         <div id="folders">${st.folders.map((f, k) => `<div class="folder">${ico("folder")}<span>${esc(f)}</span><button class="rb iconbtn" data-rm="${k}" title="Remove">${ico("close")}</button></div>`).join("") || `<p>No folder.</p>`}</div>
         <div class="addrow"><input class="text" id="f-new" placeholder="Folder path"><button class="btn" id="f-pick">${ico("folder")} Browse</button><button class="btn primary" id="f-add">Add</button></div></div>
@@ -1127,6 +1318,8 @@ const VIEWS = {
     $("#f-add").onclick = () => { const v = $("#f-new").value.trim(); if (v) save([...st.folders, v]); };
     $("#f-new").onkeydown = e => { if (e.key === "Enter") $("#f-add").click(); };
     $("#f-pick").onclick = () => pickFolder(false);
+    $("#themes").onclick = e => { const o = e.target.closest(".theme-opt"); if (o) applyTheme(o.dataset.theme); };
+    $("#f-zoom").onchange = e => setTextSize(e.target.value);
     const all = $("#f-all"); if (all) all.onclick = () => native("requestAllFiles");
     $("#f-scan").onclick = async () => { try { await api("scan", {}); toast("Reading the folders…"); setTimeout(() => loadLibrary(true), 800); setTimeout(render, 900); } catch (e) { toast(e.message); } };
   },
@@ -1175,7 +1368,7 @@ document.addEventListener("keydown", e => {
 document.addEventListener("visibilitychange", () => { if (document.hidden) store.set("position", audio.currentTime || 0); });
 window.addEventListener("pagehide", () => store.set("position", audio.currentTime || 0));
 
-syncModeButtons(); syncMute(); render();
+applyTheme(savedTheme()); syncModeButtons(); syncMute(); render();
 if (TOKEN) loadLibrary();
 </script>
 </body>
