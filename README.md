@@ -42,7 +42,7 @@ MusicFlow's default download folder on Android is private to MusicFlow: choose a
 git clone --recurse-submodules https://github.com/captentv1/musicflow-play.git
 cd musicflow-play
 python -m pip install -r requirements.txt
-python server/app.py              # opens http://127.0.0.1:5091
+python server/mfp_server.py              # opens http://127.0.0.1:5091
 ```
 
 On Windows, `run.bat` does the last step. Add your music folders in **Settings** (the default is `Music` in your home folder).
@@ -50,7 +50,7 @@ On Windows, `run.bat` does the last step. Add your music folders in **Settings**
 ### On your phone, from the computer's library
 
 ```bash
-python server/app.py --lan        # or run_lan.bat
+python server/mfp_server.py --lan        # or run_lan.bat
 ```
 
 The server prints a link such as `http://192.168.1.20:5091/?t=…`. Open it on a phone connected to the
