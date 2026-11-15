@@ -1208,17 +1208,23 @@ function setHidden(el, on) { el.classList.toggle("hidden", on); }
 async function showMusicFlow(on) {
   const frame = $("#mf-frame"), main = $("#main");
   if (!on) { if (!frame.classList.contains("hidden")) { setHidden(frame, true); setHidden(main, false); rescanSoon(0); } return false; }
-  if (mfUrl === undefined) { try { mfUrl = (await api("state")).musicflow || null; } catch { mfUrl = null; } }
+  if (!mfUrl) { try { mfUrl = (await api("state")).musicflow || null; } catch { mfUrl = null; } }
   if (route().name !== "download") return true;
   if (!mfUrl) { setHidden(frame, true); setHidden(main, false);
-    main.innerHTML = `<div class="empty">${ico("download")}Search and download come from MusicFlow.<br>${NATIVE ? "They are not in this version of the app yet." : "Install its packages (<code>pip install -r musicflow/desktop/requirements.txt</code>), then restart the player."}</div>`; return true; }
-  if (!frame.src) frame.src = mfUrl + "&theme=" + encodeURIComponent(savedTheme());
+    main.innerHTML = `<div class="empty">${ico("download")}Search and download come from MusicFlow.<br>${NATIVE ? "MusicFlow is still starting, or could not start. Try again in a moment." : "Install its packages (<code>pip install -r musicflow/desktop/requirements.txt</code>), then restart the player."}</div>`; return true; }
+  if (!frame.src) {
+    let tok = ""; if (NATIVE && NATIVE.musicflowToken) try { tok = NATIVE.musicflowToken(); } catch {}
+    frame.src = mfUrl + "&theme=" + encodeURIComponent(savedTheme()) + (tok ? "#mft=" + tok : "");
+  }
   setHidden(main, true); setHidden(frame, false);
   return true;
 }
 function rescanSoon(delay) { clearTimeout(mfRescan); mfRescan = setTimeout(() => window.MFP_rescan(), delay); }
+// Android app: answers from the phone (folder chosen, voice search…) go to MusicFlow's frame.
+window.MFP_toMusicFlow = (fn, args) => { const fr = $("#mf-frame"); if (fr.src) fr.contentWindow.postMessage({mfCall: fn, args: args || []}, new URL(fr.src).origin); };
 window.addEventListener("message", e => {
   if (!mfUrl || e.origin !== new URL(mfUrl).origin) return;
+  if ((e.data || {}).mfReady) window.mfReady = true;
   const n = (e.data || {}).mfDownloaded;
   if (typeof n === "number" && n !== mfSeen) { if (n > mfSeen) rescanSoon(3000); mfSeen = n; }
 });

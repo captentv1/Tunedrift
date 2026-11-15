@@ -18,8 +18,13 @@ PLAYER_ORIGINS = "http://127.0.0.1:5091 http://localhost:5091"
 # (the player keeps its own tabs and mini player at the bottom), and the player is told when a download ends.
 _HEAD = """<script>(function(){document.documentElement.classList.add('mfp-embed');
 try{var th=new URLSearchParams(location.search).get('theme');if(th!==null)localStorage.setItem('musicflow.theme',th);}catch(e){}
+// Android app: the token comes in the address fragment (never sent to the server), then is removed from the address.
+var m=/[#&]mft=([\\w-]+)/.exec(location.hash);if(m){window.MF_TOKEN=m[1];history.replaceState(null,'',location.pathname+location.search);}
+var CALLS=['MF_tic','MF_share','MF_voice','onFolderChosen','onScrapeProgress','onScrapeDiag','onScrapeComplete','MF_updateProgress','MF_updateError'];
 addEventListener('message',function(e){if(!/^http:\\/\\/(127\\.0\\.0\\.1|localhost):5091$/.test(e.origin))return;
- var d=e.data||{};if(typeof d.mfpTheme==='string'&&window.applyTheme)applyTheme(d.mfpTheme);});
+ var d=e.data||{};if(typeof d.mfpTheme==='string'&&window.applyTheme)applyTheme(d.mfpTheme);
+ if(CALLS.indexOf(d.mfCall)>=0&&typeof window[d.mfCall]==='function')window[d.mfCall].apply(null,d.args||[]);});
+addEventListener('load',function(){try{parent.postMessage({mfReady:true},'*');}catch(e){}});
 var done=0;setInterval(function(){var n=0;try{n=TASKS.reduce(function(a,t){return a+(t.successes||0);},0);}catch(e){}
  if(n!==done){done=n;try{parent.postMessage({mfDownloaded:n},'*');}catch(e){}}},4000);})();</script>
 <style>
@@ -42,8 +47,13 @@ def load():
     """Imports MusicFlow's desktop server and lets the player frame it."""
     _paths()
     import app as mf  # MusicFlow's desktop/app.py
+    for_player(mf.app)
+    return mf
 
-    @mf.app.after_request
+
+def for_player(flask_app) -> None:
+    """Lets the player show this MusicFlow server in a frame (PC: desktop/app.py, Android: mobile_app.py)."""
+    @flask_app.after_request
     def _for_player(resp):
         # Security: only the player's own page may show MusicFlow in a frame (overrides X-Frame-Options: DENY).
         resp.headers["Content-Security-Policy"] = "frame-ancestors " + PLAYER_ORIGINS
@@ -51,8 +61,6 @@ def load():
             resp.direct_passthrough = False
             resp.set_data(resp.get_data(as_text=True).replace("<head>", "<head>" + _HEAD, 1))
         return resp
-
-    return mf
 
 
 def start():

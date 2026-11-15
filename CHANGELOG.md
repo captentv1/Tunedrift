@@ -1,13 +1,16 @@
 # Changelog
 
-## 0.4.0 — 2026-11-15 (MusicFlow inside the player, PC)
+## 0.4.0 — 2026-11-15 (MusicFlow inside the player)
 
 - **Download tab: MusicFlow inside the player** (PC and the Windows exe). Search by title, artist,
   link, charts, the download queue: it is MusicFlow itself (same code, from the submodule), shown
   in the player with the player's theme. The music keeps playing while you search, and the songs
   you download appear in the library on their own (MusicFlow's download folder is added to the
   player's folders).
-- Android: the Download tab comes in the next version.
+- **Android too**: MusicFlow runs inside the app (its Android server and page, from the submodule).
+  Downloads keep going in the background with their notification; voice search, links, the folder
+  picker and Spotify playlists work as in MusicFlow. Songs saved in MusicFlow's folder (or the folder
+  chosen in it) appear in the library.
 
 ## 0.3.0 — 2026-11-15 (themes, gestures, Windows app)
 
