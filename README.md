@@ -34,7 +34,14 @@ PC and Android · free · open source (GPL-3.0) · no account, no ads
 MusicFlow's default download folder on Android is private to MusicFlow: choose a folder such as
 `Music/MusicFlow` in MusicFlow's settings so that the player can read the songs.
 
-**PC**: run from source, below.
+**Windows 10/11**
+1. Download [`MusicFlowPlay.exe`](https://github.com/captentv1/musicflow-play/releases/latest/download/MusicFlowPlay.exe).
+2. Double-click it: the player opens in your browser. (If Windows shows “Windows protected your PC”: *More info › Run anyway*.)
+
+The **Download** tab is MusicFlow (search and download) inside the player. From source it needs
+MusicFlow's packages: `pip install -r musicflow/desktop/requirements.txt`.
+
+Other systems: run from source, below.
 
 ## Run from source
 
