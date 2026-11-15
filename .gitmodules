@@ -1,0 +1,3 @@
+[submodule "musicflow"]
+	path = musicflow
+	url = https://github.com/captentv1/musicflow.git
