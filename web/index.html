@@ -543,6 +543,8 @@ window.MFP_cmd = (c, v) => {
   if (c === "play") { if (Player.current()) audio.play().catch(() => {}); else Player.toggle(); }
   else if (c === "pause") audio.pause();
   else if (c === "toggle") Player.toggle();
+  else if (c === "shuffle") Player.setShuffle(!Player.shuffle);
+  else if (c === "repeat") Player.cycleRepeat();
   else if (c === "next") Player.next(false);
   else if (c === "prev") Player.prev();
   else if (c === "seek") { audio.currentTime = Math.max(0, v / 1000); updateTime(true); nativeState(); }
@@ -764,6 +766,7 @@ function shuffled(a) { a = a.slice(); for (let k = a.length - 1; k > 0; k--) { c
 function afterQueueChange() { renderQueuePane(); if (route().name === "queue") render(); }
 
 function syncModeButtons() {
+  native("modes", !!Player.shuffle, Player.repeat || "off");
   for (const b of $$('[data-act="shuffle"]')) { b.classList.toggle("on", Player.shuffle); b.classList.toggle("dim", !Player.shuffle); b.title = Player.shuffle ? "Shuffle: on" : "Shuffle: off"; }
   for (const b of $$('[data-act="repeat"]')) {
     const r = Player.repeat; b.classList.toggle("on", r !== "off"); b.classList.toggle("dim", r === "off");

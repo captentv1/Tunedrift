@@ -8,6 +8,9 @@
   next/previous song (mini player and cover); on the cover, swipe up or double tap for the lyrics,
   one tap for the next song, swipe down to close.
 - **Windows app**: `MusicFlowPlay.exe` is built and published with the APK at every version.
+- **Shuffle and repeat in the notification and on the lock screen** (Android), with icons that show
+  the current mode.
+- Android: no more empty band above the header and below the tabs.
 
 ## 0.2.1 — 2026-11-15 (Android fixes)
 
