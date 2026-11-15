@@ -3,12 +3,18 @@ in a frame. MusicFlow's code is used as it is (git submodule); this module only 
 it and adds a few styles when it is shown inside the player."""
 from __future__ import annotations
 
+import json
+import os
+import shutil
 import sys
 import threading
+import urllib.request
+import zipfile
+from pathlib import Path
 
 from flask import request
 
-from paths import ROOT
+from paths import ROOT, data_dir
 
 PORT = 5090
 URL = f"http://127.0.0.1:{PORT}/?embed=1"
@@ -41,6 +47,120 @@ def _paths() -> None:
     for d in (ROOT / "musicflow" / "desktop", ROOT / "musicflow" / "core"):
         if d.is_dir() and str(d) not in sys.path:
             sys.path.insert(0, str(d))
+
+
+# ---- The Download tab as a module: the exe and the Android app don't include MusicFlow; the person installs
+# it with a button, from this version's GitHub release (MusicFlowModule-windows.zip / -android.zip). ----
+
+MODULE = {"state": "missing", "pct": 0, "error": "", "version": ""}
+STARTER = None  # starts MusicFlow once its module is there (set by the PC or Android start-up)
+
+
+def _android() -> bool:
+    return hasattr(sys, "getandroidapilevel")
+
+
+def bundled() -> bool:
+    """Run from the source folder: MusicFlow is the git submodule, nothing to install."""
+    return not getattr(sys, "frozen", False) and not _android() and (ROOT / "musicflow" / "desktop" / "app.py").is_file()
+
+
+def module_dir() -> Path:
+    return data_dir() / "musicflow-module"
+
+
+def module_version() -> str:
+    try:
+        return str(json.loads((module_dir() / "module.json").read_text(encoding="utf-8"))["version"])
+    except Exception:
+        return ""
+
+
+def module_url(releases: str, version: str) -> str:
+    name = "MusicFlowModule-android.zip" if _android() else "MusicFlowModule-windows.zip"
+    return f"{releases}/download/v{version}/{name}"
+
+
+def _use_module() -> None:
+    d = str(module_dir())
+    if d not in sys.path:
+        sys.path.insert(0, d)
+
+
+def _ssl_context():
+    import ssl
+    try:
+        import truststore
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:
+        pass
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
+def prepare(starter, version: str, releases: str) -> None:
+    """At start: runs MusicFlow if its module (for this version of the player) is installed."""
+    global STARTER
+    STARTER = starter
+    if bundled():
+        MODULE.update(state="bundled")
+        starter()
+        return
+    have = module_version()
+    if have == version:
+        MODULE.update(state="installed", version=have)
+        _use_module()
+        starter()
+    elif have:  # the player was updated: get the matching module
+        install(module_url(releases, version))
+    elif os.environ.get("MFP_MODULE_URL"):  # tests
+        install(os.environ["MFP_MODULE_URL"])
+
+
+def install(url: str) -> None:
+    """Downloads and unpacks the module in the background, then starts MusicFlow."""
+    if MODULE["state"] == "downloading":
+        return
+    MODULE.update(state="downloading", pct=0, error="")
+
+    def run():
+        target = module_dir()
+        tmp, new = target.with_name("musicflow-module.zip"), target.with_name("musicflow-module.new")
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "MusicFlowPlay"})
+            with urllib.request.urlopen(req, timeout=60, context=_ssl_context()) as r, open(tmp, "wb") as f:
+                total, done = int(r.headers.get("Content-Length") or 0), 0
+                while chunk := r.read(1 << 16):
+                    f.write(chunk)
+                    done += len(chunk)
+                    MODULE["pct"] = int(done * 100 / total) if total else -1
+            shutil.rmtree(new, ignore_errors=True)
+            with zipfile.ZipFile(tmp) as z:
+                root = new.resolve()
+                # Security: every file stays inside the module's folder.
+                if any(not (new / n).resolve().is_relative_to(root) for n in z.namelist()):
+                    raise ValueError("unexpected file in the download")
+                z.extractall(new)
+            if not (new / "module.json").is_file():
+                raise ValueError("this is not MusicFlow's module")
+            shutil.rmtree(target, ignore_errors=True)
+            new.rename(target)
+            MODULE.update(state="installed", version=module_version(), pct=100)
+            _use_module()
+            if STARTER:
+                STARTER()
+        except Exception as exc:
+            MODULE.update(state="error", error=f"{type(exc).__name__}: {exc}")
+        finally:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def load():

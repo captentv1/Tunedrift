@@ -100,7 +100,7 @@
   .chip{padding:7px 14px;border-radius:16px;border:1px solid var(--border);background:var(--panel2);cursor:pointer;font-weight:600;font-size:13px}
   .chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
   .empty{padding:50px 20px;text-align:center;color:var(--muted);line-height:1.6}
-  .empty .i{width:46px;height:46px;margin:0 auto 12px;opacity:.5}
+  .empty > .i{width:46px;height:46px;margin:0 auto 12px;opacity:.5;display:block}
   .more{height:1px}
 
   #bar{position:fixed;left:0;right:0;bottom:calc(var(--nav-h) + var(--safe-b));height:var(--bar-h);background:var(--panel);border-top:1px solid var(--border);
@@ -1249,16 +1249,33 @@ function setHidden(el, on) { el.classList.toggle("hidden", on); }
 async function showMusicFlow(on) {
   const frame = $("#mf-frame"), main = $("#main");
   if (!on) { if (!frame.classList.contains("hidden")) { setHidden(frame, true); setHidden(main, false); rescanSoon(0); } return false; }
-  if (!mfUrl) { try { mfUrl = (await api("state")).musicflow || null; } catch { mfUrl = null; } }
+  let mod = null;
+  if (!mfUrl) { try { const st = await api("state"); mfUrl = st.musicflow || null; mod = st.module; } catch { mfUrl = null; } }
   if (route().name !== "download") return true;
-  if (!mfUrl) { setHidden(frame, true); setHidden(main, false);
-    main.innerHTML = `<div class="empty">${ico("download")}Search and download come from MusicFlow.<br>${NATIVE ? "MusicFlow is still starting, or could not start. Try again in a moment." : "Install its packages (<code>pip install -r musicflow/desktop/requirements.txt</code>), then restart the player."}</div>`; return true; }
+  if (!mfUrl) { setHidden(frame, true); setHidden(main, false); moduleView(main, mod); return true; }
   if (!frame.src) {
     let tok = ""; if (NATIVE && NATIVE.musicflowToken) try { tok = NATIVE.musicflowToken(); } catch {}
     frame.src = mfUrl + "&theme=" + encodeURIComponent(savedTheme()) + (tok ? "#mft=" + tok : "");
   }
   setHidden(main, true); setHidden(frame, false);
   return true;
+}
+// The Download tab is a module: installed with a button, from this version's GitHub release.
+let modTimer = 0;
+function moduleView(main, m) {
+  clearTimeout(modTimer);
+  const st = (m || {}).state || "", busy = st === "downloading" || st === "installed";
+  let html;
+  if (st === "bundled") html = `Search and download come from MusicFlow.<br>Install its packages (<code>pip install -r musicflow/desktop/requirements.txt</code>), then restart the player.`;
+  else if (st === "downloading") html = `Installing the Download tab… ${m.pct >= 0 ? m.pct + " %" : ""}<div class="progress-line"><div style="${m.pct >= 0 ? `width:${m.pct}%;animation:none` : ""}"></div></div>`;
+  else if (st === "installed") html = `Starting MusicFlow…<div class="progress-line"><div></div></div>`;
+  else html = `<b>Search and download songs</b><br>This tab comes from MusicFlow. It is not in the app until you install it:
+    it downloads from GitHub, once, and then updates with the app.${st === "error" ? `<br><span style="color:var(--danger,#e5484d)">The installation failed: ${esc(m.error)}</span>` : ""}
+    <br><button class="btn primary" id="mod-install" style="margin-top:14px">${ico("download")} Install the Download tab</button>`;
+  main.innerHTML = `<div class="empty">${ico("download")}${html}</div>`;
+  const b = $("#mod-install");
+  if (b) b.onclick = async () => { b.disabled = true; try { moduleView(main, await api("musicflow/install", {})); } catch (e) { toast(e.message); b.disabled = false; } };
+  if (busy) modTimer = setTimeout(() => { if (route().name === "download") showMusicFlow(true); }, 1000);
 }
 function rescanSoon(delay) { clearTimeout(mfRescan); mfRescan = setTimeout(() => window.MFP_rescan(), delay); }
 // Android app: answers from the phone (folder chosen, voice search…) go to MusicFlow's frame.

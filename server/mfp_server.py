@@ -24,7 +24,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -95,7 +95,27 @@ def _scan_async():
 def api_state():
     return jsonify({"version": VERSION, "folders": settings.data["folders"], "scan": index.status,
                     "count": len(index.tracks), "lan": CONFIG["lan"], "local": _is_local_request(),
-                    "musicflow": CONFIG.get("musicflow") if _is_local_request() else None})
+                    "musicflow": CONFIG.get("musicflow") if _is_local_request() else None,
+                    "module": _module_state() if _is_local_request() else None})
+
+
+def _module_state():
+    import musicflow_embed
+    return dict(musicflow_embed.MODULE)
+
+
+@app.route("/api/musicflow/install", methods=["POST"])
+def api_musicflow_install():
+    """Installs the Download tab (MusicFlow) from this version's GitHub release."""
+    import musicflow_embed
+    if not _is_local_request() or musicflow_embed.MODULE["state"] in ("bundled", "installed"):
+        return jsonify({"error": "Not available."}), 403
+    url = musicflow_embed.module_url(RELEASES, VERSION)
+    custom = str((request.get_json(silent=True) or {}).get("url") or "")
+    if custom and CONFIG.get("module_url_any"):  # test builds only
+        url = custom
+    musicflow_embed.install(url)
+    return jsonify(_module_state())
 
 
 @app.route("/api/latest-version")
@@ -289,10 +309,12 @@ def _lan_address() -> str:
 def start_musicflow():
     """Starts MusicFlow next to the player; the songs it downloads go to a folder the player reads."""
     import musicflow_embed
-    mf = musicflow_embed.start()
-    if not mf:
-        return
-    use_musicflow(getattr(mf, "DEFAULT_DEST", "") or "", musicflow_embed.URL)
+
+    def run():
+        mf = musicflow_embed.start()
+        if mf:
+            use_musicflow(getattr(mf, "DEFAULT_DEST", "") or "", musicflow_embed.URL)
+    musicflow_embed.prepare(run, VERSION, RELEASES)
 
 
 def use_musicflow(dest, url: str) -> None:
