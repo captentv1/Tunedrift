@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-11-15 (MusicFlow inside the player, PC)
+
+- **Download tab: MusicFlow inside the player** (PC and the Windows exe). Search by title, artist,
+  link, charts, the download queue: it is MusicFlow itself (same code, from the submodule), shown
+  in the player with the player's theme. The music keeps playing while you search, and the songs
+  you download appear in the library on their own (MusicFlow's download folder is added to the
+  player's folders).
+- Android: the Download tab comes in the next version.
+
 ## 0.3.0 — 2026-11-15 (themes, gestures, Windows app)
 
 - **The 16 themes of MusicFlow** (glass, light, OLED black, classic, automatic) and a text size,

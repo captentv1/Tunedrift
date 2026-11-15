@@ -183,7 +183,7 @@ class MainActivity : AppCompatActivity() {
                 .joinToString(File.pathSeparator) { it.absolutePath }
             val roots = listOf(storage.absolutePath, "/storage").joinToString(File.pathSeparator)
             val dataDir = File(filesDir, "data").apply { mkdirs() }
-            Python.getInstance().getModule("mobile_app")
+            Python.getInstance().getModule("mfp_mobile")
                 .callAttr("start", dataDir.absolutePath, API_TOKEN, folders, roots)
         } catch (e: Exception) {
             e.printStackTrace()
