@@ -14,7 +14,7 @@
     --accent:#29E0E8; --accent-ink:#00191b; --err:#E5484D; --fav:#ff4f7b;
     --t1:rgba(41,224,232,.08); --t2:rgba(41,224,232,.16);
     --bar-h:76px; --nav-h:0px;
-    --safe-b:env(safe-area-inset-bottom, 0px);
+    --safe-b:env(safe-area-inset-bottom, 0px); --sa-t:env(safe-area-inset-top, 0px);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%;font-family:"Segoe UI",Inter,system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
@@ -135,7 +135,7 @@
     transform:translateY(100%);transition:transform .28s ease;visibility:hidden}
   #np.open{transform:none;visibility:visible}
   #np .bgblur{position:absolute;inset:-40px;background:center/cover no-repeat;filter:blur(50px) brightness(.35) saturate(1.3);z-index:-1;opacity:.9}
-  #np header{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 6px}
+  #np header{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--sa-t)) 16px 6px}
   #np header .title{flex:1;text-align:center;font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px}
   #np .body{flex:1;display:grid;grid-template-columns:minmax(260px,440px) minmax(0,1fr);gap:40px;padding:10px 40px 24px;min-height:0;max-width:1200px;width:100%;margin:0 auto}
   #np-art,#np header{touch-action:none;cursor:pointer}
@@ -200,7 +200,7 @@
     :root{--bar-h:64px;--nav-h:58px}
     #app{grid-template-columns:1fr;grid-template-rows:auto 1fr}
     #side{display:none}
-    #topbar{grid-column:1;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;flex-wrap:nowrap}
+    #topbar{grid-column:1;padding:calc(8px + var(--sa-t)) 12px 8px;flex-wrap:nowrap}
     .logo .name{display:none}
     #main{padding:16px 14px 24px}
     .head .art{width:96px;height:96px}
@@ -343,8 +343,11 @@
   .theme-opt.active{outline:3px solid var(--accent);outline-offset:2px}
   .theme-opt.active::after{content:"✓";position:absolute;right:10px;bottom:5px;color:#fff;font-weight:800;text-shadow:0 1px 6px rgba(0,0,0,.6)}
   .theme-opt.light .tname, .theme-opt.light.active::after{color:#1c1733;text-shadow:none}
+  /* Android app: the app already keeps the page clear of the status and navigation bars */
+  html.native{--safe-b:0px;--sa-t:0px}
 </style>
 <script>
+if (window.MFPNative) document.documentElement.classList.add('native');
 // Applied before the page is drawn, so it never flashes the default theme.
 try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'white' : '') : th; if (real) document.documentElement.setAttribute('data-theme', real); const z = localStorage.getItem('mfp.textsize'); if (z) document.documentElement.style.zoom = z; } catch (e) {}
 </script>
