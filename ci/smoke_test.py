@@ -200,8 +200,16 @@ def session_playing():
 
 session = wait_for("Android's media session does not report the song as playing", 60, session_playing)
 
-# Download tab: MusicFlow's own page opens in its frame (its server starts in the background).
+# Download tab: not in the app; its button installs the module (here from this computer, as the release
+# does not exist yet), then MusicFlow's own page opens in its frame.
 js("location.hash = 'download'")
+wait_for("the Download tab does not offer to install it", 30, lambda: js("!!document.querySelector('#mod-install')"), every=2)
+screenshot("download-install")
+import os
+subprocess.Popen([sys.executable, "-m", "http.server", "8765", "--directory", os.environ.get("MODULE_DIR", "module")],
+                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(2)
+js("api('musicflow/install', {url: 'http://10.0.2.2:8765/MusicFlowModule-android.zip'}).then(() => showMusicFlow(true)).catch(e => console.log('install: ' + e.message))")
 wait_for("MusicFlow (Download tab) did not open", 300, lambda: js("window.mfReady === true"), every=5)
 time.sleep(3)
 screenshot("download")

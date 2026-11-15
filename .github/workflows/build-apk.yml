@@ -46,6 +46,15 @@ jobs:
         id: version
         run: echo "version=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' server/mfp_server.py)" >> "$GITHUB_OUTPUT"
 
+      # The Download tab is a module the app downloads from the release when the person installs it.
+      - name: Make the Download tab's module (Android)
+        run: python ci/make_module.py android "${{ steps.version.outputs.version }}" MusicFlowModule-android.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlowModule-android
+          path: MusicFlowModule-android.zip
+
       # Without a release keystore the APK is signed with a test key. Keeping that key in the cache lets a
       # new build install over the previous one instead of asking to uninstall first.
       - name: Restore the test signing key
@@ -134,6 +143,11 @@ jobs:
           name: test-songs
           path: songs
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: MusicFlowModule-android
+          path: module
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -151,7 +165,7 @@ jobs:
           disk-size: 6G
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: python3 ci/smoke_test.py MusicFlowPlay-test.apk out songs
+          script: MODULE_DIR=module python3 ci/smoke_test.py MusicFlowPlay-test.apk out songs
 
       - name: Upload screenshots and logs
         if: always()
@@ -172,20 +186,25 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Build MusicFlowPlay.exe
+      - name: Build MusicFlowPlay.exe and the Download tab's module
         run: |
-          python -m pip install -q -r requirements.txt -r musicflow/desktop/requirements.txt truststore pyinstaller
-          # The player's page goes in web/, MusicFlow's page (search and download) next to MusicFlow's server.
+          python -m pip install -q -r requirements.txt truststore pyinstaller
+          $version = (Select-String -Path server/mfp_server.py -Pattern '^VERSION = "(.*)"').Matches[0].Groups[1].Value
+          python ci/make_module.py windows $version MusicFlowModule-windows.zip
+          # MusicFlow (the Download tab) is not in the exe: it is the module above, installed from the Download tab.
+          # The exe has Python's whole standard library, so the module can use any part of it.
+          $std = python ci/stdlib_args.py
           python -m PyInstaller --noconfirm --onefile --name MusicFlowPlay --icon NONE --distpath dist --workpath build --specpath build `
-            --paths server --paths musicflow/desktop --paths musicflow/core `
-            --add-data "$PWD\web\*;web" --add-data "$PWD\musicflow\web\index.html;." `
-            --collect-data imageio_ffmpeg --collect-binaries imageio_ffmpeg --collect-data selenium --collect-submodules yt_dlp `
-            --collect-data yt_dlp_ejs --hidden-import truststore --hidden-import library server/mfp_server.py
+            --paths server --paths musicflow/core --add-data "$PWD\web\*;web" `
+            --exclude-module app --exclude-module yt_dlp --exclude-module imageio_ffmpeg --exclude-module selenium `
+            --collect-submodules mutagen --collect-submodules flask --collect-submodules werkzeug --collect-submodules certifi `
+            --hidden-import truststore --hidden-import library @std server/mfp_server.py
 
       - name: Start the exe and load the page
         shell: pwsh
         run: |
           $env:MFP_DATA_DIR = "$PWD\exe-data"
+          $env:MFP_MODULE_URL = ([System.Uri]"$PWD\MusicFlowModule-windows.zip").AbsoluteUri
           $p = Start-Process dist\MusicFlowPlay.exe -ArgumentList "--no-browser" -PassThru
           $ok = $false
           for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
@@ -193,7 +212,7 @@ jobs:
             try { $r = Invoke-WebRequest http://127.0.0.1:5091/ -UseBasicParsing -TimeoutSec 5; $ok = $r.Content -match "MusicFlow Play" } catch {}
           }
           $mf = $false
-          for ($i = 0; $i -lt 30 -and $ok -and -not $mf; $i++) {
+          for ($i = 0; $i -lt 90 -and $ok -and -not $mf; $i++) {
             try { $r = Invoke-WebRequest "http://127.0.0.1:5090/?embed=1" -UseBasicParsing -TimeoutSec 5; $mf = $r.Content -match "mfp-embed" } catch { Start-Sleep 2 }
           }
           Stop-Process $p -Force
@@ -204,6 +223,11 @@ jobs:
         with:
           name: MusicFlowPlay-exe
           path: dist/MusicFlowPlay.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlowModule-windows
+          path: MusicFlowModule-windows.zip
 
   release:
     needs: [build, windows]
@@ -220,15 +244,23 @@ jobs:
         with:
           name: MusicFlowPlay-exe
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: MusicFlowModule-android
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: MusicFlowModule-windows
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.build.outputs.version }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$TAG" MusicFlowPlay.apk MusicFlowPlay.exe --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" MusicFlowPlay.apk MusicFlowPlay.exe MusicFlowModule-android.zip MusicFlowModule-windows.zip --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" MusicFlowPlay.apk MusicFlowPlay.exe --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            gh release create "$TAG" MusicFlowPlay.apk MusicFlowPlay.exe MusicFlowModule-android.zip MusicFlowModule-windows.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title "MusicFlow Play ${TAG#v}" \
               --notes "Android: download MusicFlowPlay.apk below, open it and allow installing from this source. Windows: download MusicFlowPlay.exe and double-click it (if Windows warns: More info, Run anyway). Changes: see CHANGELOG.md."
           fi
