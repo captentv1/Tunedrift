@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — 2026-11-15 (Download tab on demand)
+
+- **The Download tab is installed with a button**: the Android app and the Windows exe no longer
+  include MusicFlow. Open the Download tab and tap “Install the Download tab”: it downloads
+  MusicFlow (its server, its page and yt-dlp; on Windows also ffmpeg and selenium) from this
+  version's GitHub release, then opens it. When the app updates, the Download tab updates with it.
+  The apps are lighter and start faster: MusicFlow only runs once you install it.
+- From the source folder (`python server/mfp_server.py`) nothing changes: MusicFlow comes from the
+  submodule.
+
 ## 0.5.0 — 2026-11-15 (Folders, updates)
 
 - **Folders view, shown first**: the library as your folders are on disk, parent folders and their
