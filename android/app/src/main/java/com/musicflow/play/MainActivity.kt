@@ -7,7 +7,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.Settings
+import android.util.Log
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
 import android.view.KeyEvent
 import android.view.View
 import android.webkit.JavascriptInterface
@@ -50,6 +54,26 @@ class MainActivity : AppCompatActivity() {
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { rescanFromPage() }
 
+    private val folderLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                val folder = treeUriToPath(uri) ?: ""
+                callPage("window.MFP_folderPicked && MFP_folderPicked(${org.json.JSONObject.quote(folder)})")
+            }
+        }
+
+    private fun treeUriToPath(uri: Uri): String? {
+        if (uri.authority != "com.android.externalstorage.documents") return null
+        val id = try { DocumentsContract.getTreeDocumentId(uri) } catch (e: Exception) { return null }
+        val parts = id.split(":", limit = 2)
+        val volume = parts[0]
+        val inside = parts.getOrElse(1) { "" }.trim('/')
+        val base = if (volume.equals("primary", ignoreCase = true)) Environment.getExternalStorageDirectory().absolutePath
+        else "/storage/$volume"
+        val folder = File(if (inside.isEmpty()) base else "$base/$inside")
+        return if (folder.isDirectory) folder.absolutePath else null
+    }
+
     private fun isLocal(url: String?) = url?.startsWith(PAGE_URL) == true
 
     private fun callPage(js: String) {
@@ -72,6 +96,12 @@ class MainActivity : AppCompatActivity() {
         webView.settings.domStorageEnabled = true
         webView.settings.mediaPlaybackRequiresUserGesture = false
         webView.addJavascriptInterface(Bridge(), "MFPNative")
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
+                Log.i("MFPConsole", message?.message() ?: "")
+                return true
+            }
+        }
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url ?: return false
@@ -244,6 +274,16 @@ class MainActivity : AppCompatActivity() {
             PlaybackService.playing = false
             if (PlaybackService.running) {
                 try { startService(Intent(this@MainActivity, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP)) } catch (e: Exception) { }
+            }
+        }
+
+        @JavascriptInterface
+        fun pickFolder() {
+            if (!isLocalPage) return
+            runOnUiThread {
+                try { folderLauncher.launch(null) } catch (e: Exception) {
+                    callPage("window.MFP_folderPicked && MFP_folderPicked('')")
+                }
             }
         }
 

@@ -37,7 +37,7 @@ def finish(message=None):
         for line in [l for l in log.splitlines() if "AndroidRuntime" in l or "python.stderr" in l or "chromium" in l][-60:]:
             print(line)
         raise SystemExit("FAIL: " + message)
-    print("PASS: the app starts, lists the song and plays it with a media session")
+    print("PASS: the app starts, lists the songs, plays every format and reports playback to Android")
 
 
 def ui_nodes():
@@ -64,6 +64,15 @@ def wait_for(what, seconds, probe):
     finish(f"{what} (waited {seconds} s)")
 
 
+FORMATS = {"mp3": ["-c:a", "libmp3lame", "-b:a", "320k"], "m4a": ["-c:a", "aac", "-b:a", "256k"],
+           "flac": ["-c:a", "flac"], "opus": ["-c:a", "libopus"], "ogg": ["-c:a", "libvorbis"], "wav": ["-c:a", "pcm_s16le"]}
+songs = []
+for ext, codec in FORMATS.items():
+    f = OUT / f"Fmt {ext} - Tester.{ext}"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anoisesrc=d=90:c=pink:a=0.3", "-ac", "2",
+                    *codec, str(f)], check=True)
+    songs.append(f)
+song = OUT / f"{SONG} - CI Artist.wav"
 song = OUT / f"{SONG} - CI Artist.wav"
 with wave.open(str(song), "wb") as w:
     w.setnchannels(1)
@@ -75,7 +84,10 @@ adb("install", "-r", APK, timeout=300)
 for permission in ("READ_MEDIA_AUDIO", "POST_NOTIFICATIONS"):
     adb("shell", "pm", "grant", PACKAGE, f"android.permission.{permission}")
 adb("shell", "mkdir", "-p", "/sdcard/Music")
-adb("push", str(song), f"/sdcard/Music/{song.name}")
+for f in [song, *songs]:
+    adb("push", str(f), f"/sdcard/Music/{f.name}")
+    if f is not song:
+        f.unlink()
 adb("logcat", "-c", check=False)
 adb("shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
 adb("forward", "tcp:5091", "tcp:5091")
@@ -113,4 +125,35 @@ def playing():
 
 
 wait_for("Android's media session does not report the song as playing", 90, playing)
+
+
+def console():
+    return adb("logcat", "-d", "-s", "MFPConsole:I", check=False)
+
+
+results = {}
+for ext in FORMATS:
+    title = f"Fmt {ext}"
+    node = next((n for n in ui_nodes() if n[0].strip() == title), None)
+    if not node:
+        results[ext] = "not listed"
+        continue
+    adb("shell", "input", "tap", str(node[1]), str(node[2]))
+    end = time.time() + 45
+    results[ext] = "no sound after 45 s"
+    while time.time() < end:
+        lines = [l for l in console().splitlines() if title in l]
+        if any("MFP_PLAYING" in l for l in lines):
+            results[ext] = "ok"
+            break
+        errors = [l for l in lines if "MFP_ERROR" in l]
+        if errors:
+            results[ext] = "error: " + errors[-1].split("MFP_ERROR", 1)[1].strip()
+            break
+        time.sleep(2)
+    print(f"{ext}: {results[ext]}")
+screenshot("formats")
+bad = {k: v for k, v in results.items() if v != "ok"}
+if bad:
+    finish(f"these formats do not play: {bad}")
 finish()
