@@ -79,6 +79,23 @@ jobs:
           name: MusicFlowPlay-apk
           path: MusicFlowPlay.apk
 
+      - name: Make one test song per format for the emulator
+        run: |
+          mkdir songs
+          make() { ffmpeg -y -loglevel error -f lavfi -i "anoisesrc=d=90:c=pink:a=0.3" -ac 2 "${@:2}" "songs/Fmt $1 - Tester.$1"; }
+          make mp3 -c:a libmp3lame -b:a 320k
+          make m4a -c:a aac -b:a 256k
+          make flac -c:a flac
+          make opus -c:a libopus
+          make ogg -c:a libvorbis
+          make wav -c:a pcm_s16le
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-songs
+          path: songs/
+          retention-days: 1
+
   emulator:
     needs: build
     runs-on: ubuntu-latest
@@ -90,14 +107,16 @@ jobs:
         with:
           name: MusicFlowPlay-apk
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-songs
+          path: songs
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-
-      - name: Install ffmpeg (makes the test songs)
-        run: sudo apt-get install -y -qq ffmpeg > /dev/null
 
       - name: Start the app on an emulator and play a song in every format
         uses: reactivecircus/android-emulator-runner@v2
@@ -110,7 +129,7 @@ jobs:
           disk-size: 6G
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: python3 ci/smoke_test.py MusicFlowPlay.apk out
+          script: python3 ci/smoke_test.py MusicFlowPlay.apk out songs
 
       - name: Upload screenshots and logs
         if: always()

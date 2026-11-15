@@ -1,5 +1,6 @@
 """Installs the APK on the running emulator, puts one song on it, opens the app, taps the song and
-checks that Android's media session reports it as playing. Usage: smoke_test.py <apk> <out_dir>"""
+checks that Android's media session reports it as playing. Usage: smoke_test.py <apk> <out_dir> <songs_dir>
+The songs dir holds one "Fmt <ext> - Tester.<ext>" file per format (made with ffmpeg by the workflow)."""
 import math
 import re
 import struct
@@ -10,7 +11,7 @@ import urllib.request
 import wave
 from pathlib import Path
 
-APK, OUT = sys.argv[1], Path(sys.argv[2])
+APK, OUT, SONGS = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
 OUT.mkdir(parents=True, exist_ok=True)
 PACKAGE = "com.musicflow.play"
 SONG = "Smoke Test"
@@ -64,14 +65,8 @@ def wait_for(what, seconds, probe):
     finish(f"{what} (waited {seconds} s)")
 
 
-FORMATS = {"mp3": ["-c:a", "libmp3lame", "-b:a", "320k"], "m4a": ["-c:a", "aac", "-b:a", "256k"],
-           "flac": ["-c:a", "flac"], "opus": ["-c:a", "libopus"], "ogg": ["-c:a", "libvorbis"], "wav": ["-c:a", "pcm_s16le"]}
-songs = []
-for ext, codec in FORMATS.items():
-    f = OUT / f"Fmt {ext} - Tester.{ext}"
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anoisesrc=d=90:c=pink:a=0.3", "-ac", "2",
-                    *codec, str(f)], check=True)
-    songs.append(f)
+FORMATS = ["mp3", "m4a", "flac", "opus", "ogg", "wav"]
+songs = [SONGS / f"Fmt {ext} - Tester.{ext}" for ext in FORMATS]
 song = OUT / f"{SONG} - CI Artist.wav"
 song = OUT / f"{SONG} - CI Artist.wav"
 with wave.open(str(song), "wb") as w:
@@ -86,8 +81,6 @@ for permission in ("READ_MEDIA_AUDIO", "POST_NOTIFICATIONS"):
 adb("shell", "mkdir", "-p", "/sdcard/Music")
 for f in [song, *songs]:
     adb("push", str(f), f"/sdcard/Music/{f.name}")
-    if f is not song:
-        f.unlink()
 adb("logcat", "-c", check=False)
 adb("shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
 adb("forward", "tcp:5091", "tcp:5091")
