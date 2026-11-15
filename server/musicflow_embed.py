@@ -20,8 +20,8 @@ PORT = 5090
 URL = f"http://127.0.0.1:{PORT}/?embed=1"
 PLAYER_ORIGINS = "http://127.0.0.1:5091 http://localhost:5091"
 
-# Inside the player: the theme follows the player, MusicFlow's bottom tabs move to the top on a phone
-# (the player keeps its own tabs and mini player at the bottom), and the player is told when a download ends.
+# Inside the player MusicFlow looks and works exactly as in its own app (shown full screen by the player);
+# only the theme follows the player, and the player is told when a download ends.
 _HEAD = """<script>(function(){document.documentElement.classList.add('mfp-embed');
 try{var th=new URLSearchParams(location.search).get('theme');if(th!==null)localStorage.setItem('musicflow.theme',th);}catch(e){}
 // Android app: the token comes in the address fragment (never sent to the server), then is removed from the address.
@@ -33,14 +33,7 @@ addEventListener('message',function(e){if(!/^http:\\/\\/(127\\.0\\.0\\.1|localho
 addEventListener('load',function(){try{parent.postMessage({mfReady:true},'*');}catch(e){}});
 var done=0;setInterval(function(){var n=0;try{n=TASKS.reduce(function(a,t){return a+(t.successes||0);},0);}catch(e){}
  if(n!==done){done=n;try{parent.postMessage({mfDownloaded:n},'*');}catch(e){}}},4000);})();</script>
-<style>
-@media (max-width:760px){
- html.mfp-embed #bottomnav{top:calc(54px + var(--top-inset,0px))!important;bottom:auto!important;left:0!important;right:0!important;
-   height:56px!important;border-radius:0!important;padding:0 6px!important;border-width:0 0 1px 0!important}
- html.mfp-embed #shell{margin-top:calc(112px + var(--top-inset,0px))!important}
- html.mfp-embed #shell, html.mfp-embed .view{padding-bottom:16px!important}
-}
-</style>"""
+"""
 
 
 def _paths() -> None:
