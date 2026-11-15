@@ -31,6 +31,11 @@ tasks.register('copyMusicFlowCode') {
     }
 }
 preBuild.dependsOn 'copyMusicFlowCode'
+tasks.configureEach { t ->
+    if (t.name != 'copyMusicFlowCode' && (t.name.contains('Python') || t.name.contains('Kotlin') || t.name.contains('Java'))) {
+        t.dependsOn 'copyMusicFlowCode'
+    }
+}
 
 android {
     signingConfigs {
