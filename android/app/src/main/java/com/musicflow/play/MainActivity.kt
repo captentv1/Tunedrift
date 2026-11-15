@@ -92,6 +92,7 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webview)
         loadingView = findViewById(R.id.loading)
         webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+        if (BuildConfig.WEB_DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.mediaPlaybackRequiresUserGesture = false

@@ -509,11 +509,38 @@ const Player = {
   load(autoplay, at = 0) {
     const t = this.current();
     if (!t) { audio.removeAttribute("src"); audio.load(); updateNow(); return; }
+    if (this.blobUrl) { URL.revokeObjectURL(this.blobUrl); this.blobUrl = null; }
+    this.blobTried = null;
     audio.src = audioUrl(t.id);
     this.pendingSeek = at > 0 ? at : 0;
+    clearTimeout(this.watchdog);
+    // Some Android WebViews never start a streamed M4A/FLAC/OGG file: if nothing is playable after a few
+    // seconds, read the whole file and play it from memory instead (what MusicFlow does on Android).
+    if (autoplay) { const id = t.id; this.watchdog = setTimeout(() => { if (this.currentId() === id && audio.readyState < 3 && !audio.error) this.playFromMemory(id, "stalled"); }, 5000); }
     if (autoplay) audio.play().catch(err => { if (err.name !== "AbortError") toast("Tap play to start"); });
     updateNow(); loadLyrics(t);
     this.save();
+  },
+  async playFromMemory(id, why) {
+    if (this.blobTried === id) return false;
+    this.blobTried = id;
+    const t = L.tracks.get(id);
+    console.log("MFP_BLOB", t ? t.format : "", t ? t.title : "", why);
+    try {
+      const r = await fetch(audioUrl(id));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      if (this.currentId() !== id) return true;
+      const at = audio.currentTime || this.pendingSeek || 0;
+      this.blobUrl = URL.createObjectURL(blob);
+      audio.src = this.blobUrl;
+      this.pendingSeek = at > 0 ? at : 0;
+      audio.play().catch(() => {});
+    } catch (e) {
+      console.log("MFP_BLOB_FAILED", e.message);
+      toast(`Can't play “${t ? t.title : "this file"}”: ${e.message}`);
+    }
+    return true;
   },
   toggle() {
     if (!this.current()) { const ids = sortedSongs().map(t => t.id); if (ids.length) this.playList(ids, 0); return; }
@@ -602,6 +629,10 @@ audio.addEventListener("timeupdate", () => updateTime());
 audio.addEventListener("error", () => {
   if (!audio.getAttribute("src")) return;
   const t = Player.current();
+  if (t && !audio.src.startsWith("blob:") && Player.blobTried !== t.id) {
+    console.log("MFP_ERROR", t.format, t.title, audio.error ? audio.error.code + " " + (audio.error.message || "") : "", "→ trying from memory");
+    Player.playFromMemory(t.id, "error"); return;
+  }
   Player.errors++;
   const why = audio.error ? `${audio.error.code} ${audio.error.message || ""}`.trim() : "";
   console.log("MFP_ERROR", t ? t.format : "", t ? t.title : "", why);

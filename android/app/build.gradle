@@ -26,6 +26,10 @@ android {
     }
     compileSdk 36
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId "com.musicflow.play"
         minSdk 26
@@ -36,6 +40,9 @@ android {
         ndk {
             abiFilters "arm64-v8a"
         }
+
+        // Only the emulator test build turns this on (-PciWebDebug=true), so the test can drive the page.
+        buildConfigField "boolean", "WEB_DEBUG", (project.findProperty('ciWebDebug') ?: 'false').toString()
 
         python {
             version "3.13"

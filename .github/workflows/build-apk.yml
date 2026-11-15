@@ -74,10 +74,26 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/MusicFlowPlay.apk"
           ls -la "$GITHUB_WORKSPACE/MusicFlowPlay.apk"
 
+      # Same app with WebView debugging on, only for the emulator test (never published).
+      - name: Build the test APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease --no-daemon \
+            -PbuildPython="$(which python3.13 || which python)" \
+            -PciVersionCode="$((GITHUB_RUN_NUMBER + 1))" \
+            -PciVersionName="${{ steps.version.outputs.version }}" -PciWebDebug=true
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/MusicFlowPlay-test.apk"
+
       - uses: actions/upload-artifact@v4
         with:
           name: MusicFlowPlay-apk
           path: MusicFlowPlay.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlowPlay-test-apk
+          path: MusicFlowPlay-test.apk
+          retention-days: 3
 
       - name: Make one test song per format for the emulator
         run: |
@@ -105,7 +121,13 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: MusicFlowPlay-apk
+          name: MusicFlowPlay-test-apk
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: python -m pip install -q websocket-client
 
       - uses: actions/download-artifact@v4
         with:
@@ -129,7 +151,7 @@ jobs:
           disk-size: 6G
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: python3 ci/smoke_test.py MusicFlowPlay.apk out songs
+          script: python3 ci/smoke_test.py MusicFlowPlay-test.apk out songs
 
       - name: Upload screenshots and logs
         if: always()
