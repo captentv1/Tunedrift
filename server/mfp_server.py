@@ -23,7 +23,7 @@ from collections_store import Collections, JsonStore
 from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_synced
 
 PORT = 5091
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -93,7 +93,8 @@ def _scan_async():
 @app.route("/api/state")
 def api_state():
     return jsonify({"version": VERSION, "folders": settings.data["folders"], "scan": index.status,
-                    "count": len(index.tracks), "lan": CONFIG["lan"], "local": _is_local_request()})
+                    "count": len(index.tracks), "lan": CONFIG["lan"], "local": _is_local_request(),
+                    "musicflow": CONFIG.get("musicflow") if _is_local_request() else None})
 
 
 @app.route("/api/folders", methods=["POST"])
@@ -259,10 +260,37 @@ def _lan_address() -> str:
         return socket.gethostbyname(socket.gethostname())
 
 
+def start_musicflow():
+    """Starts MusicFlow next to the player; the songs it downloads go to a folder the player reads."""
+    import musicflow_embed
+    mf = musicflow_embed.start()
+    if not mf:
+        return
+    use_musicflow(getattr(mf, "DEFAULT_DEST", "") or "", musicflow_embed.URL)
+
+
+def use_musicflow(dest, url: str) -> None:
+    """MusicFlow runs: show its Download tab and read the folder where it downloads."""
+    CONFIG["musicflow"] = url
+    dest = Path(dest)
+    if dest.is_dir() and not any(_inside(dest, Path(f)) for f in settings.data["folders"]):
+        settings.data["folders"] = settings.data["folders"] + [str(dest)]
+        settings.save()
+
+
+def _inside(path: Path, folder: Path) -> bool:
+    try:
+        path.resolve().relative_to(folder.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="MusicFlow Play")
     parser.add_argument("--lan", action="store_true", help="let phones on the same Wi-Fi open the player")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--no-musicflow", action="store_true", help="don't start MusicFlow (search and download)")
     args = parser.parse_args(argv)
     url = f"http://127.0.0.1:{PORT}"
     with socket.socket() as s:
@@ -279,6 +307,8 @@ def main(argv=None):
             settings.save()
         CONFIG["token"] = settings.data["lan_token"]
         host = "0.0.0.0"
+    if not args.no_musicflow:
+        start_musicflow()
     _scan_async()
     print(f"MusicFlow Play {VERSION} on {url}")
     if args.lan:

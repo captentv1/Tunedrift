@@ -7,7 +7,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 CORE_DIR = ROOT / "musicflow" / "core"
-WEB_DIR = ROOT / "web" if (ROOT / "web" / "index.html").is_file() else HERE
+WEB_DIR = next((d for d in (ROOT / "web", HERE / "web") if (d / "index.html").is_file()), HERE)  # source, exe, Android
 
 
 def data_dir() -> Path:

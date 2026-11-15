@@ -24,9 +24,9 @@ def client(tmp_path, monkeypatch):
     (music / "Album A").mkdir(parents=True)
     monkeypatch.setenv("MFP_DATA_DIR", str(tmp_path / "data"))
     sys.path.insert(0, str(ROOT / "server"))
-    for name in ("app", "paths", "library_index", "collections_store"):
+    for name in ("mfp_server", "paths", "library_index", "collections_store"):
         sys.modules.pop(name, None)
-    app_module = importlib.import_module("app")
+    app_module = importlib.import_module("mfp_server")
     import tag_quality
     first = music / "Album A" / "01 First.mp3"
     _song(first)
