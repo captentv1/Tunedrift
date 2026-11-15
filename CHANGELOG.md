@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0 — 2026-11-15 (Folders, updates)
+
+- **Folders view, shown first**: the library as your folders are on disk, parent folders and their
+  subfolders, with the songs of each folder inside. Play or shuffle a whole folder (subfolders
+  included), add it to the queue or a playlist. Search also finds folders, and a song's ⋯ menu
+  has “Go to folder”. The other views (Songs, Artists, Albums, Playlists) stay as before.
+- **Updates, as in MusicFlow**: the player checks for a new version at start (at most every 6 h)
+  and offers it once. On Android it downloads and installs it (checked: same app, newer, same
+  signature); on Windows it downloads the new exe. Can be turned off in Settings › Updates.
+- **Settings sections fold**: tap a title to open or close it. Theme, Updates, Gestures and
+  Keyboard start closed; the app remembers what you open.
+- **Android, screen edges**: the app now draws behind the status bar and the navigation bar with
+  the theme's colors (no more black bands), and keeps its content clear of them.
+
 ## 0.4.0 — 2026-11-15 (MusicFlow inside the player)
 
 - **Download tab: MusicFlow inside the player** (PC and the Windows exe). Search by title, artist,

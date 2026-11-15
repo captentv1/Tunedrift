@@ -142,12 +142,22 @@ def library_ready():
 wait_for("the songs are not all listed in the library", 240, library_ready, every=5)
 screenshot("library")
 
+# Screen edges: the page draws behind the system bars and knows their size; the Folders view is shown first.
+edges = js("""({top: getComputedStyle(document.documentElement).getPropertyValue('--sa-t').trim(),
+  folders: !!document.querySelector('#main .crumbs'), y: Math.round(document.querySelector('#topbar').getBoundingClientRect().top)})""") or {}
+print("edges:", edges)
+EDGE_FAIL = None
+if not (edges.get("folders") and edges.get("top", "").endswith("px") and float(edges["top"][:-2]) > 0 and edges.get("y") == 0):
+    EDGE_FAIL = f"FAILED {edges}"
+
 STATE = """(() => { const a = document.querySelector('#audio'); const b = a.buffered;
   return {t: a.currentTime, paused: a.paused, ready: a.readyState, net: a.networkState,
           err: a.error ? a.error.code + ' ' + (a.error.message || '') : '',
           buffered: b.length ? b.end(b.length - 1) : 0, dur: a.duration, src: (a.currentSrc || '').split('?')[0]}; })()"""
 
 results = {}
+if EDGE_FAIL:
+    results["edges and folders"] = EDGE_FAIL
 for ext in FORMATS:
     tid = js(f"L.list.find(t => t.title === 'Fmt {ext}').id")
     js(f"Player.playList(['{tid}'], 0, false)")

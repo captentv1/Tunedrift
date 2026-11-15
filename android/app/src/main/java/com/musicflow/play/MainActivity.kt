@@ -38,6 +38,8 @@ class MainActivity : AppCompatActivity() {
         const val PAGE_URL = "http://127.0.0.1:5091/"
         @Volatile private var serverStarted = false
         @Volatile private var musicFlowStarted = false
+        @Volatile var updateFollowedByPage = false
+        private const val ALLOWED_UPDATE_URL = "https://github.com/captentv1/musicflow-play/releases/download/"
         private const val MUSICFLOW_URL = "http://127.0.0.1:5090/"
         private val LOGIN_HOSTS = setOf("accounts.spotify.com", "accounts.google.com")
 
@@ -183,6 +185,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         applySystemInsets()
+        if (intent?.getBooleanExtra(UpdateManager.EXTRA_INSTALLER, false) == true) window.decorView.post { installDownloadedApk() }
 
         webView = findViewById(R.id.webview)
         loadingView = findViewById(R.id.loading)
@@ -225,6 +228,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 loadingView.visibility = View.GONE
+                if (insetsJs.isNotEmpty() && isLocal(url)) view?.evaluateJavascript(insetsJs, null)
             }
         }
 
@@ -247,6 +251,8 @@ class MainActivity : AppCompatActivity() {
         askPermissions()
     }
 
+    private var insetsJs = ""
+
     private fun applySystemInsets() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -259,7 +265,12 @@ class MainActivity : AppCompatActivity() {
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
             val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
-            view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
+            val typing = keyboard.bottom > bars.bottom
+            view.setPadding(bars.left, 0, bars.right, if (typing) keyboard.bottom else 0)
+            val d = resources.displayMetrics.density
+            insetsJs = "document.documentElement.style.setProperty('--sa-t','${bars.top / d}px');" +
+                "document.documentElement.style.setProperty('--safe-b','${if (typing) 0f else bars.bottom / d}px')"
+            if (::webView.isInitialized) callPage(insetsJs)
             insets
         }
     }
@@ -315,8 +326,90 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread { webView.loadUrl(PAGE_URL) }
     }
 
+    private var pendingApk: File? = null
+    @Volatile private var inForeground = false
+
+    private fun followUpdate() {
+        if (updateFollowedByPage) return
+        updateFollowedByPage = true
+        Thread {
+            try {
+                var last = -2
+                while (true) {
+                    val state = UpdateManager.state(this) ?: throw Exception("download cancelled")
+                    when (state.first) {
+                        android.app.DownloadManager.STATUS_SUCCESSFUL -> {
+                            UpdateManager.finished(this)
+                            val apk = UpdateManager.file(this)
+                            UpdateManager.verify(this, apk)
+                            callPage("window.MFP_updateProgress && MFP_updateProgress(100)")
+                            if (!inForeground) {
+                                UpdateManager.notifyReady(this, packageManager.getPackageArchiveInfo(apk.path, 0)?.versionName ?: "")
+                                return@Thread
+                            }
+                            pendingApk = apk
+                            runOnUiThread { installApk() }
+                            return@Thread
+                        }
+                        android.app.DownloadManager.STATUS_FAILED -> { UpdateManager.finished(this); throw Exception("download failed") }
+                        else -> if (state.second != last) {
+                            last = state.second
+                            callPage("window.MFP_updateProgress && MFP_updateProgress(${minOf(state.second, 99)})")
+                        }
+                    }
+                    Thread.sleep(500)
+                }
+            } catch (e: Exception) {
+                callPage("window.MFP_updateError && MFP_updateError(${org.json.JSONObject.quote(e.message ?: e.toString())})")
+            } finally {
+                updateFollowedByPage = false
+            }
+        }.start()
+    }
+
+    private fun installDownloadedApk() {
+        UpdateManager.clearNotification(this)
+        val apk = UpdateManager.file(this)
+        try { UpdateManager.verify(this, apk) } catch (e: Exception) {
+            callPage("window.MFP_updateError && MFP_updateError(${org.json.JSONObject.quote(e.message ?: "")})"); return
+        }
+        pendingApk = apk
+        installApk()
+    }
+
+    private fun installApk() {
+        val apk = pendingApk ?: return
+        if (!packageManager.canRequestPackageInstalls()) {
+            callPage("window.MFP_updateProgress && MFP_updateProgress(-2)")
+            try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) } catch (e: Exception) { }
+            return
+        }
+        pendingApk = null
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fichiers", apk)
+        startActivity(Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(UpdateManager.EXTRA_INSTALLER, false)) installDownloadedApk()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        inForeground = false
+    }
+
     override fun onResume() {
         super.onResume()
+        inForeground = true
+        val upd = UpdateManager.state(this)
+        if (upd != null && upd.first != android.app.DownloadManager.STATUS_FAILED) followUpdate()
+        if (pendingApk != null) {
+            if (packageManager.canRequestPackageInstalls()) installApk()
+            else { pendingApk = null; callPage("window.MFP_updateError && MFP_updateError('permission to install apps refused')") }
+        }
         val now = hasAllFilesAccess()
         if (now != hadAllFiles) {
             hadAllFiles = now
@@ -378,6 +471,26 @@ class MainActivity : AppCompatActivity() {
             PlaybackService.positionMs = positionMs.toLong()
             if (durationMs > 0) PlaybackService.durationMs = durationMs.toLong()
             updateService()
+        }
+
+        @JavascriptInterface
+        fun installUpdate(apkUrl: String) {
+            if (!isLocalPage) return
+            // Security: updates only from this repository's GitHub releases.
+            if (!apkUrl.startsWith(ALLOWED_UPDATE_URL) || !apkUrl.endsWith(".apk")) {
+                callPage("window.MFP_updateError && MFP_updateError('download address refused')"); return
+            }
+            UpdateManager.startDownload(this@MainActivity, apkUrl)
+            followUpdate()
+        }
+
+        @JavascriptInterface
+        fun updateReady(): String = if (isLocalPage) UpdateManager.readyVersion(this@MainActivity) else ""
+
+        @JavascriptInterface
+        fun installDownloadedUpdate() {
+            if (!isLocalPage) return
+            runOnUiThread { installDownloadedApk() }
         }
 
         @JavascriptInterface
