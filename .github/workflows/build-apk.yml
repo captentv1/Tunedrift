@@ -74,10 +74,43 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/MusicFlowPlay.apk"
           ls -la "$GITHUB_WORKSPACE/MusicFlowPlay.apk"
 
+      # Same app with WebView debugging on, only for the emulator test (never published).
+      - name: Build the test APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease --no-daemon \
+            -PbuildPython="$(which python3.13 || which python)" \
+            -PciVersionCode="$((GITHUB_RUN_NUMBER + 1))" \
+            -PciVersionName="${{ steps.version.outputs.version }}" -PciWebDebug=true
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/MusicFlowPlay-test.apk"
+
       - uses: actions/upload-artifact@v4
         with:
           name: MusicFlowPlay-apk
           path: MusicFlowPlay.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MusicFlowPlay-test-apk
+          path: MusicFlowPlay-test.apk
+          retention-days: 3
+
+      - name: Make one test song per format for the emulator
+        run: |
+          mkdir songs
+          make() { ffmpeg -y -loglevel error -f lavfi -i "anoisesrc=d=90:c=pink:a=0.3" -ac 2 "${@:2}" "songs/Fmt $1 - Tester.$1"; }
+          make mp3 -c:a libmp3lame -b:a 320k
+          make m4a -c:a aac -b:a 256k
+          make flac -c:a flac
+          make opus -c:a libopus
+          make ogg -c:a libvorbis
+          make wav -c:a pcm_s16le
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-songs
+          path: songs/
+          retention-days: 1
 
   emulator:
     needs: build
@@ -88,7 +121,18 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: MusicFlowPlay-apk
+          name: MusicFlowPlay-test-apk
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - run: python -m pip install -q websocket-client
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-songs
+          path: songs
 
       - name: Enable KVM
         run: |
@@ -96,7 +140,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Start the app on an emulator and play a song
+      - name: Start the app on an emulator and play a song in every format
         uses: reactivecircus/android-emulator-runner@v2
         with:
           # Android 14 x86_64 image: it runs ARM64-only apps through its built-in translation.
@@ -107,7 +151,7 @@ jobs:
           disk-size: 6G
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: python3 ci/smoke_test.py MusicFlowPlay.apk out
+          script: python3 ci/smoke_test.py MusicFlowPlay-test.apk out songs
 
       - name: Upload screenshots and logs
         if: always()
