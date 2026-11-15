@@ -130,8 +130,8 @@ def library_ready():
     checks += 1
     close_system_dialogs()
     info = js("""(async () => { let st = null; try { st = await api('state'); } catch (e) { st = String(e); }
-      return {loaded: !!(window.L && L.loaded), error: window.L ? L.error : 'no L', scan: window.L ? L.scan : null,
-              titles: window.L && L.loaded ? L.list.map(t => t.title) : [], state: st}; })()""") or {}
+      return {loaded: !!(typeof L !== "undefined" && L.loaded), error: typeof L !== "undefined" ? L.error : 'no L', scan: typeof L !== "undefined" ? L.scan : null,
+              titles: typeof L !== "undefined" && L.loaded ? L.list.map(t => t.title) : [], state: st}; })()""") or {}
     print("library:", json.dumps(info)[:600])
     titles = info.get("titles") or []
     if checks % 6 == 0:  # every 30 s, ask for a new scan
