@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.1 — 2026-11-16 (Fixes, animations)
+
+- **Fixed: tapping an artist (or the album) in the full player did nothing**, and “Go to …” in the
+  player's ⋯ menu (artist, folder, album) stayed on the same page. They now open the page.
+- **The artist's name in a song row opens the artist.**
+- **Download tab: MusicFlow as in its own app**, full screen with its own layout, tabs and menus. A
+  small folder button (top right) goes back to the library; the music keeps playing.
+- **Animations**: pages slide in, menus and dialogs pop, cards and buttons react to a tap (turned
+  off when the system asks for reduced motion).
+
 ## 0.7.0 — 2026-11-16 (Lyrics synchronization)
 
 - **Lyrics synchronization** (Settings): one button finds synced lyrics (LRCLIB) for every song of the

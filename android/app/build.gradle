@@ -69,7 +69,7 @@ android {
         minSdk 26
         targetSdk 35
         versionCode Integer.parseInt((project.findProperty('ciVersionCode') ?: '2').toString())
-        versionName((project.findProperty('ciVersionName') ?: '0.7.0').toString())
+        versionName((project.findProperty('ciVersionName') ?: '0.7.1').toString())
 
         ndk {
             abiFilters "arm64-v8a"
