@@ -48,6 +48,25 @@
   .nav-sep{height:1px;background:var(--border);margin:10px 4px}
 
   #mf-frame{border:0;width:100%;height:100%;min-width:0;min-height:0;background:transparent;display:block}
+  /* Download tab: MusicFlow full screen, as in its own app; a small button goes back to the library. */
+  html.mf-full #topbar, html.mf-full #bar, html.mf-full #bottomnav, html.mf-full #side, html.mf-full #main{display:none!important}
+  html.mf-full #mf-frame{position:fixed;left:0;right:0;top:var(--sa-t);bottom:var(--safe-b);width:100%;height:calc(100vh - var(--sa-t) - var(--safe-b));height:calc(100dvh - var(--sa-t) - var(--safe-b));z-index:40;background:var(--bg)}
+  #mf-back{position:fixed;z-index:45;right:108px;top:calc(var(--sa-t) + 7px);width:40px;height:40px;border-radius:50%;border:1px solid var(--border);
+    background:var(--panel2);color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.35);cursor:pointer}
+  #mf-back .i{width:22px;height:22px}
+  html:not(.mf-full) #mf-back{display:none}
+  /* Animations */
+  @keyframes mfpIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @keyframes mfpPop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+  #main.anim>*{animation:mfpIn .24s ease-out both}
+  #main.anim>*:nth-child(2){animation-delay:.03s}#main.anim>*:nth-child(3){animation-delay:.06s}#main.anim>*:nth-child(n+4){animation-delay:.09s}
+  #menu{animation:mfpPop .14s ease-out}#dialog .box{animation:mfpPop .18s ease-out}#toast{transition:opacity .2s}
+  .card{transition:transform .16s ease}.card:hover{transform:translateY(-3px)}.card:active{transform:scale(.97)}
+  .btn,.cb,.bn,.rb,.nav,.row{transition:transform .12s ease,background-color .15s ease,color .15s ease}
+  .btn:active,.cb:active,.bn:active,.rb:active{transform:scale(.92)}.row:active{transform:scale(.99)}
+  .bn.active .i{animation:mfpPop .2s ease-out}
+  .t2 a[data-artist]{color:inherit;text-decoration:none}.t2 a[data-artist]:hover{color:var(--accent);text-decoration:underline}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   #main{overflow:auto;padding:22px 24px 30px;min-width:0;overscroll-behavior:contain}
   .head{display:flex;align-items:flex-end;gap:16px;margin-bottom:16px;flex-wrap:wrap}
   .head h1{margin:0;font-size:24px;line-height:1.2;word-break:break-word}
@@ -374,6 +393,7 @@ try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th =
   </header>
   <nav id="side"></nav>
   <main id="main"></main>
+  <button id="mf-back" title="Back to the library" aria-label="Back to the library"><svg class="i"><use href="#i-folder"/></svg></button>
   <iframe id="mf-frame" class="hidden" title="MusicFlow: search and download" allow="microphone; clipboard-write"></iframe>
 </div>
 
@@ -908,8 +928,8 @@ function updateNow() {
   $("#np-title").textContent = t ? t.title : "Nothing playing";
   const a = $("#np-artist"); a.innerHTML = "";
   if (t) {
-    (t.artists.length ? t.artists : [UNKNOWN_ARTIST]).forEach((n, k) => { if (k) a.append(", "); const x = document.createElement("a"); x.textContent = n; x.onclick = () => { closeNow(); go("artist/" + encodeURIComponent(norm(n))); }; a.append(x); });
-    if (t.album) { a.append(" · "); const x = document.createElement("a"); x.textContent = t.album; x.onclick = () => { closeNow(); go("album/" + encodeURIComponent(albumKey(t))); }; a.append(x); }
+    (t.artists.length ? t.artists : [UNKNOWN_ARTIST]).forEach((n, k) => { if (k) a.append(", "); const x = document.createElement("a"); x.textContent = n; x.onclick = () => { closeNowAndGo("artist/" + encodeURIComponent(norm(n))); }; a.append(x); });
+    if (t.album) { a.append(" · "); const x = document.createElement("a"); x.textContent = t.album; x.onclick = () => { closeNowAndGo("album/" + encodeURIComponent(albumKey(t))); }; a.append(x); }
   }
   setArt($("#bar-art"), t); setArt($("#np-art"), t);
   $("#np .bgblur").style.backgroundImage = t && t.cover ? `url("${coverUrl(t.id)}")` : "none";
@@ -1013,6 +1033,13 @@ function openNow(pane) {
   setPane(pane || (mobile ? "cover" : npPane === "cover" ? "lyrics" : npPane));
   if (!$("#np").classList.contains("open")) { $("#np").classList.add("open"); history.pushState({np: 1}, ""); }
   syncLyrics(audio.currentTime || 0, true);
+}
+function closeNowAndGo(r) {
+  if ($("#np").classList.contains("open") && history.state && history.state.np) {
+    $("#np").classList.remove("open");
+    addEventListener("popstate", () => setTimeout(() => go(r), 0), {once: true});
+    history.back();
+  } else { closeNow(); go(r); }
 }
 function closeNow(fromPop) { if (!$("#np").classList.contains("open")) return; $("#np").classList.remove("open"); if (!fromPop && history.state && history.state.np) history.back(); }
 window.addEventListener("popstate", () => { if ($("#np").classList.contains("open")) closeNow(true); });
@@ -1153,9 +1180,9 @@ function trackMenu(anchor, id, ctx) {
     ...L.playlists.map(p => ({label: p.name, icon: "list", run: () => addToPlaylist(p.id, [id])})),
     "-",
   ];
-  (t.artists.length ? t.artists : [UNKNOWN_ARTIST]).slice(0, 3).forEach(n => items.push({label: "Go to " + n, icon: "person", run: () => { closeNow(); go("artist/" + encodeURIComponent(norm(n))); }}));
-  const fk = folderOf(t); if (fk) items.push({label: "Go to folder", icon: "folder", run: () => { closeNow(); go("folder/" + encodeURIComponent(fk)); }});
-  if (t.album) items.push({label: "Go to album", icon: "album", run: () => { closeNow(); go("album/" + encodeURIComponent(albumKey(t))); }});
+  (t.artists.length ? t.artists : [UNKNOWN_ARTIST]).slice(0, 3).forEach(n => items.push({label: "Go to " + n, icon: "person", run: () => { closeNowAndGo("artist/" + encodeURIComponent(norm(n))); }}));
+  const fk = folderOf(t); if (fk) items.push({label: "Go to folder", icon: "folder", run: () => { closeNowAndGo("folder/" + encodeURIComponent(fk)); }});
+  if (t.album) items.push({label: "Go to album", icon: "album", run: () => { closeNowAndGo("album/" + encodeURIComponent(albumKey(t))); }});
   if (ctx.playlist) items.push("-", {label: "Remove from this playlist", icon: "close", run: () => removeFromPlaylist(ctx.playlist, ctx.pos)});
   menu(anchor, items);
 }
@@ -1187,17 +1214,24 @@ function route() {
   return {name, arg: rest.join("/")};
 }
 function go(r) { if (location.hash.slice(1) === r) render(); else location.hash = r; }
-window.addEventListener("hashchange", () => { closeMenu(); render(); $("#main").scrollTop = 0; });
+window.addEventListener("hashchange", () => {
+  closeMenu(); render(); const m = $("#main"); m.scrollTop = 0;
+  m.classList.remove("anim"); void m.offsetWidth; m.classList.add("anim");
+});
 
 let moreObserver;
 function rowsHtml(tracks, opt = {}) {
   return tracks.map((t, k) => `<div class="row" data-id="${t.id}" data-k="${k}">
     ${opt.numbers ? `<div class="no">${t.track_no || "–"}</div>` : `<div class="art">${t.cover ? artHtml(t.id) : ico("note")}</div>`}
-    <div class="txt"><div class="t1"><span class="eq"></span>${esc(t.title)}</div><div class="t2">${esc(opt.albumArtist !== undefined ? (norm(t.artist) !== norm(opt.albumArtist) ? t.artist : "") : [t.artist || UNKNOWN_ARTIST, t.album].filter(Boolean).join(" · "))}</div></div>
+    <div class="txt"><div class="t1"><span class="eq"></span>${esc(t.title)}</div><div class="t2">${opt.albumArtist !== undefined ? (norm(t.artist) !== norm(opt.albumArtist) ? artistLink(t) : "") : artistLink(t) + (t.album ? " · " + esc(t.album) : "")}</div></div>
     <span class="dur">${fmt(t.length_s)}</span>
     <button class="rb" data-fav="${t.id}" title="Favorite">${ico(isFav(t.id) ? "heart-f" : "heart")}</button>
     <button class="rb" data-more title="More">${ico("more")}</button>
   </div>`).join("");
+}
+function artistLink(t) {
+  const n = (t.artists && t.artists[0]) || UNKNOWN_ARTIST;
+  return `<a data-artist="${esc(norm(n))}">${esc(t.artist || UNKNOWN_ARTIST)}</a>`;
 }
 function mountRows(container, tracks, opt = {}) {
   const STEP = 150; let shown = 0;
@@ -1212,6 +1246,7 @@ function mountRows(container, tracks, opt = {}) {
     const r = e.target.closest(".row"); if (!r) return;
     const k = +r.dataset.k, id = r.dataset.id;
     if (e.target.closest("[data-fav]")) { e.stopPropagation(); toggleFav(id); return; }
+    const ar = e.target.closest("[data-artist]"); if (ar) { e.stopPropagation(); go("artist/" + encodeURIComponent(ar.dataset.artist)); return; }
     if (e.target.closest("[data-more]")) { e.stopPropagation(); trackMenu(e.target.closest("[data-more]"), id, opt.ctx ? {playlist: opt.ctx, pos: k} : {}); return; }
     if (Player.currentId() === id && opt.list && Player.queue.length === opt.list.length) { Player.toggle(); return; }
     Player.playList((opt.list || tracks).map(t => t.id), k);
@@ -1248,7 +1283,8 @@ let mfUrl, mfSeen = 0, mfRescan = 0;
 function setHidden(el, on) { el.classList.toggle("hidden", on); }
 async function showMusicFlow(on) {
   const frame = $("#mf-frame"), main = $("#main");
-  if (!on) { if (!frame.classList.contains("hidden")) { setHidden(frame, true); setHidden(main, false); rescanSoon(0); } return false; }
+  if (!on) { document.documentElement.classList.remove("mf-full"); if (!frame.classList.contains("hidden")) { setHidden(frame, true); setHidden(main, false); rescanSoon(0); } return false; }
+  document.documentElement.classList.remove("mf-full");
   let mod = null;
   if (!mfUrl) { try { const st = await api("state"); mfUrl = st.musicflow || null; mod = st.module; } catch { mfUrl = null; } }
   if (route().name !== "download") return true;
@@ -1257,7 +1293,7 @@ async function showMusicFlow(on) {
     let tok = ""; if (NATIVE && NATIVE.musicflowToken) try { tok = NATIVE.musicflowToken(); } catch {}
     frame.src = mfUrl + "&theme=" + encodeURIComponent(savedTheme()) + (tok ? "#mft=" + tok : "");
   }
-  setHidden(main, true); setHidden(frame, false);
+  setHidden(main, true); setHidden(frame, false); document.documentElement.classList.add("mf-full");
   return true;
 }
 // The Download tab is a module: installed with a button, from this version's GitHub release.
@@ -1277,6 +1313,7 @@ function moduleView(main, m) {
   if (b) b.onclick = async () => { b.disabled = true; try { moduleView(main, await api("musicflow/install", {})); } catch (e) { toast(e.message); b.disabled = false; } };
   if (busy) modTimer = setTimeout(() => { if (route().name === "download") showMusicFlow(true); }, 1000);
 }
+$("#mf-back").onclick = () => { if (history.length > 1) history.back(); else go("folders"); };
 function rescanSoon(delay) { clearTimeout(mfRescan); mfRescan = setTimeout(() => window.MFP_rescan(), delay); }
 // Android app: answers from the phone (folder chosen, voice search…) go to MusicFlow's frame.
 window.MFP_toMusicFlow = (fn, args) => { const fr = $("#mf-frame"); if (fr.src) fr.contentWindow.postMessage({mfCall: fn, args: args || []}, new URL(fr.src).origin); };
