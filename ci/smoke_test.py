@@ -73,6 +73,8 @@ adb("shell", "mkdir", "-p", "/sdcard/Music")
 for ext in FORMATS:
     f = SONGS / f"Fmt {ext} - Tester.{ext}"
     adb("push", str(f), f"/sdcard/Music/{f.name}")
+# Let Android's media store index the files (an app with READ_MEDIA_AUDIO only sees indexed music).
+adb("shell", "content", "call", "--method", "scan_volume", "--uri", "content://media", "--arg", "external_primary", check=False, timeout=180)
 adb("logcat", "-c", check=False)
 time.sleep(5)
 close_system_dialogs()
@@ -120,10 +122,20 @@ def js(expression):
             return result.get("result", {}).get("value")
 
 
+checks = 0
+
+
 def library_ready():
+    global checks
+    checks += 1
     close_system_dialogs()
-    titles = js("window.L && L.loaded ? L.list.map(t => t.title) : null") or []
-    print("library:", titles)
+    info = js("""(async () => { let st = null; try { st = await api('state'); } catch (e) { st = String(e); }
+      return {loaded: !!(window.L && L.loaded), error: window.L ? L.error : 'no L', scan: window.L ? L.scan : null,
+              titles: window.L && L.loaded ? L.list.map(t => t.title) : [], state: st}; })()""") or {}
+    print("library:", json.dumps(info)[:600])
+    titles = info.get("titles") or []
+    if checks % 6 == 0:  # every 30 s, ask for a new scan
+        js("window.MFP_rescan && MFP_rescan()")
     return all(f"Fmt {ext}" in titles for ext in FORMATS)
 
 
