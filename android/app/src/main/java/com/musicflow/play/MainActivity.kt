@@ -37,6 +37,17 @@ class MainActivity : AppCompatActivity() {
         private const val SERVER_PORT = 5091
         const val PAGE_URL = "http://127.0.0.1:5091/"
         @Volatile private var serverStarted = false
+        @Volatile private var musicFlowStarted = false
+        private const val MUSICFLOW_URL = "http://127.0.0.1:5090/"
+        private val LOGIN_HOSTS = setOf("accounts.spotify.com", "accounts.google.com")
+
+        /** MusicFlow's own token (Download tab), given only to the player's page, which passes it to MusicFlow's frame. */
+        val MF_TOKEN: String by lazy {
+            val b = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+            android.util.Base64.encodeToString(
+                b, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+            )
+        }
 
         val API_TOKEN: String by lazy {
             val b = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
@@ -48,7 +59,9 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var loadingView: LinearLayout
-    @Volatile private var isLocalPage = true
+    @Volatile var isLocalPage = true
+        private set
+    private lateinit var musicFlow: MusicFlowBridge
     private var hadAllFiles = false
 
     private val permissionLauncher =
@@ -76,6 +89,88 @@ class MainActivity : AppCompatActivity() {
 
     private fun isLocal(url: String?) = url?.startsWith(PAGE_URL) == true
 
+    // ---- MusicFlow (Download tab): what its page asks the phone for ----
+
+    private val mfFolderLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val uri = result.data?.data
+            if (result.resultCode == RESULT_OK && uri != null) {
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                } catch (e: Exception) { }
+                getSharedPreferences("musicflow", MODE_PRIVATE).edit().putString(MusicFlowBridge.PREF_TREE_URI, uri.toString()).apply()
+                callMusicFlow("onFolderChosen", org.json.JSONArray().put(musicFlow.chosenFolderLabel()))
+                // The songs MusicFlow saves there also appear in the player's library.
+                treeUriToPath(uri)?.let { callPage("window.MFP_folderPicked && MFP_folderPicked(${org.json.JSONObject.quote(it)})") }
+            }
+        }
+
+    fun chooseMusicFlowFolder() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+        )
+        try { mfFolderLauncher.launch(intent) } catch (e: Exception) { }
+    }
+
+    private val voiceLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        val text = res.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() ?: ""
+        callMusicFlow("MF_voice", org.json.JSONArray().put(text))
+    }
+
+    fun startVoiceSearch(): Boolean {
+        val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Say the title or the artist")
+        if (intent.resolveActivity(packageManager) == null) return false
+        runOnUiThread {
+            try { voiceLauncher.launch(intent) } catch (e: Exception) { callMusicFlow("MF_voice", org.json.JSONArray().put("")) }
+        }
+        return true
+    }
+
+    private var fileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
+    private val fileLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        fileCallback?.onReceiveValue(if (uri != null) arrayOf(uri) else null)
+        fileCallback = null
+    }
+
+    /** Calls one of MusicFlow's page functions, in its frame (through the player page). */
+    fun callMusicFlow(fn: String, args: org.json.JSONArray) =
+        callPage("window.MFP_toMusicFlow && MFP_toMusicFlow(${org.json.JSONObject.quote(fn)}, $args)")
+
+    private val tickHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var ticking = false
+    private val tick = object : Runnable {
+        override fun run() {
+            if (!ticking) return
+            callMusicFlow("MF_tic", org.json.JSONArray())
+            tickHandler.postDelayed(this, 3000)
+        }
+    }
+
+    /** While MusicFlow downloads with the screen off, its page is woken every 3 s (as in the MusicFlow app). */
+    fun setDownloadTicks(on: Boolean) {
+        if (on && !ticking) { ticking = true; tickHandler.post(tick) }
+        else if (!on) { ticking = false; tickHandler.removeCallbacks(tick) }
+    }
+
+    fun rescanSoon() = callPage("setTimeout(() => window.MFP_rescan && MFP_rescan(), 2000)")
+
+    private fun musicFlowDir(): File =
+        (getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: File(filesDir, "Music")).apply { mkdirs() }
+
+    private fun startMusicFlow() {
+        try {
+            Python.getInstance().getModule("mfp_mobile").callAttr(
+                "start_musicflow", musicFlowDir().absolutePath, File(filesDir, "musicflow-config.json").absolutePath, MF_TOKEN
+            )
+        } catch (e: Exception) {
+            Log.e("MFP", "MusicFlow (Download tab) did not start", e)
+        }
+    }
+
     private fun callPage(js: String) {
         runOnUiThread {
             try { webView.evaluateJavascript(js, null) } catch (e: Exception) { }
@@ -97,16 +192,29 @@ class MainActivity : AppCompatActivity() {
         webView.settings.domStorageEnabled = true
         webView.settings.mediaPlaybackRequiresUserGesture = false
         webView.addJavascriptInterface(Bridge(), "MFPNative")
+        musicFlow = MusicFlowBridge(this)
+        webView.addJavascriptInterface(musicFlow, "Android")
+        try { com.musicflow.app.SpotifySearch.init(this) } catch (e: Exception) { }
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
                 Log.i("MFPConsole", message?.message() ?: "")
                 return true
+            }
+
+            override fun onShowFileChooser(
+                view: WebView?, callback: android.webkit.ValueCallback<Array<Uri>>?, params: FileChooserParams?
+            ): Boolean {
+                fileCallback?.onReceiveValue(null)
+                fileCallback = callback
+                return try { fileLauncher.launch("*/*"); true } catch (e: Exception) { fileCallback = null; false }
             }
         }
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url ?: return false
                 if (isLocal(url.toString())) return false
+                // MusicFlow's frame, and the Spotify / Google sign-in pages it opens.
+                if (request?.isForMainFrame == false && (url.toString().startsWith(MUSICFLOW_URL) || url.host in LOGIN_HOSTS)) return false
                 try { startActivity(Intent(Intent.ACTION_VIEW, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) { }
                 return true
             }
@@ -132,7 +240,10 @@ class MainActivity : AppCompatActivity() {
                 startPythonServer()
             }.start()
         }
-        Thread { waitForServerThenLoad() }.start()
+        Thread {
+            waitForServerThenLoad()
+            if (!musicFlowStarted) { musicFlowStarted = true; startMusicFlow() }
+        }.start()
         askPermissions()
     }
 
@@ -268,6 +379,9 @@ class MainActivity : AppCompatActivity() {
             if (durationMs > 0) PlaybackService.durationMs = durationMs.toLong()
             updateService()
         }
+
+        @JavascriptInterface
+        fun musicflowToken(): String = if (isLocalPage) MF_TOKEN else ""
 
         @JavascriptInterface
         fun modes(shuffle: Boolean, repeat: String?) {

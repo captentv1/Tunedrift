@@ -266,8 +266,13 @@ def start_musicflow():
     mf = musicflow_embed.start()
     if not mf:
         return
-    CONFIG["musicflow"] = musicflow_embed.URL
-    dest = Path(getattr(mf, "DEFAULT_DEST", "") or "")
+    use_musicflow(getattr(mf, "DEFAULT_DEST", "") or "", musicflow_embed.URL)
+
+
+def use_musicflow(dest, url: str) -> None:
+    """MusicFlow runs: show its Download tab and read the folder where it downloads."""
+    CONFIG["musicflow"] = url
+    dest = Path(dest)
     if dest.is_dir() and not any(_inside(dest, Path(f)) for f in settings.data["folders"]):
         settings.data["folders"] = settings.data["folders"] + [str(dest)]
         settings.save()
