@@ -1,0 +1,77 @@
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'com.chaquo.python'
+
+def keyProperties = new Properties()
+def keyFile = rootProject.file("keystore.properties")
+if (keyFile.exists()) { keyFile.withInputStream { keyProperties.load(it) } }
+
+android {
+    signingConfigs {
+        release {
+            if (keyFile.exists()) {
+                storeFile file(keyProperties["storeFile"])
+                storePassword keyProperties["storePassword"]
+                keyAlias keyProperties["keyAlias"]
+                keyPassword keyProperties["keyPassword"]
+            }
+        }
+    }
+    namespace 'com.musicflow.play'
+
+    sourceSets {
+        main {
+            python.srcDirs = ['src/main/python', '../../server', '../../musicflow/core', '../../web']
+        }
+    }
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.musicflow.play"
+        minSdk 26
+        targetSdk 35
+        versionCode Integer.parseInt((project.findProperty('ciVersionCode') ?: '2').toString())
+        versionName((project.findProperty('ciVersionName') ?: '0.2.0').toString())
+
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+
+        python {
+            version "3.13"
+            if (project.hasProperty('buildPython')) {
+                buildPython project.property('buildPython').toString()
+            }
+            pip {
+                install "flask"
+                install "mutagen"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig keyFile.exists() ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+    implementation 'androidx.media:media:1.7.0'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.20'
+}
