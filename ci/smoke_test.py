@@ -99,13 +99,21 @@ print("server is up")
 screenshot("started")
 
 
+EXPECTED = {SONG, *(f"Fmt {ext}" for ext in FORMATS)}
+
+
 def find_song():
     nodes = ui_nodes()
-    print("on screen:", sorted({n[0] for n in nodes})[:40])
-    return next((n for n in nodes if n[0].strip() == SONG), None)
+    labels = {n[0].strip() for n in nodes}
+    print("on screen:", sorted(labels)[:40])
+    if not EXPECTED <= labels:
+        return None
+    time.sleep(4)
+    again = ui_nodes()
+    return next((n for n in again if n[0].strip() == SONG), None) if again == nodes else None
 
 
-_, x, y = wait_for("the song is not listed in the library", 180, find_song)
+_, x, y = wait_for("the songs are not all listed in the library", 240, find_song)
 screenshot("library")
 adb("shell", "input", "tap", str(x), str(y))
 
