@@ -96,7 +96,10 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Start the app on an emulator and play a song
+      - name: Install ffmpeg (makes the test songs)
+        run: sudo apt-get install -y -qq ffmpeg > /dev/null
+
+      - name: Start the app on an emulator and play a song in every format
         uses: reactivecircus/android-emulator-runner@v2
         with:
           # Android 14 x86_64 image: it runs ARM64-only apps through its built-in translation.

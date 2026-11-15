@@ -391,6 +391,19 @@ window.MFP_cmd = (c, v) => {
   else if (c === "prev") Player.prev();
   else if (c === "seek") { audio.currentTime = Math.max(0, v / 1000); updateTime(true); nativeState(); }
 };
+async function useFolder(folder, replace) {
+  try {
+    const st = await api("state");
+    await api("folders", {folders: replace ? [folder] : [...st.folders, folder]});
+    toast("Reading the folder…"); L.scan.running = true; setTimeout(() => loadLibrary(true), 800); render();
+  } catch (e) { toast(e.message); }
+}
+let pickReplaces = false;
+function pickFolder(replace) {
+  pickReplaces = !!replace;
+  if (NATIVE && NATIVE.pickFolder) NATIVE.pickFolder(); else browseFolder(f => useFolder(f, pickReplaces));
+}
+window.MFP_folderPicked = folder => { if (folder) useFolder(folder, pickReplaces); else toast("This folder can't be used: pick one in the phone's storage or on the SD card."); };
 window.MFP_rescan = async () => { try { await api("scan", {}); } catch {} L.scan.running = true; setTimeout(() => loadLibrary(true), 700); if (route().name === "settings") setTimeout(render, 900); };
 
 let toastTimer;
@@ -590,12 +603,15 @@ audio.addEventListener("error", () => {
   if (!audio.getAttribute("src")) return;
   const t = Player.current();
   Player.errors++;
-  toast(`Can't play “${t ? t.title : "this file"}”${t ? " (" + t.format.toUpperCase() + ")" : ""}`);
+  const why = audio.error ? `${audio.error.code} ${audio.error.message || ""}`.trim() : "";
+  console.log("MFP_ERROR", t ? t.format : "", t ? t.title : "", why);
+  toast(`Can't play “${t ? t.title : "this file"}”${t ? " (" + t.format.toUpperCase() + ")" : ""}${why ? " · error " + why : ""}`);
   if (Player.errors < 4 && Player.i + 1 < Player.queue.length) setTimeout(() => Player.next(false), 1200);
 });
-let lastSaved = 0, lastPos = 0;
+let lastSaved = 0, lastPos = 0, loggedPlaying = "";
 function updateTime(force) {
   const d = audio.duration || (Player.current() || {}).length_s || 0, c = audio.currentTime || 0;
+  if (NATIVE && c >= 1.5 && !audio.paused && loggedPlaying !== Player.currentId()) { loggedPlaying = Player.currentId(); const t = Player.current(); console.log("MFP_PLAYING", t ? t.format : "", t ? t.title : ""); }
   if (!seeking) for (const s of $$(".seekbar")) { s.value = d ? Math.round(c / d * 1000) : 0; s.style.setProperty("--p", (d ? c / d * 100 : 0) + "%"); }
   for (const e of $$(".seek .cur")) e.textContent = fmt(c);
   for (const e of $$(".seek .tot")) e.textContent = fmt(d);
@@ -957,7 +973,7 @@ const totalTime = ts => { const s = ts.reduce((a, t) => a + (t.length_s || 0), 0
 
 function emptyLibrary() {
   if (L.scan.running) return `<div class="empty">${ico("refresh")}Reading your music folder… ${L.scan.found || 0} songs found so far.<div class="progress-line"><div></div></div></div>`;
-  return `<div class="empty">${ico("folder")}No music found yet.<br>Add the folder where your songs are in <a href="#settings" style="color:var(--accent)">Settings</a>.</div>`;
+  return `<div class="empty">${ico("folder")}No music found yet.<br>Choose the folder where your songs are.<br><button class="btn primary" style="margin-top:14px" onclick="pickFolder(true)">${ico("folder")} Choose my music folder</button></div>`;
 }
 
 function render() {
@@ -1079,7 +1095,7 @@ const VIEWS = {
     for (const b of $$("[data-rm]")) b.onclick = () => save(st.folders.filter((_, k) => k !== +b.dataset.rm));
     $("#f-add").onclick = () => { const v = $("#f-new").value.trim(); if (v) save([...st.folders, v]); };
     $("#f-new").onkeydown = e => { if (e.key === "Enter") $("#f-add").click(); };
-    $("#f-pick").onclick = () => browseFolder(f => save([...st.folders, f]));
+    $("#f-pick").onclick = () => pickFolder(false);
     const all = $("#f-all"); if (all) all.onclick = () => native("requestAllFiles");
     $("#f-scan").onclick = async () => { try { await api("scan", {}); toast("Reading the folders…"); setTimeout(() => loadLibrary(true), 800); setTimeout(render, 900); } catch (e) { toast(e.message); } };
   },
