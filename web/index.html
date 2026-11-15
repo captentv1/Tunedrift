@@ -391,6 +391,19 @@ window.MFP_cmd = (c, v) => {
   else if (c === "prev") Player.prev();
   else if (c === "seek") { audio.currentTime = Math.max(0, v / 1000); updateTime(true); nativeState(); }
 };
+async function useFolder(folder, replace) {
+  try {
+    const st = await api("state");
+    await api("folders", {folders: replace ? [folder] : [...st.folders, folder]});
+    toast("Reading the folder…"); L.scan.running = true; setTimeout(() => loadLibrary(true), 800); render();
+  } catch (e) { toast(e.message); }
+}
+let pickReplaces = false;
+function pickFolder(replace) {
+  pickReplaces = !!replace;
+  if (NATIVE && NATIVE.pickFolder) NATIVE.pickFolder(); else browseFolder(f => useFolder(f, pickReplaces));
+}
+window.MFP_folderPicked = folder => { if (folder) useFolder(folder, pickReplaces); else toast("This folder can't be used: pick one in the phone's storage or on the SD card."); };
 window.MFP_rescan = async () => { try { await api("scan", {}); } catch {} L.scan.running = true; setTimeout(() => loadLibrary(true), 700); if (route().name === "settings") setTimeout(render, 900); };
 
 let toastTimer;
@@ -496,11 +509,38 @@ const Player = {
   load(autoplay, at = 0) {
     const t = this.current();
     if (!t) { audio.removeAttribute("src"); audio.load(); updateNow(); return; }
+    if (this.blobUrl) { URL.revokeObjectURL(this.blobUrl); this.blobUrl = null; }
+    this.blobTried = null;
     audio.src = audioUrl(t.id);
     this.pendingSeek = at > 0 ? at : 0;
+    clearTimeout(this.watchdog);
+    // Some Android WebViews never start a streamed M4A/FLAC/OGG file: if nothing is playable after a few
+    // seconds, read the whole file and play it from memory instead (what MusicFlow does on Android).
+    if (autoplay) { const id = t.id; this.watchdog = setTimeout(() => { if (this.currentId() === id && audio.readyState < 3 && !audio.error) this.playFromMemory(id, "stalled"); }, 5000); }
     if (autoplay) audio.play().catch(err => { if (err.name !== "AbortError") toast("Tap play to start"); });
     updateNow(); loadLyrics(t);
     this.save();
+  },
+  async playFromMemory(id, why) {
+    if (this.blobTried === id) return false;
+    this.blobTried = id;
+    const t = L.tracks.get(id);
+    console.log("MFP_BLOB", t ? t.format : "", t ? t.title : "", why);
+    try {
+      const r = await fetch(audioUrl(id));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      if (this.currentId() !== id) return true;
+      const at = audio.currentTime || this.pendingSeek || 0;
+      this.blobUrl = URL.createObjectURL(blob);
+      audio.src = this.blobUrl;
+      this.pendingSeek = at > 0 ? at : 0;
+      audio.play().catch(() => {});
+    } catch (e) {
+      console.log("MFP_BLOB_FAILED", e.message);
+      toast(`Can't play “${t ? t.title : "this file"}”: ${e.message}`);
+    }
+    return true;
   },
   toggle() {
     if (!this.current()) { const ids = sortedSongs().map(t => t.id); if (ids.length) this.playList(ids, 0); return; }
@@ -589,13 +629,20 @@ audio.addEventListener("timeupdate", () => updateTime());
 audio.addEventListener("error", () => {
   if (!audio.getAttribute("src")) return;
   const t = Player.current();
+  if (t && !audio.src.startsWith("blob:") && Player.blobTried !== t.id) {
+    console.log("MFP_ERROR", t.format, t.title, audio.error ? audio.error.code + " " + (audio.error.message || "") : "", "→ trying from memory");
+    Player.playFromMemory(t.id, "error"); return;
+  }
   Player.errors++;
-  toast(`Can't play “${t ? t.title : "this file"}”${t ? " (" + t.format.toUpperCase() + ")" : ""}`);
+  const why = audio.error ? `${audio.error.code} ${audio.error.message || ""}`.trim() : "";
+  console.log("MFP_ERROR", t ? t.format : "", t ? t.title : "", why);
+  toast(`Can't play “${t ? t.title : "this file"}”${t ? " (" + t.format.toUpperCase() + ")" : ""}${why ? " · error " + why : ""}`);
   if (Player.errors < 4 && Player.i + 1 < Player.queue.length) setTimeout(() => Player.next(false), 1200);
 });
-let lastSaved = 0, lastPos = 0;
+let lastSaved = 0, lastPos = 0, loggedPlaying = "";
 function updateTime(force) {
   const d = audio.duration || (Player.current() || {}).length_s || 0, c = audio.currentTime || 0;
+  if (NATIVE && c >= 1.5 && !audio.paused && loggedPlaying !== Player.currentId()) { loggedPlaying = Player.currentId(); const t = Player.current(); console.log("MFP_PLAYING", t ? t.format : "", t ? t.title : ""); }
   if (!seeking) for (const s of $$(".seekbar")) { s.value = d ? Math.round(c / d * 1000) : 0; s.style.setProperty("--p", (d ? c / d * 100 : 0) + "%"); }
   for (const e of $$(".seek .cur")) e.textContent = fmt(c);
   for (const e of $$(".seek .tot")) e.textContent = fmt(d);
@@ -957,7 +1004,7 @@ const totalTime = ts => { const s = ts.reduce((a, t) => a + (t.length_s || 0), 0
 
 function emptyLibrary() {
   if (L.scan.running) return `<div class="empty">${ico("refresh")}Reading your music folder… ${L.scan.found || 0} songs found so far.<div class="progress-line"><div></div></div></div>`;
-  return `<div class="empty">${ico("folder")}No music found yet.<br>Add the folder where your songs are in <a href="#settings" style="color:var(--accent)">Settings</a>.</div>`;
+  return `<div class="empty">${ico("folder")}No music found yet.<br>Choose the folder where your songs are.<br><button class="btn primary" style="margin-top:14px" onclick="pickFolder(true)">${ico("folder")} Choose my music folder</button></div>`;
 }
 
 function render() {
@@ -1079,7 +1126,7 @@ const VIEWS = {
     for (const b of $$("[data-rm]")) b.onclick = () => save(st.folders.filter((_, k) => k !== +b.dataset.rm));
     $("#f-add").onclick = () => { const v = $("#f-new").value.trim(); if (v) save([...st.folders, v]); };
     $("#f-new").onkeydown = e => { if (e.key === "Enter") $("#f-add").click(); };
-    $("#f-pick").onclick = () => browseFolder(f => save([...st.folders, f]));
+    $("#f-pick").onclick = () => pickFolder(false);
     const all = $("#f-all"); if (all) all.onclick = () => native("requestAllFiles");
     $("#f-scan").onclick = async () => { try { await api("scan", {}); toast("Reading the folders…"); setTimeout(() => loadLibrary(true), 800); setTimeout(render, 900); } catch (e) { toast(e.message); } };
   },

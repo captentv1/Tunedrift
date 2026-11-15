@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 — 2026-11-15 (Android fixes)
+
+- **Every audio format plays on Android**: MP3, M4A, FLAC, OPUS, OGG and WAV. If a song does not
+  start within a few seconds, the app reads the whole file and plays it from memory (like MusicFlow).
+  A song that really can't be played now says why (error code) instead of staying stuck.
+- **Choose the music folder with Android's own picker** (“Choose my music folder” on the empty
+  library, and **Browse** in Settings): no more “Access denied” when browsing the storage.
+  Folders on the phone and on the SD card both work.
+- The app waits for its server while it starts instead of showing an error.
+- Tests: the emulator now plays one song of each format at every build.
+
 ## 0.2.0 — 2026-11-15 (Android app)
 
 - **Android app (APK).** Plays the music stored on the phone, without a computer: same page as
