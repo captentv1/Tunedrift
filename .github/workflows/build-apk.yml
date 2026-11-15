@@ -1,5 +1,5 @@
 # Builds the Android app (APK) and the Windows app (exe). On main, both are published as a GitHub release
-# (tag = VERSION in server/app.py), so the latest ones are always at
+# (tag = VERSION in server/mfp_server.py), so the latest ones are always at
 # https://github.com/<owner>/<repo>/releases/latest/download/MusicFlowPlay.apk (and MusicFlowPlay.exe)
 name: Build APK
 
@@ -44,7 +44,7 @@ jobs:
 
       - name: Read the version
         id: version
-        run: echo "version=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' server/app.py)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' server/mfp_server.py)" >> "$GITHUB_OUTPUT"
 
       # Without a release keystore the APK is signed with a test key. Keeping that key in the cache lets a
       # new build install over the previous one instead of asking to uninstall first.
@@ -174,9 +174,13 @@ jobs:
 
       - name: Build MusicFlowPlay.exe
         run: |
-          python -m pip install -q -r requirements.txt pyinstaller
+          python -m pip install -q -r requirements.txt -r musicflow/desktop/requirements.txt truststore pyinstaller
+          # The player's page goes in web/, MusicFlow's page (search and download) next to MusicFlow's server.
           python -m PyInstaller --noconfirm --onefile --name MusicFlowPlay --icon NONE --distpath dist --workpath build --specpath build `
-            --paths server --paths musicflow/core --add-data "$PWD\web\*;." --hidden-import library server/app.py
+            --paths server --paths musicflow/desktop --paths musicflow/core `
+            --add-data "$PWD\web\*;web" --add-data "$PWD\musicflow\web\index.html;." `
+            --collect-data imageio_ffmpeg --collect-binaries imageio_ffmpeg --collect-data selenium --collect-submodules yt_dlp `
+            --collect-data yt_dlp_ejs --hidden-import truststore --hidden-import library server/mfp_server.py
 
       - name: Start the exe and load the page
         shell: pwsh
@@ -188,8 +192,13 @@ jobs:
             Start-Sleep 2
             try { $r = Invoke-WebRequest http://127.0.0.1:5091/ -UseBasicParsing -TimeoutSec 5; $ok = $r.Content -match "MusicFlow Play" } catch {}
           }
+          $mf = $false
+          for ($i = 0; $i -lt 30 -and $ok -and -not $mf; $i++) {
+            try { $r = Invoke-WebRequest "http://127.0.0.1:5090/?embed=1" -UseBasicParsing -TimeoutSec 5; $mf = $r.Content -match "mfp-embed" } catch { Start-Sleep 2 }
+          }
           Stop-Process $p -Force
           if (-not $ok) { throw "the exe did not serve the player page" }
+          if (-not $mf) { throw "the exe did not start MusicFlow (search and download)" }
 
       - uses: actions/upload-artifact@v4
         with:

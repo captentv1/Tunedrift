@@ -189,5 +189,11 @@ def session_playing():
 
 
 session = wait_for("Android's media session does not report the song as playing", 60, session_playing)
+
+# Download tab: MusicFlow's own page opens in its frame (its server starts in the background).
+js("location.hash = 'download'")
+wait_for("MusicFlow (Download tab) did not open", 300, lambda: js("window.mfReady === true"), every=5)
+time.sleep(3)
+screenshot("download")
 bad = {k: v for k, v in results.items() if v != "ok"}
 finish(f"these formats do not play: {bad}" if bad else None)

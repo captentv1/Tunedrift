@@ -6,6 +6,37 @@ def keyProperties = new Properties()
 def keyFile = rootProject.file("keystore.properties")
 if (keyFile.exists()) { keyFile.withInputStream { keyProperties.load(it) } }
 
+// MusicFlow (search and download, Download tab) comes from the musicflow submodule, as it is:
+// its Android server (Python), its page, and the two Kotlin helpers its Python code uses.
+def mfDir = file('../../musicflow')
+def mfGenerated = file("$buildDir/generated/musicflow")
+def mfVersion = '0'
+try { mfVersion = (file("$mfDir/android/app/build.gradle").text =~ /ciVersionName'\) \?: '([^']+)'/)[0][1] } catch (ignored) { }
+
+tasks.register('copyMusicFlowCode') {
+    inputs.dir("$mfDir/android/app/src/main/java")
+    inputs.dir('../../web')
+    outputs.dir(mfGenerated)
+    doLast {
+        def javaOut = file("$mfGenerated/java/com/musicflow/app")
+        javaOut.mkdirs()
+        def src = file("$mfDir/android/app/src/main/java/com/musicflow/app")
+        file("$javaOut/SpotifySearch.kt").text = file("$src/SpotifySearch.kt").text
+        file("$javaOut/DownloadForegroundService.kt").text = file("$src/DownloadForegroundService.kt").text
+            .replace('Intent(this, MainActivity::class.java)', 'Intent(this, com.musicflow.play.MainActivity::class.java)')
+        def js = (file("$src/MainActivity.kt").text =~ /(?s)SPOTIFY_SCRAPE_JS = (""".*?""")/)[0][1]
+        file("$javaOut/SpotifyScrape.kt").text = "package com.musicflow.app\n\nobject SpotifyScrape {\n    const val JS = $js\n}\n"
+        // The player's page goes in web/ (MusicFlow's page is index.html at the top, where its server reads it).
+        copy { from '../../web'; into "$mfGenerated/python/web" }
+    }
+}
+preBuild.dependsOn 'copyMusicFlowCode'
+tasks.configureEach { t ->
+    if (t.name != 'copyMusicFlowCode' && (t.name.contains('Python') || t.name.contains('Kotlin') || t.name.contains('Java'))) {
+        t.dependsOn 'copyMusicFlowCode'
+    }
+}
+
 android {
     signingConfigs {
         release {
@@ -21,7 +52,9 @@ android {
 
     sourceSets {
         main {
-            python.srcDirs = ['src/main/python', '../../server', '../../musicflow/core', '../../web']
+            python.srcDirs = ['src/main/python', '../../server', '../../musicflow/core',
+                              '../../musicflow/android/app/src/main/python', '../../musicflow/web', "$buildDir/generated/musicflow/python"]
+            java.srcDirs += ["$buildDir/generated/musicflow/java"]
         }
     }
     compileSdk 36
@@ -35,13 +68,14 @@ android {
         minSdk 26
         targetSdk 35
         versionCode Integer.parseInt((project.findProperty('ciVersionCode') ?: '2').toString())
-        versionName((project.findProperty('ciVersionName') ?: '0.3.0').toString())
+        versionName((project.findProperty('ciVersionName') ?: '0.4.0').toString())
 
         ndk {
             abiFilters "arm64-v8a"
         }
 
         // Only the emulator test build turns this on (-PciWebDebug=true), so the test can drive the page.
+        buildConfigField "String", "MF_VERSION", "\"${mfVersion}\""
         buildConfigField "boolean", "WEB_DEBUG", (project.findProperty('ciWebDebug') ?: 'false').toString()
 
         python {
@@ -52,6 +86,9 @@ android {
             pip {
                 install "flask"
                 install "mutagen"
+                install "yt-dlp"
+                install "certifi"
+                install "Pillow"
             }
         }
     }
@@ -80,5 +117,7 @@ dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
     implementation 'androidx.activity:activity-ktx:1.9.3'
     implementation 'androidx.media:media:1.7.0'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-audio:8.1.9'
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.20'
 }
