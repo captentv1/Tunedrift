@@ -270,11 +270,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun modes(shuffle: Boolean, repeat: String?) {
+            if (!isLocalPage) return
+            PlaybackService.shuffle = shuffle
+            PlaybackService.repeat = repeat ?: "off"
+            updateService()
+        }
+
+        @JavascriptInterface
         fun stop() {
             if (!isLocalPage) return
             PlaybackService.playing = false
             if (PlaybackService.running) {
                 try { startService(Intent(this@MainActivity, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP)) } catch (e: Exception) { }
+            }
+        }
+
+        @JavascriptInterface
+        fun setLightStatusBar(light: Boolean) {
+            runOnUiThread {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = light
+                    isAppearanceLightNavigationBars = light
+                }
             }
         }
 

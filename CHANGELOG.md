@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 — 2026-11-15 (themes, gestures, Windows app)
+
+- **The 16 themes of MusicFlow** (glass, light, OLED black, classic, automatic) and a text size,
+  in Settings. The phone's status bar follows light themes.
+- **Gestures on the phone**: swipe up on the mini player to open it; swipe left/right for the
+  next/previous song (mini player and cover); on the cover, swipe up or double tap for the lyrics,
+  one tap for the next song, swipe down to close.
+- **Windows app**: `MusicFlowPlay.exe` is built and published with the APK at every version.
+- **Shuffle and repeat in the notification and on the lock screen** (Android), with icons that show
+  the current mode.
+- Android: no more empty band above the header and below the tabs.
+
 ## 0.2.1 — 2026-11-15 (Android fixes)
 
 - **Every audio format plays on Android**: MP3, M4A, FLAC, OPUS, OGG and WAV. If a song does not

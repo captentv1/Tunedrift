@@ -45,6 +45,10 @@ class PlaybackService : Service() {
         @Volatile var durationMs = 0L
         @Volatile var positionMs = 0L
         @Volatile var playing = false
+        @Volatile var shuffle = false
+        @Volatile var repeat = "off"
+        private const val CUSTOM_SHUFFLE = "shuffle"
+        private const val CUSTOM_REPEAT = "repeat"
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -75,6 +79,11 @@ class PlaybackService : Service() {
             override fun onSkipToNext() = send("next", 0)
             override fun onSkipToPrevious() = send("prev", 0)
             override fun onSeekTo(pos: Long) = send("seek", pos)
+            override fun onSetShuffleMode(mode: Int) = send("shuffle", 0)
+            override fun onSetRepeatMode(mode: Int) = send("repeat", 0)
+            override fun onCustomAction(action: String?, extras: android.os.Bundle?) {
+                if (action == CUSTOM_SHUFFLE) send("shuffle", 0) else if (action == CUSTOM_REPEAT) send("repeat", 0)
+            }
         })
         session.isActive = true
         try {
@@ -140,12 +149,20 @@ class PlaybackService : Service() {
                         PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or PlaybackStateCompat.ACTION_SEEK_TO or
                         PlaybackStateCompat.ACTION_STOP
                 )
+                .addCustomAction(CUSTOM_SHUFFLE, if (shuffle) "Shuffle: on" else "Shuffle: off", shuffleIcon())
+                .addCustomAction(CUSTOM_REPEAT, repeatLabel(), repeatIcon())
                 .setState(
                     if (playing) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
                     positionMs, if (playing) 1f else 0f
                 )
                 .build()
         )
+        session.setShuffleMode(if (shuffle) PlaybackStateCompat.SHUFFLE_MODE_ALL else PlaybackStateCompat.SHUFFLE_MODE_NONE)
+        session.setRepeatMode(when (repeat) {
+            "one" -> PlaybackStateCompat.REPEAT_MODE_ONE
+            "all" -> PlaybackStateCompat.REPEAT_MODE_ALL
+            else -> PlaybackStateCompat.REPEAT_MODE_NONE
+        })
         try {
             if (playing) wakeLock?.acquire(4 * 60 * 60 * 1000L)
             else wakeLock?.takeIf { it.isHeld }?.release()
@@ -191,6 +208,18 @@ class PlaybackService : Service() {
         }.start()
     }
 
+    private fun shuffleIcon() = if (shuffle) R.drawable.ic_shuffle_on else R.drawable.ic_shuffle_off
+    private fun repeatIcon() = when (repeat) {
+        "one" -> R.drawable.ic_repeat_one
+        "all" -> R.drawable.ic_repeat_all
+        else -> R.drawable.ic_repeat_off
+    }
+    private fun repeatLabel() = when (repeat) {
+        "one" -> "Repeat: this song"
+        "all" -> "Repeat: all"
+        else -> "Repeat: off"
+    }
+
     private fun commandIntent(command: String, requestCode: Int): PendingIntent {
         val intent = Intent(this, PlaybackService::class.java).setAction(ACTION_COMMAND).putExtra(EXTRA_COMMAND, command)
         return PendingIntent.getService(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -212,16 +241,18 @@ class PlaybackService : Service() {
             .setOngoing(playing)
             .setShowWhen(false)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(shuffleIcon(), if (shuffle) "Shuffle: on" else "Shuffle: off", commandIntent("shuffle", 4))
             .addAction(android.R.drawable.ic_media_previous, "Previous", commandIntent("prev", 1))
             .addAction(
                 if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
                 if (playing) "Pause" else "Play", commandIntent(if (playing) "pause" else "play", 2)
             )
             .addAction(android.R.drawable.ic_media_next, "Next", commandIntent("next", 3))
+            .addAction(repeatIcon(), repeatLabel(), commandIntent("repeat", 5))
             .setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
                     .setMediaSession(session.sessionToken)
-                    .setShowActionsInCompactView(0, 1, 2)
+                    .setShowActionsInCompactView(1, 2, 3)
             )
         if (album.isNotEmpty()) builder.setSubText(album)
         cover?.let { builder.setLargeIcon(it) }
