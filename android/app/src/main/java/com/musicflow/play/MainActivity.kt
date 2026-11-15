@@ -270,6 +270,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun modes(shuffle: Boolean, repeat: String?) {
+            if (!isLocalPage) return
+            PlaybackService.shuffle = shuffle
+            PlaybackService.repeat = repeat ?: "off"
+            updateService()
+        }
+
+        @JavascriptInterface
         fun stop() {
             if (!isLocalPage) return
             PlaybackService.playing = false
