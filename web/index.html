@@ -187,6 +187,14 @@
 
   .set{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
   .set h3{margin:0 0 4px;font-size:15px}
+  details.set>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  details.set>summary::-webkit-details-marker{display:none}
+  details.set>summary h3{margin:0}
+  details.set>summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .15s;flex:none;margin-right:4px}
+  details.set[open]>summary::after{transform:rotate(-135deg)}
+  details.set[open]>summary{margin-bottom:10px}
+  .chk{display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer}
+  .crumbs a{color:inherit;text-decoration:none}.crumbs a:hover{color:var(--accent)}
   .set p{margin:0 0 12px;color:var(--muted);line-height:1.5}
   .folder{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border);word-break:break-all}
   .folder:first-of-type{border-top:0}
@@ -600,12 +608,44 @@ function buildIndexes() {
     if (!al.cover && t.cover) al.cover = t.id;
     if (t.year && (!al.year || t.year < al.year)) al.year = t.year;
   }
+  buildFolders();
   for (const al of L.albums.values()) al.tracks.sort((a, b) => (a.track_no || 999) - (b.track_no || 999) || a._title.localeCompare(b._title));
+}
+
+// Folder tree: one node per folder that holds songs (directly or below), keyed by its path under the library folders.
+function buildFolders() {
+  const clean = p => String(p || "").replace(/\\/g, "/").replace(/\/+$/, "");
+  const roots = (L.roots || []).map(clean).sort((a, b) => b.length - a.length);
+  const top = {key: "", name: "Folders", kids: new Map(), tracks: [], all: [], cover: null, parent: null};
+  const nodes = new Map([["", top]]);
+  for (const t of L.list) {
+    const p = clean(t.path), dir = p.slice(0, p.lastIndexOf("/"));
+    const root = roots.find(r => dir === r || dir.startsWith(r + "/")) ?? dir.slice(0, dir.lastIndexOf("/"));
+    const parts = [root, ...(dir.length > root.length ? dir.slice(root.length + 1).split("/") : [])];
+    let node = top, key = "";
+    parts.forEach((part, i) => {
+      key = i ? key + "/" + part : part;
+      let n = nodes.get(key);
+      if (!n) { n = {key, name: i ? part : (part.split("/").pop() || part), kids: new Map(), tracks: [], all: [], cover: null, parent: node}; nodes.set(key, n); node.kids.set(key, n); }
+      node = n;
+    });
+    node.tracks.push(t); t._folder = node.key;
+    for (let n = node; n; n = n.parent) { n.all.push(t); if (!n.cover && t.cover) n.cover = t.id; }
+  }
+  L.folders = nodes;
+}
+const folderOf = t => t._folder || null;
+const cmpName = (x, y) => x.localeCompare(y, undefined, {sensitivity: "base", numeric: true});
+function folderCards(nodes) {
+  return cardsHtml(nodes.map(n => ({go: "folder/" + encodeURIComponent(n.key), cover: n.cover, icon: "folder", name: n.name,
+    sub: [n.kids.size ? plural(n.kids.size, "folder") : "", plural(n.all.length, "song")].filter(Boolean).join(" · ")})));
 }
 
 async function loadLibrary(quiet) {
   try {
-    const [d, c] = await Promise.all([api("tracks"), api("collections")]);
+    const [d, c, st] = await Promise.all([api("tracks"), api("collections"), api("state").catch(() => ({}))]);
+    L.roots = st.folders || L.roots || [];
+    if (st.version && !Upd.version) { Upd.version = st.version; if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000); }
     L.tracks = new Map(d.tracks.map(t => [t.id, t]));
     L.scan = d.scan || {};
     L.favorites = c.favorites || [];
@@ -1114,6 +1154,7 @@ function trackMenu(anchor, id, ctx) {
     "-",
   ];
   (t.artists.length ? t.artists : [UNKNOWN_ARTIST]).slice(0, 3).forEach(n => items.push({label: "Go to " + n, icon: "person", run: () => { closeNow(); go("artist/" + encodeURIComponent(norm(n))); }}));
+  const fk = folderOf(t); if (fk) items.push({label: "Go to folder", icon: "folder", run: () => { closeNow(); go("folder/" + encodeURIComponent(fk)); }});
   if (t.album) items.push({label: "Go to album", icon: "album", run: () => { closeNow(); go("album/" + encodeURIComponent(albumKey(t))); }});
   if (ctx.playlist) items.push("-", {label: "Remove from this playlist", icon: "close", run: () => removeFromPlaylist(ctx.playlist, ctx.pos)});
   menu(anchor, items);
@@ -1131,18 +1172,18 @@ function listMenu(anchor, ids, extra = []) {
 
 /* ---------- Views ---------- */
 const NAV = [
-  {r: "songs", label: "Songs", icon: "note"}, {r: "artists", label: "Artists", icon: "person"}, {r: "albums", label: "Albums", icon: "album"},
+  {r: "folders", label: "Folders", icon: "folder"}, {r: "songs", label: "Songs", icon: "note"}, {r: "artists", label: "Artists", icon: "person"}, {r: "albums", label: "Albums", icon: "album"},
   {r: "playlists", label: "Playlists", icon: "list"}, {r: "favorites", label: "Favorites", icon: "heart"},
   {r: "download", label: "Download", icon: "download"},
 ];
 $("#side").innerHTML = NAV.map(n => `<div class="nav" data-r="${n.r}">${ico(n.icon)}${n.label}</div>`).join("") +
   `<div class="nav-sep"></div><div class="nav" data-r="queue">${ico("queue")}Queue</div><div class="nav" data-r="settings">${ico("gear")}Settings</div>`;
-$("#bottomnav").innerHTML = NAV.map(n => `<button class="bn" data-r="${n.r}">${ico(n.icon)}${n.label}</button>`).join("");
+$("#bottomnav").innerHTML = NAV.filter(n => n.r !== "favorites").map(n => `<button class="bn" data-r="${n.r}">${ico(n.icon)}${n.label}</button>`).join("");
 document.addEventListener("click", e => { const n = e.target.closest("[data-r]"); if (n) { $("#q").value = ""; searchUi(); go(n.dataset.r); } });
 $("#btn-settings").onclick = () => go("settings");
 
 function route() {
-  const h = decodeURIComponent(location.hash.slice(1) || "songs"), [name, ...rest] = h.split("/");
+  const h = decodeURIComponent(location.hash.slice(1) || "folders"), [name, ...rest] = h.split("/");
   return {name, arg: rest.join("/")};
 }
 function go(r) { if (location.hash.slice(1) === r) render(); else location.hash = r; }
@@ -1228,11 +1269,69 @@ window.addEventListener("message", e => {
   const n = (e.data || {}).mfDownloaded;
   if (typeof n === "number" && n !== mfSeen) { if (n > mfSeen) rescanSoon(3000); mfSeen = n; }
 });
+function foldSections(root) {
+  let open = {}; try { open = JSON.parse(localStorage.getItem("mfp.open") || "{}"); } catch {}
+  for (const d of $$("div.set", root)) {
+    const h = d.querySelector("h3"); if (!h) continue;
+    const id = h.textContent, det = document.createElement("details"), sum = document.createElement("summary");
+    det.className = "set"; det.open = id in open ? open[id] : !/^(Theme|Updates|Gestures|Keyboard)/.test(id);
+    sum.append(h); det.append(sum, ...d.childNodes); d.replaceWith(det);
+    det.ontoggle = () => { open[id] = det.open; try { localStorage.setItem("mfp.open", JSON.stringify(open)); } catch {} };
+  }
+}
+
+// Updates, as in MusicFlow: checked at start (at most every 6 h), offered once per version, can be turned off.
+const Upd = {
+  info: null, ready: "",
+  on() { try { return localStorage.getItem("mfp.updatesOff") !== "1"; } catch { return true; } },
+  usable() { return NATIVE ? !!NATIVE.installUpdate : ["127.0.0.1", "localhost"].includes(location.hostname); },
+  state(t) { const e = $("#u-state"); if (e) e.textContent = t; },
+  newer(a, b) { const x = a.split(".").map(n => +n || 0), y = b.split(".").map(n => +n || 0);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; },
+  async check(auto) {
+    if (!this.usable()) return;
+    try { this.ready = (NATIVE && NATIVE.updateReady && NATIVE.updateReady()) || ""; } catch {}
+    if (this.ready) { this.state(`Version ${this.ready} is downloaded.`); this.button(`Install ${this.ready}`); if (auto) this.offer(this.ready, ""); return; }
+    if (!auto) this.state("Checking…");
+    try {
+      let d = null;
+      try { const c = JSON.parse(localStorage.getItem("mfp.updCache") || "null"); if (auto && c && Date.now() - c.t < 6 * 3600e3) d = c.d; } catch {}
+      if (!d) {
+        const r = await fetch("https://api.github.com/repos/captentv1/musicflow-play/releases/latest").catch(() => null);
+        if (r && r.ok) { const x = await r.json(); d = {tag_name: x.tag_name, body: x.body, assets: (x.assets || []).map(a => ({name: a.name, url: a.browser_download_url}))}; }
+        else d = await api("latest-version");
+        try { localStorage.setItem("mfp.updCache", JSON.stringify({t: Date.now(), d})); } catch {}
+      }
+      const v = String(d.tag_name || "").replace(/^v/, ""), cur = Upd.version || "";
+      const file = (d.assets || []).find(a => a.name === (NATIVE ? "MusicFlowPlay.apk" : "MusicFlowPlay.exe"));
+      if (!v || !file || !cur || !this.newer(v, cur)) { this.info = null; this.button("Check for updates"); this.state(`Up to date (${cur})`); return; }
+      this.info = {v, url: file.url, notes: String(d.body || "").slice(0, 800)};
+      this.button(`Update to ${v}`); this.state(`Version ${v} is available (you have ${cur}).`);
+      if (auto) this.offer(v, this.info.notes);
+    } catch (e) { if (!auto) this.state("Could not check for updates (no connection?)"); }
+  },
+  offer(v, notes) {
+    try { if (localStorage.getItem("mfp.updLater") === v) return; localStorage.setItem("mfp.updLater", v); } catch {}
+    if ($("#dialog")) return;
+    dialog(`MusicFlow Play ${v} is available`, `<p class="muted" style="margin:0;white-space:pre-wrap;max-height:40vh;overflow:auto">${esc(notes || "A new version is ready.")}</p>`, "Install", () => { Upd.install(); });
+  },
+  button(t) { const b = $("#u-btn"); if (b) { b.textContent = t; b.classList.toggle("primary", t !== "Check for updates"); } },
+  install() {
+    if (this.ready) { this.ready = ""; this.state("Opening the installer… Confirm “Install”."); native("installDownloadedUpdate"); return; }
+    if (!this.info) return this.check(false);
+    if (NATIVE) { this.state("Downloading the update… A notification says when it is ready."); native("installUpdate", this.info.url); }
+    else { window.open(this.info.url, "_blank"); this.state("The new MusicFlowPlay.exe is downloading: close this one, then open the new one."); }
+  },
+};
+window.MFP_updateProgress = p => Upd.state(p === -2 ? "Allow MusicFlow Play to install apps, then come back: the installation continues."
+  : p >= 100 ? "Opening the installer… Confirm “Install”." : `Downloading the update… ${p >= 0 ? p + "%" : ""}`);
+window.MFP_updateError = m => Upd.state(`Update failed: ${m}. Try again.`);
+
 function render() {
   const main = $("#main"), r = route();
   if (r.name === "download" && TOKEN) { showMusicFlow(true); for (const n of $$("[data-r]")) n.classList.toggle("active", n.dataset.r === "download"); return; }
   showMusicFlow(false);
-  for (const n of $$("[data-r]")) n.classList.toggle("active", n.dataset.r === r.name || (r.name === "artist" && n.dataset.r === "artists") || (r.name === "album" && n.dataset.r === "albums") || (r.name === "playlist" && n.dataset.r === "playlists"));
+  for (const n of $$("[data-r]")) n.classList.toggle("active", n.dataset.r === r.name || (r.name === "artist" && n.dataset.r === "artists") || (r.name === "album" && n.dataset.r === "albums") || (r.name === "playlist" && n.dataset.r === "playlists") || (r.name === "folder" && n.dataset.r === "folders"));
   if (!TOKEN) { main.innerHTML = `<div class="empty">${ico("gear")}Open the player with the link shown by the server<br>(it ends with <code>?t=…</code>).</div>`; return; }
   if (L.error && !L.loaded) { main.innerHTML = `<div class="empty">${ico("close")}${esc(L.error)}<br><button class="btn" onclick="L.error=null;L.tries=0;loadLibrary()" style="margin-top:12px">Try again</button></div>`; return; }
   if (!L.loaded) { main.innerHTML = `<div class="empty">${NATIVE ? "Starting MusicFlow Play…" : "Loading…"}<div class="progress-line"><div></div></div></div>`; return; }
@@ -1242,6 +1341,27 @@ function render() {
 }
 
 const VIEWS = {
+  folders(main) { VIEWS.folder(main, ""); },
+  folder(main, key) {
+    if (!L.list.length) { main.innerHTML = emptyLibrary(); return; }
+    let f = L.folders.get(key || "");
+    if (!f) { main.innerHTML = `<div class="empty">${ico("folder")}Folder not found.</div>`; return; }
+    if (!key) while (f.kids.size === 1 && !f.tracks.length) f = [...f.kids.values()][0];
+    const kids = [...f.kids.values()].sort((a, b) => cmpName(a.name, b.name));
+    const files = f.tracks.slice().sort((a, b) => (a.track_no || 999) - (b.track_no || 999) || cmpName(a.title, b.title));
+    const all = f.all.slice().sort((a, b) => cmpName(a.path, b.path)), ids = all.map(t => t.id);
+    const trail = []; for (let n = f.parent; n && n.key; n = n.parent) trail.unshift(n);
+    main.innerHTML = `<div class="head"><div class="art">${f.cover ? artHtml(f.cover) : ico("folder")}</div><div class="grow">
+      <div class="sub crumbs">${key ? `<a href="#folders">Folders</a>` + trail.map(n => ` › <a href="#folder/${encodeURIComponent(n.key)}">${esc(n.name)}</a>`).join("") : "Folders"}</div>
+      <h1>${esc(key ? f.name : (L.folders.get("").kids.size > 1 ? "Folders" : f.name))}</h1>
+      <div class="sub">${[kids.length ? plural(kids.length, "folder") : "", plural(all.length, "song"), totalTime(all)].filter(Boolean).join(" · ")}</div></div></div>
+      <div class="actions"><button class="btn primary" id="a-play">${ico("play")} Play</button><button class="btn" id="a-shuf">${ico("shuffle")} Shuffle</button><button class="btn" id="a-more">${ico("more")}</button></div>
+      ${kids.length ? folderCards(kids) : ""}${files.length ? `${kids.length ? `<h2 class="sec">Songs in this folder</h2>` : ""}<div id="list"></div>` : ""}`;
+    $("#a-play").onclick = () => Player.playList(ids, 0, false);
+    $("#a-shuf").onclick = () => Player.playList(ids, 0, true);
+    $("#a-more").onclick = e => listMenu(e.currentTarget, ids);
+    if (files.length) mountRows($("#list"), files, {list: files});
+  },
   songs(main) {
     if (!L.list.length) { main.innerHTML = emptyLibrary(); return; }
     const by = store.get("sort", "title"), list = sortedSongs();
@@ -1339,6 +1459,9 @@ const VIEWS = {
     main.innerHTML = `<div class="head"><div class="grow"><h1>Settings</h1><div class="sub">MusicFlow Play ${esc(st.version)}</div></div></div>
       <div class="set"><h3>Theme</h3><p>The same themes as MusicFlow.</p><div id="themes">${themeChoices()}</div>
         <div style="display:flex;align-items:center;gap:10px;margin-top:14px"><span>Text size</span><select id="f-zoom">${[["0.9", "Small"], ["1", "Normal"], ["1.12", "Large"], ["1.25", "Very large"]].map(([v, n]) => `<option value="${v}"${(localStorage.getItem("mfp.textsize") || "1") === v ? " selected" : ""}>${n}</option>`).join("")}</select></div></div>
+      ${Upd.usable() ? `<div class="set"><h3>Updates</h3><p id="u-state">MusicFlow Play ${esc(st.version)}</p>
+        <button class="btn" id="u-btn">Check for updates</button>
+        <label class="chk"><input type="checkbox" id="u-auto"${Upd.on() ? " checked" : ""}> Check for new versions and offer them automatically</label></div>` : ""}
       <div class="set"><h3>Gestures (phone)</h3><p style="margin:0">Mini player: swipe up to open, left/right for next/previous · Cover: swipe left/right for next/previous, swipe up or double tap for lyrics, one tap for the next song, swipe down to close</p></div>
       <div class="set"><h3>Music folders</h3><p>Songs in these folders and their subfolders are shown in the library. Files are never changed, except when you choose “Save into the file” for lyrics.</p>
         <div id="folders">${st.folders.map((f, k) => `<div class="folder">${ico("folder")}<span>${esc(f)}</span><button class="rb iconbtn" data-rm="${k}" title="Remove">${ico("close")}</button></div>`).join("") || `<p>No folder.</p>`}</div>
@@ -1348,6 +1471,13 @@ const VIEWS = {
         <button class="btn" id="f-scan">${ico("refresh")} Read the folders again</button></div>
       ${NATIVE ? "" : `<div class="set"><h3>Listen on your phone</h3><p>${st.lan ? "The player is open to your Wi-Fi. Open the link printed in the server window on your phone (same Wi-Fi) and add it to the home screen. Controls stay on the lock screen and the music keeps playing in the background." : "Start the server with <code>run_lan.bat</code> (or <code>python server/app.py --lan</code>), then open the link it prints on your phone, on the same Wi-Fi."}</p></div>
       <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`}`;
+    foldSections(main);
+    const ub = $("#u-btn");
+    if (ub) {
+      ub.onclick = () => Upd.install();
+      $("#u-auto").onchange = e => { try { localStorage.setItem("mfp.updatesOff", e.target.checked ? "0" : "1"); } catch {} if (e.target.checked) Upd.check(false); };
+      if (Upd.info) { Upd.button(`Update to ${Upd.info.v}`); Upd.state(`Version ${Upd.info.v} is available (you have ${st.version}).`); }
+    }
     const save = async folders => { try { await api("folders", {folders}); toast("Reading the folders…"); L.scan.running = true; setTimeout(() => loadLibrary(true), 800); render(); } catch (e) { toast(e.message); } };
     for (const b of $$("[data-rm]")) b.onclick = () => save(st.folders.filter((_, k) => k !== +b.dataset.rm));
     $("#f-add").onclick = () => { const v = $("#f-new").value.trim(); if (v) save([...st.folders, v]); };
@@ -1374,10 +1504,12 @@ function renderSearch(main, q) {
   const songs = L.list.filter(t => hit(t._q)).sort((a, b) => (b._title.startsWith(words[0]) - a._title.startsWith(words[0])) || a.title.localeCompare(b.title));
   const arts = [...L.artists.values()].filter(a => hit(a.key)).slice(0, 12);
   const als = [...L.albums.values()].filter(al => al.name !== UNKNOWN_ALBUM && hit(norm(al.name + " " + al.artist))).slice(0, 12);
-  if (!songs.length && !arts.length && !als.length) { main.innerHTML = `<div class="empty">${ico("search")}Nothing found for “${esc(q)}”.</div>`; return; }
+  const fols = [...(L.folders || new Map()).values()].filter(n => n.key && hit(norm(n.name))).slice(0, 12);
+  if (!songs.length && !arts.length && !als.length && !fols.length) { main.innerHTML = `<div class="empty">${ico("search")}Nothing found for “${esc(q)}”.</div>`; return; }
   main.innerHTML = `<div class="head"><div class="grow"><h1>“${esc(q)}”</h1><div class="sub">${plural(songs.length, "song")}</div></div></div>
     ${arts.length ? `<h2 class="sec">Artists</h2>` + cardsHtml(arts.map(a => ({go: "artist/" + encodeURIComponent(a.key), cover: a.cover, icon: "person", name: a.name, sub: plural(a.tracks.length, "song")})), true) : ""}
     ${als.length ? `<h2 class="sec">Albums</h2>` + cardsHtml(als.map(al => ({go: "album/" + encodeURIComponent(al.key), cover: al.cover, icon: "album", name: al.name, sub: al.artist}))) : ""}
+    ${fols.length ? `<h2 class="sec">Folders</h2>` + folderCards(fols) : ""}
     ${songs.length ? `<h2 class="sec">Songs</h2><div id="list"></div>` : ""}`;
   if (songs.length) mountRows($("#list"), songs, {list: songs});
 }
