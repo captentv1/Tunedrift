@@ -130,3 +130,20 @@ def test_rescan_uses_cache_and_sees_changes(client, tmp_path):
 def test_folders_must_exist(client, tmp_path):
     r = client.post("/api/folders", headers=client.h, json={"folders": [str(tmp_path / "nope")]})
     assert r.status_code == 404
+
+
+def test_browse_lists_subfolders(client):
+    music = Path(client.mod.settings.data["folders"][0])
+    roots = client.get("/api/browse", headers=client.h).get_json()
+    assert roots["folders"] and roots["parent"] is None
+    d = client.get("/api/browse", headers=client.h, query_string={"path": str(music)}).get_json()
+    assert [f["name"] for f in d["folders"]] == ["Album A"] and d["parent"] == str(music.parent)
+    assert client.get("/api/browse", headers=client.h, query_string={"path": str(music / "nope")}).status_code == 404
+
+
+def test_app_mode_keeps_token_out_of_the_page(client):
+    client.mod.CONFIG["token_in_page"] = False
+    try:
+        assert client.mod.CONFIG["token"] not in client.get("/", headers={"Host": "127.0.0.1:5091"}).get_data(as_text=True)
+    finally:
+        client.mod.CONFIG["token_in_page"] = True

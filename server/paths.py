@@ -4,9 +4,10 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
 CORE_DIR = ROOT / "musicflow" / "core"
-WEB_DIR = ROOT / "web"
+WEB_DIR = ROOT / "web" if (ROOT / "web" / "index.html").is_file() else HERE
 
 
 def data_dir() -> Path:
@@ -22,7 +23,11 @@ def data_dir() -> Path:
 
 
 def use_core() -> None:
-    if not (CORE_DIR / "library.py").is_file():
+    if (CORE_DIR / "library.py").is_file():
+        if str(CORE_DIR) not in sys.path:
+            sys.path.insert(0, str(CORE_DIR))
+        return
+    try:
+        import library  # noqa: F401  (Android: core/ is packed next to the server modules)
+    except ImportError:
         sys.exit("musicflow/core is missing: run  git submodule update --init")
-    if str(CORE_DIR) not in sys.path:
-        sys.path.insert(0, str(CORE_DIR))

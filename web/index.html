@@ -363,7 +363,9 @@ const UNKNOWN_ARTIST = "Unknown artist", UNKNOWN_ALBUM = "Unknown album";
 (function token() {
   const u = new URL(location.href), t = u.searchParams.get("t");
   if (t) { store.set("token", t); u.searchParams.delete("t"); history.replaceState(null, "", u.pathname + u.search + u.hash); }
-  window.TOKEN = window.MFP_TOKEN || store.get("token", "");
+  let fromApp = "";
+  try { fromApp = window.MFPNative ? MFPNative.token() : ""; } catch {}
+  window.TOKEN = window.MFP_TOKEN || fromApp || store.get("token", "");
 })();
 
 async function api(path, body, method) {
@@ -378,11 +380,24 @@ async function api(path, body, method) {
 const audioUrl = id => `/api/audio/${id}?t=${encodeURIComponent(TOKEN)}`;
 const coverUrl = id => `/api/cover/${id}?t=${encodeURIComponent(TOKEN)}`;
 
+const NATIVE = window.MFPNative || null;
+const native = (fn, ...args) => { if (NATIVE) try { NATIVE[fn](...args); } catch {} };
+function nativeState() { native("playback", !audio.paused, Math.round((audio.currentTime || 0) * 1000), Math.round((isFinite(audio.duration) ? audio.duration : 0) * 1000)); }
+window.MFP_cmd = (c, v) => {
+  if (c === "play") { if (Player.current()) audio.play().catch(() => {}); else Player.toggle(); }
+  else if (c === "pause") audio.pause();
+  else if (c === "toggle") Player.toggle();
+  else if (c === "next") Player.next(false);
+  else if (c === "prev") Player.prev();
+  else if (c === "seek") { audio.currentTime = Math.max(0, v / 1000); updateTime(true); nativeState(); }
+};
+window.MFP_rescan = async () => { try { await api("scan", {}); } catch {} L.scan.running = true; setTimeout(() => loadLibrary(true), 700); if (route().name === "settings") setTimeout(render, 900); };
+
 let toastTimer;
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2600); }
 
 /* ---------- Library ---------- */
-const L = {tracks: new Map(), list: [], artists: new Map(), albums: new Map(), favorites: [], playlists: [], loaded: false, scan: {}};
+const L = {tracks: new Map(), list: [], artists: new Map(), albums: new Map(), favorites: [], playlists: [], loaded: false, scan: {}, tries: 0};
 
 function albumKey(t) { return norm(t.album || UNKNOWN_ALBUM) + "\u0001" + norm(t.album ? t.album_artist : ""); }
 
@@ -426,6 +441,7 @@ async function loadLibrary(quiet) {
     updateNow();
     if (L.scan.running) setTimeout(() => loadLibrary(true), 1500);
   } catch (e) {
+    if (e instanceof TypeError && !L.loaded && ++L.tries < 80) { setTimeout(() => loadLibrary(quiet), 500); return; }
     L.error = e.message;
     if (!quiet) render();
   }
@@ -563,9 +579,11 @@ audio.addEventListener("loadedmetadata", () => {
   if (Player.pendingSeek) { try { audio.currentTime = Math.min(Player.pendingSeek, Math.max(0, audio.duration - 1)); } catch {} Player.pendingSeek = 0; }
   updateTime(true);
 });
-audio.addEventListener("playing", () => { Player.errors = 0; });
-audio.addEventListener("play", () => { document.body.classList.add("is-playing"); syncPlayButtons(); });
-audio.addEventListener("pause", () => { document.body.classList.remove("is-playing"); syncPlayButtons(); store.set("position", audio.currentTime); });
+audio.addEventListener("playing", () => { Player.errors = 0; nativeState(); });
+audio.addEventListener("seeked", nativeState);
+audio.addEventListener("durationchange", nativeState);
+audio.addEventListener("play", () => { document.body.classList.add("is-playing"); syncPlayButtons(); nativeState(); });
+audio.addEventListener("pause", () => { document.body.classList.remove("is-playing"); syncPlayButtons(); store.set("position", audio.currentTime); nativeState(); });
 audio.addEventListener("ended", () => Player.next(true));
 audio.addEventListener("timeupdate", () => updateTime());
 audio.addEventListener("error", () => {
@@ -645,6 +663,8 @@ function updateNow() {
   setArt($("#bar-art"), t); setArt($("#np-art"), t);
   $("#np .bgblur").style.backgroundImage = t && t.cover ? `url("${coverUrl(t.id)}")` : "none";
   document.title = t ? `${t.title} · ${t.artist || UNKNOWN_ARTIST}` : "MusicFlow Play";
+  if (t) native("nowPlaying", t.title, t.artist || UNKNOWN_ARTIST, t.album || "", t.cover ? new URL(coverUrl(t.id), location.href).href : "", (t.length_s || 0) * 1000);
+  else native("stop");
   if ("mediaSession" in navigator) {
     navigator.mediaSession.metadata = t ? new MediaMetadata({title: t.title, artist: t.artist || UNKNOWN_ARTIST, album: t.album || "",
       artwork: t.cover ? [{src: new URL(coverUrl(t.id), location.href).href, sizes: "512x512"}] : [{src: new URL("icon.svg", location.href).href, sizes: "512x512", type: "image/svg+xml"}]}) : null;
@@ -812,6 +832,23 @@ function askName(title, value, okLabel, cb) {
     const v = d.querySelector("input").value.trim(); if (!v) return false; await cb(v);
   });
 }
+function browseFolder(cb) {
+  let current = "";
+  dialog("Choose a music folder", `<div id="br-path" class="muted" style="word-break:break-all;margin-bottom:8px"></div><div id="br-list" class="rows" style="max-height:46vh;overflow:auto"></div>`, "Add this folder", () => { if (!current) return false; cb(current); });
+  const show = async path => {
+    const list = $("#br-list"); if (!list) return;
+    try {
+      const d = await api("browse?path=" + encodeURIComponent(path));
+      current = d.path;
+      $("#br-path").textContent = d.path || "Pick a place";
+      const up = d.parent !== null && d.parent !== undefined ? `<div class="row" data-p="${esc(d.parent)}">${ico("up")}<div class="txt"><div class="t1">Back</div></div></div>` : "";
+      list.innerHTML = up + (d.folders.map(f => `<div class="row" data-p="${esc(f.path)}">${ico("folder")}<div class="txt"><div class="t1">${esc(f.name)}</div></div></div>`).join("") || `<div class="empty" style="padding:20px">No subfolder here.</div>`);
+      list.scrollTop = 0;
+    } catch (e) { toast(e.message); }
+  };
+  $("#br-list").onclick = e => { const r = e.target.closest("[data-p]"); if (r) show(r.dataset.p); };
+  show("");
+}
 async function newPlaylist(ids) {
   askName("New playlist", "", "Create", async name => {
     try { const p = (await api("playlists", {name, tracks: ids || []})).playlist; L.playlists.push(p); toast(`Playlist “${p.name}” created`); render(); }
@@ -927,8 +964,8 @@ function render() {
   const main = $("#main"), r = route();
   for (const n of $$("[data-r]")) n.classList.toggle("active", n.dataset.r === r.name || (r.name === "artist" && n.dataset.r === "artists") || (r.name === "album" && n.dataset.r === "albums") || (r.name === "playlist" && n.dataset.r === "playlists"));
   if (!TOKEN) { main.innerHTML = `<div class="empty">${ico("gear")}Open the player with the link shown by the server<br>(it ends with <code>?t=…</code>).</div>`; return; }
-  if (L.error && !L.loaded) { main.innerHTML = `<div class="empty">${ico("close")}${esc(L.error)}<br><button class="btn" onclick="L.error=null;loadLibrary()" style="margin-top:12px">Try again</button></div>`; return; }
-  if (!L.loaded) { main.innerHTML = `<div class="empty">Loading…</div>`; return; }
+  if (L.error && !L.loaded) { main.innerHTML = `<div class="empty">${ico("close")}${esc(L.error)}<br><button class="btn" onclick="L.error=null;L.tries=0;loadLibrary()" style="margin-top:12px">Try again</button></div>`; return; }
+  if (!L.loaded) { main.innerHTML = `<div class="empty">${NATIVE ? "Starting MusicFlow Play…" : "Loading…"}<div class="progress-line"><div></div></div></div>`; return; }
   const q = $("#q").value.trim();
   if (q && r.name !== "settings") return renderSearch(main, q);
   (VIEWS[r.name] || VIEWS.songs)(main, r.arg);
@@ -1032,16 +1069,18 @@ const VIEWS = {
     main.innerHTML = `<div class="head"><div class="grow"><h1>Settings</h1><div class="sub">MusicFlow Play ${esc(st.version)}</div></div></div>
       <div class="set"><h3>Music folders</h3><p>Songs in these folders and their subfolders are shown in the library. Files are never changed, except when you choose “Save into the file” for lyrics.</p>
         <div id="folders">${st.folders.map((f, k) => `<div class="folder">${ico("folder")}<span>${esc(f)}</span><button class="rb iconbtn" data-rm="${k}" title="Remove">${ico("close")}</button></div>`).join("") || `<p>No folder.</p>`}</div>
-        <div class="addrow"><input class="text" id="f-new" placeholder="Folder path, e.g. C:\\Users\\Me\\Music">${st.local ? `<button class="btn" id="f-pick">${ico("folder")} Browse</button>` : ""}<button class="btn primary" id="f-add">Add</button></div></div>
+        <div class="addrow"><input class="text" id="f-new" placeholder="Folder path"><button class="btn" id="f-pick">${ico("folder")} Browse</button><button class="btn primary" id="f-add">Add</button></div></div>
+      ${NATIVE && !NATIVE.hasAllFiles() ? `<div class="set"><h3>Lyrics files</h3><p>Android only shows music files to the player. To read the synced lyrics (<code>.lrc</code>) saved next to your songs, and to save lyrics into a file, allow access to all files.</p><button class="btn" id="f-all">Allow access to all files</button></div>` : ""}
       <div class="set"><h3>Library</h3><p>${plural(st.count, "song")}${st.scan.running ? ` · reading… ${st.scan.found} found` : ""}${st.scan.error ? ` · ${esc(st.scan.error)}` : ""}</p>
         <button class="btn" id="f-scan">${ico("refresh")} Read the folders again</button></div>
-      <div class="set"><h3>Listen on your phone</h3><p>${st.lan ? "The player is open to your Wi-Fi. Open the link printed in the server window on your phone (same Wi-Fi) and add it to the home screen. Controls stay on the lock screen and the music keeps playing in the background." : "Start the server with <code>run_lan.bat</code> (or <code>python server/app.py --lan</code>), then open the link it prints on your phone, on the same Wi-Fi."}</p></div>
-      <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`;
+      ${NATIVE ? "" : `<div class="set"><h3>Listen on your phone</h3><p>${st.lan ? "The player is open to your Wi-Fi. Open the link printed in the server window on your phone (same Wi-Fi) and add it to the home screen. Controls stay on the lock screen and the music keeps playing in the background." : "Start the server with <code>run_lan.bat</code> (or <code>python server/app.py --lan</code>), then open the link it prints on your phone, on the same Wi-Fi."}</p></div>
+      <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`}`;
     const save = async folders => { try { await api("folders", {folders}); toast("Reading the folders…"); L.scan.running = true; setTimeout(() => loadLibrary(true), 800); render(); } catch (e) { toast(e.message); } };
     for (const b of $$("[data-rm]")) b.onclick = () => save(st.folders.filter((_, k) => k !== +b.dataset.rm));
     $("#f-add").onclick = () => { const v = $("#f-new").value.trim(); if (v) save([...st.folders, v]); };
     $("#f-new").onkeydown = e => { if (e.key === "Enter") $("#f-add").click(); };
-    const pick = $("#f-pick"); if (pick) pick.onclick = async () => { try { const d = await api("choose-folder", {}); if (d.folder) save([...st.folders, d.folder]); } catch (e) { toast(e.message); } };
+    $("#f-pick").onclick = () => browseFolder(f => save([...st.folders, f]));
+    const all = $("#f-all"); if (all) all.onclick = () => native("requestAllFiles");
     $("#f-scan").onclick = async () => { try { await api("scan", {}); toast("Reading the folders…"); setTimeout(() => loadLibrary(true), 800); setTimeout(render, 900); } catch (e) { toast(e.message); } };
   },
 };

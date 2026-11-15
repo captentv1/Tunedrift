@@ -4,6 +4,7 @@ import argparse
 import hmac
 import io
 import mimetypes
+import os
 import secrets
 import socket
 import sys
@@ -22,19 +23,20 @@ from collections_store import Collections, JsonStore
 from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_synced
 
 PORT = 5091
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 DATA_DIR = paths.data_dir()
-DEFAULT_FOLDER = Path.home() / "Music"
+DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
+BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
 _AUDIO_TYPES = {".mp3": "audio/mpeg", ".flac": "audio/flac", ".wav": "audio/wav", ".m4a": "audio/mp4",
                 ".mp4": "audio/mp4", ".opus": "audio/ogg", ".ogg": "audio/ogg", ".webm": "audio/webm"}
 
 app = Flask(__name__, static_folder=None)
-settings = JsonStore(DATA_DIR / "settings.json", {"folders": [str(DEFAULT_FOLDER)], "lan_token": ""})
+settings = JsonStore(DATA_DIR / "settings.json", {"folders": list(DEFAULT_FOLDERS), "lan_token": ""})
 index = LibraryIndex(DATA_DIR / "library-index.json")
 collections = Collections(DATA_DIR / "collections.json")
 lyrics_cache = JsonStore(DATA_DIR / "lyrics-online.json", {})
 
-CONFIG = {"lan": False, "token": secrets.token_urlsafe(32)}
+CONFIG = {"lan": False, "token": secrets.token_urlsafe(32), "token_in_page": True}
 _LOCAL_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 
 
@@ -66,7 +68,7 @@ def _security_headers(resp):
 def page():
     html = (paths.WEB_DIR / "index.html").read_text(encoding="utf-8")
     # Security: the token is written into the page only for this computer; a phone gets it from the ?t= link.
-    if _is_local_request():
+    if CONFIG["token_in_page"] and _is_local_request():
         html = html.replace("<head>", f"<head><script>window.MFP_TOKEN='{CONFIG['token']}'</script>", 1)
     resp = app.response_class(html, mimetype="text/html")
     resp.headers["Cache-Control"] = "no-store"
@@ -107,28 +109,31 @@ def api_folders():
     return jsonify({"folders": settings.data["folders"]})
 
 
-@app.route("/api/choose-folder", methods=["POST"])
-def api_choose_folder():
-    if not _is_local_request():
-        return jsonify({"error": "Choose folders on the computer that runs the player."}), 403
-    result = {"folder": None}
+def _roots() -> list[str]:
+    if BROWSE_ROOTS:
+        return BROWSE_ROOTS
+    if os.name == "nt":
+        return [f"{c}:\\" for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if Path(f"{c}:\\").exists()]
+    return list(dict.fromkeys([str(Path.home()), "/"]))
 
-    def _pick():
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            result["folder"] = filedialog.askdirectory(title="Choose a music folder") or None
-            root.destroy()
-        except Exception:
-            result["folder"] = None
 
-    t = threading.Thread(target=_pick)
-    t.start()
-    t.join(timeout=120)
-    return jsonify(result)
+@app.route("/api/browse")
+def api_browse():
+    wanted = (request.args.get("path") or "").strip()
+    if not wanted:
+        return jsonify({"path": "", "parent": None, "folders": [{"name": r, "path": r} for r in _roots()]})
+    current = Path(wanted).expanduser()
+    if not current.is_dir():
+        return jsonify({"error": "Folder not found."}), 404
+    folders = []
+    try:
+        for d in sorted(current.iterdir(), key=lambda x: x.name.lower()):
+            if d.is_dir() and not d.name.startswith((".", "$")):
+                folders.append({"name": d.name, "path": str(d)})
+    except OSError as exc:
+        return jsonify({"error": f"This folder can't be opened: {exc.strerror or exc}"}), 403
+    parent = "" if str(current) in _roots() or current.parent == current else str(current.parent)
+    return jsonify({"path": str(current), "parent": parent, "folders": folders[:500]})
 
 
 @app.route("/api/scan", methods=["POST"])
