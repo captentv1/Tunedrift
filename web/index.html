@@ -750,6 +750,7 @@ async function loadLibrary(quiet) {
   try {
     const [d, c, st] = await Promise.all([api("tracks"), api("collections"), api("state").catch(() => ({}))]);
     mfState(st);
+    if (!mfUrl && ["downloading", "installed"].includes((st.module || {}).state)) mfWatch();
     L.roots = st.folders || L.roots || [];
     if (st.version && !Upd.version) { Upd.version = st.version; if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000); }
     L.tracks = new Map(d.tracks.map(t => [t.id, t]));
@@ -1454,7 +1455,7 @@ function openSection(name) { try { const o = JSON.parse(localStorage.getItem("mf
 function moduleView(box, m) {
   clearTimeout(modTimer);
   if (!box || !box.isConnected) return;
-  const st = (m || {}).state || "", busy = st === "downloading" || st === "installed";
+  const st = (m || {}).state || "";
   let html;
   if (st === "bundled") html = `<p>Search and download come from MusicFlow. Install its packages (<code>pip install -r musicflow/desktop/requirements.txt</code>), then restart the player.</p>`;
   else if (st === "downloading") html = `<p>Installing MusicFlow… ${m.pct >= 0 ? m.pct + " %" : ""}</p><div class="progress-line"><div style="${m.pct >= 0 ? `width:${m.pct}%;animation:none` : ""}"></div></div>`;
@@ -1465,13 +1466,17 @@ function moduleView(box, m) {
     <button class="btn primary" id="mod-install">${ico("download")} Install MusicFlow</button>`;
   box.innerHTML = html;
   const b = $("#mod-install");
-  if (b) b.onclick = async () => { b.disabled = true; try { moduleView(box, await api("musicflow/install", {})); } catch (e) { toast(e.message); b.disabled = false; } };
-  if (busy) modTimer = setTimeout(async () => {
-    let s2 = {}; try { s2 = await api("state"); } catch {}
-    mfState(s2);
-    if (mfUrl) { toast("MusicFlow is installed: online search, downloads and the Download tab are ready."); if (route().name === "settings") render(); }
-    else moduleView(box, s2.module);
-  }, 1000);
+  if (b) b.onclick = async () => { b.disabled = true; try { moduleView(box, await api("musicflow/install", {})); mfWatch(); } catch (e) { toast(e.message); b.disabled = false; } };
+}
+// Follows an installation (from Settings, or after an app update) until MusicFlow runs, whatever the open view.
+async function mfWatch() {
+  clearTimeout(modTimer);
+  let s2 = {}; try { s2 = await api("state"); } catch {}
+  mfState(s2);
+  if (mfUrl) { toast("MusicFlow is installed: online search, downloads and the Download tab are ready."); if (route().name === "settings") render(); return; }
+  if ($("#mod-box")) moduleView($("#mod-box"), s2.module);
+  const st = (s2.module || {}).state;
+  if (st === "downloading" || st === "installed") modTimer = setTimeout(mfWatch, 1000);
 }
 $("#mf-back").onclick = () => { if (history.length > 1) history.back(); else go("folders"); };
 function rescanSoon(delay) { clearTimeout(mfRescan); mfRescan = setTimeout(() => window.MFP_rescan(), delay); }
@@ -1734,7 +1739,7 @@ const VIEWS = {
       <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`}`;
     foldSections(main);
     mfState(st);
-    if ($("#mod-box")) moduleView($("#mod-box"), st.module);
+    if ($("#mod-box")) { moduleView($("#mod-box"), st.module); if (["downloading", "installed"].includes((st.module || {}).state)) mfWatch(); }
     if ($("#mf-settings")) $("#mf-settings").onclick = async () => { go("download"); if (await MF.ensure()) setTimeout(() => MF.post({mfpOpen: "settings"}), 300); };
     const ub = $("#u-btn");
     if (ub) {
