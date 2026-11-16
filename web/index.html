@@ -1403,6 +1403,8 @@ function mfState(st) {
   if (!st || !("musicflow" in st)) return;
   mfUrl = st.musicflow || null;
   document.documentElement.classList.toggle("mf-on", !!mfUrl);
+  // Loaded in the background, so online search answers at once and downloads keep going in any tab.
+  if (mfUrl) setTimeout(mfFrameSrc, 1500);
   $("#q").placeholder = mfUrl ? "Search your music, or online with Enter" : "Search songs, artists, albums";
 }
 function mfFrameSrc() {
