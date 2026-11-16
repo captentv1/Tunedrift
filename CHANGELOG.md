@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.0.0 — 2026-11-16 (Android)
+
+MusicFlow and MusicFlow Play become one app, with a new look.
+
+- **One search**: the search box searches your music as you type; press Enter (or pick "Online") to also search
+  online through MusicFlow, and download a song with one tap. Songs you already have say "In your music" and play.
+  Choose where to search (Everywhere, My music, Online) and what (Songs, Artists, Albums, Folders). Offline, only
+  your music is shown. The Download tab shows how many downloads are running.
+- **MusicFlow stays out until you install it**: without it, the app is only the player (no Download tab, no
+  online search). Install it from Settings › Downloads › Install MusicFlow; then online search, downloads, the
+  Download tab and the download settings all appear.
+- **One set of settings**: the theme and the updates of the player apply to the Download tab too (its own theme and
+  update settings are gone); its download settings open from Settings › Downloads.
+
+- **Home**: a new first tab with "Shuffle everything", the song you were listening to, Favorites, Playlists, then
+  rows of albums: recently played, recently added, your folders, your artists, and a few at random.
+- **Library** tab on phones: Folders, Songs, Artists, Albums and Favorites in chips at the top. The tab goes back to
+  the last one you used. The bottom bar is now 4 tabs in a floating pill, as in MusicFlow.
+- **Header**: the MusicFlow wordmark; on phones, search opens from the magnifier.
+- **Covers**: a play button on every album, artist, folder and playlist plays it without opening it. The cover of
+  the open album, artist, folder or playlist tints the background.
+- Bigger headers, rounder cards, a floating player bar, a new Now playing screen, a new side panel on computers.
+
 ## 0.7.2.2 — 2026-11-16 (Test build)
 
 Android only. Fixes updates: every build was signed with a new key, so an update was refused ("signature differs"). From this version on, builds keep the same key. Uninstall the previous version once before installing this one.
