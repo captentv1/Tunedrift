@@ -140,6 +140,13 @@ class LibraryIndex:
         self._save()
         return fresh
 
+    def remove(self, tid: str) -> None:
+        with self.lock:
+            t = self.tracks.pop(tid, None)
+            if t:
+                self._cache.pop(str(Path(t["path"])), None)
+        self._save()
+
     def all(self) -> list[dict]:
         with self.lock:
             return list(self.tracks.values())
