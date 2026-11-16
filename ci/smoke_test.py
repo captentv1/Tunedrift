@@ -36,7 +36,7 @@ def finish(message=None):
     log = adb("logcat", "-d", "-v", "time", check=False)
     (OUT / "logcat.txt").write_text(log, errors="replace")
     (OUT / "media_session.txt").write_text(adb("shell", "dumpsys", "media_session", check=False))
-    for line in [l for l in log.splitlines() if "MFPConsole" in l or "MFP_AUDIO" in l or "AndroidRuntime: FATAL" in l][-80:]:
+    for line in [l for l in log.splitlines() if any(k in l for k in ("MFPConsole", "MFP_AUDIO", "AndroidRuntime", "python.std", "MusicFlowPlay", "chromium"))][-120:]:
         print(line)
     if message:
         raise SystemExit("FAIL: " + message)
