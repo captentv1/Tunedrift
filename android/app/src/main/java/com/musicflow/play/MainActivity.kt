@@ -328,6 +328,7 @@ class MainActivity : AppCompatActivity() {
 
     private var pendingApk: File? = null
     @Volatile private var inForeground = false
+    @Volatile private var backgroundWorking = false
 
     private fun followUpdate() {
         if (updateFollowedByPage) return
@@ -491,6 +492,32 @@ class MainActivity : AppCompatActivity() {
         fun installDownloadedUpdate() {
             if (!isLocalPage) return
             runOnUiThread { installDownloadedApk() }
+        }
+
+        /** Lyrics synchronization keeps running with the screen off or the app closed: a notification shows it. */
+        @JavascriptInterface
+        fun backgroundWork() {
+            if (!isLocalPage || backgroundWorking) return
+            backgroundWorking = true
+            Thread {
+                val service = Intent(this@MainActivity, com.musicflow.app.DownloadForegroundService::class.java)
+                try {
+                    val status = Python.getInstance().getModule("lyrics_sync")["STATUS"]!!
+                    while (status.callAttr("get", "running").toBoolean()) {
+                        val done = status.callAttr("get", "done").toInt()
+                        val total = maxOf(1, status.callAttr("get", "total").toInt())
+                        ContextCompat.startForegroundService(this@MainActivity, Intent(service)
+                            .putExtra(com.musicflow.app.DownloadForegroundService.EXTRA_TEXT, "Lyrics synchronization: $done / $total")
+                            .putExtra(com.musicflow.app.DownloadForegroundService.EXTRA_PERCENT, done * 100 / total))
+                        Thread.sleep(2000)
+                    }
+                } catch (e: Exception) {
+                    Log.e("MFP", "lyrics synchronization notification", e)
+                } finally {
+                    try { stopService(service) } catch (e: Exception) { }
+                    backgroundWorking = false
+                }
+            }.start()
         }
 
         @JavascriptInterface
