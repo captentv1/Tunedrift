@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0.2 — 2026-11-16 (Android)
+
+- **Duplicates**: "Song (feat. B)", "Song [B]" and "Song" by the same main artist now count as the same song (remixes and live versions don't).
+- **Albums fix** (Settings › Albums): finds the album each song belongs to and writes it in the file (album, album artist, track number, year). Only sure matches change; works without MusicFlow and goes on with the app closed.
+- **Less heat and battery**: the glass background no longer moves, and MusicFlow's page loads only when you search online, open the Download tab or download.
+
 ## 1.0.0.1 — 2026-11-16 (Android)
 
 - **Delete a song**: ⋯ › Delete from device removes the file (and its .lrc lyrics) after a confirmation.
