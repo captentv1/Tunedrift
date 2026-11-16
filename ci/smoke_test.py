@@ -210,9 +210,9 @@ subprocess.Popen([sys.executable, "-m", "http.server", "8765", "--directory", os
                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(2)
 js("api('musicflow/install', {url: 'http://10.0.2.2:8765/MusicFlowModule-android.zip'}).then(() => mfWatch()).catch(e => console.log('install: ' + e.message))")
-wait_for("MusicFlow (Download tab) did not open", 300, lambda: js("window.mfReady === true"), every=5)
-wait_for("the Download tab did not appear after installing MusicFlow", 30, lambda: js("document.documentElement.classList.contains('mf-on')"), every=2)
+wait_for("the Download tab did not appear after installing MusicFlow", 300, lambda: js("document.documentElement.classList.contains('mf-on')"), every=5)
 js("location.hash = 'download'")
+wait_for("MusicFlow (Download tab) did not open", 120, lambda: js("window.mfReady === true"), every=3)
 time.sleep(3)
 screenshot("download")
 bad = {k: v for k, v in results.items() if v != "ok"}

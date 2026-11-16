@@ -502,12 +502,17 @@ class MainActivity : AppCompatActivity() {
             Thread {
                 val service = Intent(this@MainActivity, com.musicflow.app.DownloadForegroundService::class.java)
                 try {
-                    val status = Python.getInstance().getModule("lyrics_sync")["STATUS"]!!
-                    while (status.callAttr("get", "running").toBoolean()) {
+                    // Lyrics synchronization and albums fix go on with the app closed (foreground service).
+                    val jobs = listOf("lyrics_sync" to "Lyrics synchronization", "album_fix" to "Albums fix")
+                    while (true) {
+                        val job = jobs.firstOrNull { (m, _) ->
+                            try { Python.getInstance().getModule(m)["STATUS"]!!.callAttr("get", "running").toBoolean() } catch (e: Exception) { false }
+                        } ?: break
+                        val status = Python.getInstance().getModule(job.first)["STATUS"]!!
                         val done = status.callAttr("get", "done").toInt()
                         val total = maxOf(1, status.callAttr("get", "total").toInt())
                         ContextCompat.startForegroundService(this@MainActivity, Intent(service)
-                            .putExtra(com.musicflow.app.DownloadForegroundService.EXTRA_TEXT, "Lyrics synchronization: $done / $total")
+                            .putExtra(com.musicflow.app.DownloadForegroundService.EXTRA_TEXT, "${job.second}: $done / $total")
                             .putExtra(com.musicflow.app.DownloadForegroundService.EXTRA_PERCENT, done * 100 / total))
                         Thread.sleep(2000)
                     }
