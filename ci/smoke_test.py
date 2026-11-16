@@ -36,7 +36,7 @@ def finish(message=None):
     log = adb("logcat", "-d", "-v", "time", check=False)
     (OUT / "logcat.txt").write_text(log, errors="replace")
     (OUT / "media_session.txt").write_text(adb("shell", "dumpsys", "media_session", check=False))
-    for line in [l for l in log.splitlines() if "MFPConsole" in l or "MFP_AUDIO" in l or "AndroidRuntime: FATAL" in l][-80:]:
+    for line in [l for l in log.splitlines() if any(k in l for k in ("MFPConsole", "MFP_AUDIO", "AndroidRuntime", "python.std", "MusicFlowPlay", "chromium"))][-120:]:
         print(line)
     if message:
         raise SystemExit("FAIL: " + message)
@@ -200,7 +200,7 @@ def session_playing():
 
 session = wait_for("Android's media session does not report the song as playing", 60, session_playing)
 
-# Download tab: not in the app; its button installs the module (here from this computer, as the release
+# Download tab: not in the app; Settings › Downloads installs the module (here from this computer, as the release
 # does not exist yet), then MusicFlow's own page opens in its frame.
 js("location.hash = 'download'")
 wait_for("the Download tab does not offer to install it", 30, lambda: js("!!document.querySelector('#mod-install')"), every=2)
@@ -209,8 +209,10 @@ import os
 subprocess.Popen([sys.executable, "-m", "http.server", "8765", "--directory", os.environ.get("MODULE_DIR", "module")],
                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(2)
-js("api('musicflow/install', {url: 'http://10.0.2.2:8765/MusicFlowModule-android.zip'}).then(() => showMusicFlow(true)).catch(e => console.log('install: ' + e.message))")
+js("api('musicflow/install', {url: 'http://10.0.2.2:8765/MusicFlowModule-android.zip'}).then(() => mfWatch()).catch(e => console.log('install: ' + e.message))")
 wait_for("MusicFlow (Download tab) did not open", 300, lambda: js("window.mfReady === true"), every=5)
+wait_for("the Download tab did not appear after installing MusicFlow", 30, lambda: js("document.documentElement.classList.contains('mf-on')"), every=2)
+js("location.hash = 'download'")
 time.sleep(3)
 screenshot("download")
 bad = {k: v for k, v in results.items() if v != "ok"}
