@@ -120,6 +120,7 @@ class PlaybackService : Service() {
 
     override fun onDestroy() {
         running = false
+        PlayerWidget.update(this, null)
         try { unregisterReceiver(noisyReceiver) } catch (e: Exception) { }
         try { wakeLock?.takeIf { it.isHeld }?.release() } catch (e: Exception) { }
         try { session.isActive = false; session.release() } catch (e: Exception) { }
@@ -134,6 +135,7 @@ class PlaybackService : Service() {
 
     private fun refresh() {
         loadCoverIfNeeded()
+        PlayerWidget.update(this, cover)
         val metadata = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
