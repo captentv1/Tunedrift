@@ -20,19 +20,29 @@ PORT = 5090
 URL = f"http://127.0.0.1:{PORT}/?embed=1"
 PLAYER_ORIGINS = "http://127.0.0.1:5091 http://localhost:5091"
 
-# Inside the player MusicFlow looks and works exactly as in its own app (shown full screen by the player);
-# only the theme follows the player, and the player is told when a download ends.
-_HEAD = """<script>(function(){document.documentElement.classList.add('mfp-embed');
-try{var th=new URLSearchParams(location.search).get('theme');if(th!==null)localStorage.setItem('musicflow.theme',th);}catch(e){}
+# Inside the player MusicFlow is part of one app: the theme follows the player, and its own theme and update
+# settings are hidden (the player's apply, and the module is updated with the player). The player's search box
+# searches online through this page (mfpSearch), starts downloads here (mfpDownload) and is told how they go.
+_HEAD = """<style>.mfp-embed #u-card,.mfp-embed #view-accounts>.card:has(#themes){display:none!important}</style>
+<script>(function(){document.documentElement.classList.add('mfp-embed');
+try{var th=new URLSearchParams(location.search).get('theme');if(th!==null)localStorage.setItem('musicflow.theme',th);localStorage.setItem('musicflow.updatesOff','1');}catch(e){}
 // Android app: the token comes in the address fragment (never sent to the server), then is removed from the address.
 var m=/[#&]mft=([\\w-]+)/.exec(location.hash);if(m){window.MF_TOKEN=m[1];history.replaceState(null,'',location.pathname+location.search);}
 var CALLS=['MF_tic','MF_share','MF_voice','onFolderChosen','onScrapeProgress','onScrapeDiag','onScrapeComplete','MF_updateProgress','MF_updateError'];
 addEventListener('message',function(e){if(!/^http:\\/\\/(127\\.0\\.0\\.1|localhost):5091$/.test(e.origin))return;
  var d=e.data||{};if(typeof d.mfpTheme==='string'&&window.applyTheme)applyTheme(d.mfpTheme);
- if(CALLS.indexOf(d.mfCall)>=0&&typeof window[d.mfCall]==='function')window[d.mfCall].apply(null,d.args||[]);});
+ if(CALLS.indexOf(d.mfCall)>=0&&typeof window[d.mfCall]==='function')window[d.mfCall].apply(null,d.args||[]);
+ var to=e.origin;
+ if(typeof d.mfpSearch==='string'){fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:d.mfpSearch,limit:d.limit||12})})
+  .then(function(r){return r.json().then(function(j){parent.postMessage({mfpResults:r.ok?(j.results||[]):[],error:r.ok?'':(j.error||'Search failed'),id:d.id},to);});})
+  .catch(function(x){parent.postMessage({mfpResults:[],error:String((x&&x.message)||x),id:d.id},to);});}
+ if(d.mfpDownload&&window.MF_S){MF_S.downloadOne(d.mfpDownload,document.createElement('button'));}
+ if(d.mfpOpen==='settings'){var g=document.querySelector('.gearBtn');if(g&&!g.classList.contains('active'))g.click();}});
 addEventListener('load',function(){try{parent.postMessage({mfReady:true},'*');}catch(e){}});
-var done=0;setInterval(function(){var n=0;try{n=TASKS.reduce(function(a,t){return a+(t.successes||0);},0);}catch(e){}
- if(n!==done){done=n;try{parent.postMessage({mfDownloaded:n},'*');}catch(e){}}},4000);})();</script>
+var done=0,last='';setInterval(function(){var n=0,act=0;try{n=TASKS.reduce(function(a,t){return a+(t.successes||0);},0);
+ act=TASKS.filter(function(t){return t.taskStatus==='inprogress'||t.taskStatus==='waiting';}).length;}catch(e){}
+ if(n!==done){done=n;try{parent.postMessage({mfDownloaded:n},'*');}catch(e){}}
+ if(String(act)!==last){last=String(act);try{parent.postMessage({mfActive:act},'*');}catch(e){}}},2000);})();</script>
 """
 
 
