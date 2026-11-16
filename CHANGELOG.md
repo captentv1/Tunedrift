@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2.2 — 2026-11-16 (Test build)
+
+Android only. Fixes updates: every build was signed with a new key, so an update was refused ("signature differs"). From this version on, builds keep the same key. Uninstall the previous version once before installing this one.
+
 ## 0.7.2.1 — 2026-11-16 (Test build)
 
 - Android only. Same as 0.7.2, with a new version number: to try the automatic update from 0.7.2.
