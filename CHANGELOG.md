@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0 — 2026-11-16
+
+A new look, between MusicFlow and MusicFlow Play.
+
+- **Home**: a new first tab with "Shuffle everything", the song you were listening to, Favorites, Playlists, then
+  rows of albums: recently played, recently added, your folders, your artists, and a few at random.
+- **Library** tab on phones: Folders, Songs, Artists, Albums and Favorites in chips at the top. The tab goes back to
+  the last one you used. The bottom bar is now 4 tabs in a floating pill, as in MusicFlow.
+- **Header**: the MusicFlow wordmark; on phones, search opens from the magnifier.
+- **Covers**: a play button on every album, artist, folder and playlist plays it without opening it. The cover of
+  the open album, artist, folder or playlist tints the background.
+- Bigger headers, rounder cards, a floating player bar, a new Now playing screen, a new side panel on computers.
+
 ## 0.7.2.2 — 2026-11-16 (Test build)
 
 Android only. Fixes updates: every build was signed with a new key, so an update was refused ("signature differs"). From this version on, builds keep the same key. Uninstall the previous version once before installing this one.
