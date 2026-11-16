@@ -2,7 +2,14 @@
 
 ## 1.0.0.0 — 2026-11-16 (Android)
 
-A new look, between MusicFlow and MusicFlow Play.
+MusicFlow and MusicFlow Play become one app, with a new look.
+
+- **One search**: the search box searches your music as you type; press Enter (or pick "Online") to also search
+  online through MusicFlow, and download a song with one tap. Songs you already have say "In your music" and play.
+  Choose where to search (Everywhere, My music, Online) and what (Songs, Artists, Albums, Folders). Offline, only
+  your music is shown. The Download tab shows how many downloads are running.
+- **One set of settings**: the theme and the updates of the player apply to the Download tab too (its own theme and
+  update settings are gone); its download settings open from Settings › Downloads.
 
 - **Home**: a new first tab with "Shuffle everything", the song you were listening to, Favorites, Playlists, then
   rows of albums: recently played, recently added, your folders, your artists, and a few at random.

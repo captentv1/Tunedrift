@@ -153,6 +153,15 @@
   .empty{padding:56px 20px;text-align:center;color:var(--muted);line-height:1.6}
   .empty > .i{width:52px;height:52px;margin:0 auto 14px;opacity:.5;display:block}
   .more{height:1px}
+  .note{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--r-md);background:var(--panel);border:1px solid var(--border);color:var(--muted);flex-wrap:wrap}
+  .note>span{flex:1;min-width:160px}
+  @media (max-width:760px){.chips.kinds{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-16px;margin-right:-16px;padding:0 16px}.chips.kinds::-webkit-scrollbar{display:none}}
+  .orow .btn{height:36px;padding:0 14px;flex:none}
+  @media (max-width:760px){.orow .btn .hide-s{display:none}.orow .btn{padding:0 11px}}
+  [data-r="download"][data-badge]:not([data-badge=""]){position:relative}
+  [data-r="download"][data-badge]:not([data-badge=""])::after{content:attr(data-badge);position:absolute;top:4px;right:calc(50% - 22px);min-width:17px;height:17px;padding:0 4px;border-radius:9px;
+    background:var(--accent);color:var(--accent-ink);font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .nav[data-r="download"][data-badge]:not([data-badge=""])::after{position:static;margin-left:auto}
 
   /* Home */
   .hello{margin:14px 0 18px}
@@ -248,7 +257,7 @@
   #dialog .actions{justify-content:flex-end;margin:18px 0 0}
   #toast{position:fixed;left:50%;bottom:calc(var(--bar-h) + var(--nav-h) + var(--safe-b) + 22px);transform:translate(-50%,8px);z-index:90;
     background:var(--ink);color:var(--bg);font-weight:600;padding:11px 18px;border-radius:var(--pill);box-shadow:0 10px 30px rgba(0,0,0,.45);
-    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:calc(100vw - 32px);text-align:center}
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;width:max-content;max-width:min(calc(100vw - 32px),520px);text-align:center}
   #toast.show{opacity:1;transform:translate(-50%,0)}
 
   .set{background:var(--panel);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px;margin-bottom:14px}
@@ -458,7 +467,7 @@ try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th =
     <button class="iconbtn" id="search-back" title="Close search" aria-label="Close search"><svg class="i" style="transform:rotate(90deg)"><use href="#i-down"/></svg></button>
     <div id="search">
       <svg class="i"><use href="#i-search"/></svg>
-      <input id="q" type="search" placeholder="Search songs, artists, albums" autocomplete="off" enterkeyhint="search">
+      <input id="q" type="search" placeholder="Search your music, or online with Enter" autocomplete="off" enterkeyhint="search">
       <button id="search-clear" class="hidden" title="Clear" aria-label="Clear search">✕</button>
     </div>
     <button class="iconbtn" id="btn-search" title="Search" aria-label="Search"><svg class="i"><use href="#i-search"/></svg></button>
@@ -1387,6 +1396,35 @@ function emptyLibrary() {
 // so a search or a download keeps going while you browse the library.
 let mfUrl, mfSeen = 0, mfRescan = 0;
 function setHidden(el, on) { el.classList.toggle("hidden", on); }
+function mfFrameSrc() {
+  const frame = $("#mf-frame");
+  if (frame.src || !mfUrl) return;
+  let tok = ""; if (NATIVE && NATIVE.musicflowToken) try { tok = NATIVE.musicflowToken(); } catch {}
+  frame.src = mfUrl + "&theme=" + encodeURIComponent(savedTheme()) + (tok ? "#mft=" + tok : "");
+}
+// One app: the search box searches online and starts downloads through MusicFlow (kept loaded, hidden).
+const MF = {
+  seq: 0, waiting: new Map(), active: 0,
+  async ensure() {
+    if (mfUrl === undefined || mfUrl === null) { try { const st = await api("state"); mfUrl = st.musicflow || null; } catch { mfUrl = null; } }
+    if (!mfUrl) return false;
+    mfFrameSrc();
+    for (let k = 0; k < 60 && !window.mfReady; k++) await new Promise(r => setTimeout(r, 250));
+    return !!window.mfReady;
+  },
+  post(msg) { const fr = $("#mf-frame"); fr.contentWindow.postMessage(msg, new URL(fr.src).origin); },
+  async search(q) {
+    if (!await this.ensure()) throw Object.assign(new Error("The Download tab is not installed."), {noModule: true});
+    const id = ++this.seq;
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { this.waiting.delete(id); reject(new Error("No answer from the online search. Try again.")); }, 45000);
+      this.waiting.set(id, d => { clearTimeout(t); d.error ? reject(new Error(d.error)) : resolve(d.mfpResults || []); });
+      this.post({mfpSearch: q, id, limit: 15});
+    });
+  },
+  download(item) { this.post({mfpDownload: item}); },
+};
+
 async function showMusicFlow(on) {
   const frame = $("#mf-frame"), main = $("#main");
   if (!on) { document.documentElement.classList.remove("mf-full"); if (!frame.classList.contains("hidden")) { setHidden(frame, true); setHidden(main, false); rescanSoon(0); } return false; }
@@ -1395,10 +1433,7 @@ async function showMusicFlow(on) {
   if (!mfUrl) { try { const st = await api("state"); mfUrl = st.musicflow || null; mod = st.module; } catch { mfUrl = null; } }
   if (route().name !== "download") return true;
   if (!mfUrl) { setHidden(frame, true); setHidden(main, false); moduleView(main, mod); return true; }
-  if (!frame.src) {
-    let tok = ""; if (NATIVE && NATIVE.musicflowToken) try { tok = NATIVE.musicflowToken(); } catch {}
-    frame.src = mfUrl + "&theme=" + encodeURIComponent(savedTheme()) + (tok ? "#mft=" + tok : "");
-  }
+  mfFrameSrc();
   setHidden(main, true); setHidden(frame, false); document.documentElement.classList.add("mf-full");
   return true;
 }
@@ -1425,7 +1460,10 @@ function rescanSoon(delay) { clearTimeout(mfRescan); mfRescan = setTimeout(() =>
 window.MFP_toMusicFlow = (fn, args) => { const fr = $("#mf-frame"); if (fr.src) fr.contentWindow.postMessage({mfCall: fn, args: args || []}, new URL(fr.src).origin); };
 window.addEventListener("message", e => {
   if (!mfUrl || e.origin !== new URL(mfUrl).origin) return;
-  if ((e.data || {}).mfReady) window.mfReady = true;
+  const d = e.data || {};
+  if (d.mfReady) window.mfReady = true;
+  if (d.mfpResults && MF.waiting.has(d.id)) { MF.waiting.get(d.id)(d); MF.waiting.delete(d.id); }
+  if (typeof d.mfActive === "number") { MF.active = d.mfActive; for (const b of $$('[data-r="download"]')) b.dataset.badge = d.mfActive || ""; }
   const n = (e.data || {}).mfDownloaded;
   if (typeof n === "number" && n !== mfSeen) { if (n > mfSeen) rescanSoon(3000); mfSeen = n; }
 });
@@ -1434,7 +1472,7 @@ function foldSections(root) {
   for (const d of $$("div.set", root)) {
     const h = d.querySelector("h3"); if (!h) continue;
     const id = h.textContent, det = document.createElement("details"), sum = document.createElement("summary");
-    det.className = "set"; det.open = id in open ? open[id] : !/^(Theme|Updates|Gestures|Keyboard)/.test(id);
+    det.className = "set"; det.open = id in open ? open[id] : !/^(Theme|Updates|Downloads|Gestures|Keyboard)/.test(id);
     sum.append(h); det.append(sum, ...d.childNodes); d.replaceWith(det);
     det.ontoggle = () => { open[id] = det.open; try { localStorage.setItem("mfp.open", JSON.stringify(open)); } catch {} };
   }
@@ -1660,6 +1698,9 @@ const VIEWS = {
       ${Upd.usable() ? `<div class="set"><h3>Updates</h3><p id="u-state">MusicFlow Play ${esc(st.version)}</p>
         <button class="btn" id="u-btn">Check for updates</button>
         <label class="chk"><input type="checkbox" id="u-auto"${Upd.on() ? " checked" : ""}> Check for new versions and offer them automatically</label></div>` : ""}
+      <div class="set"><h3>Downloads</h3><p>Search online from the search box (press Enter) and download with one tap, or open the Download tab.
+        Quality, folder, lyrics and the other download settings are here:</p>
+        <button class="btn" id="mf-settings">${ico("download")} Download settings</button></div>
       <div class="set"><h3>Gestures (phone)</h3><p style="margin:0">Mini player: swipe up to open, left/right for next/previous · Cover: swipe left/right for next/previous, swipe up or double tap for lyrics, one tap for the next song, swipe down to close</p></div>
       <div class="set"><h3>Music folders</h3><p>Songs in these folders and their subfolders are shown in the library. Files are never changed, except when you choose “Save into the file” for lyrics.</p>
         <div id="folders">${st.folders.map((f, k) => `<div class="folder">${ico("folder")}<span>${esc(f)}</span><button class="rb iconbtn" data-rm="${k}" title="Remove">${ico("close")}</button></div>`).join("") || `<p>No folder.</p>`}</div>
@@ -1673,6 +1714,7 @@ const VIEWS = {
       ${NATIVE ? "" : `<div class="set"><h3>Listen on your phone</h3><p>${st.lan ? "The player is open to your Wi-Fi. Open the link printed in the server window on your phone (same Wi-Fi) and add it to the home screen. Controls stay on the lock screen and the music keeps playing in the background." : "Start the server with <code>run_lan.bat</code> (or <code>python server/app.py --lan</code>), then open the link it prints on your phone, on the same Wi-Fi."}</p></div>
       <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`}`;
     foldSections(main);
+    $("#mf-settings").onclick = async () => { go("download"); if (await MF.ensure()) setTimeout(() => MF.post({mfpOpen: "settings"}), 300); };
     const ub = $("#u-btn");
     if (ub) {
       ub.onclick = () => Upd.install();
@@ -1714,25 +1756,76 @@ async function removeFromPlaylist(pid, pos) {
   try { Object.assign(p, (await api("playlists/" + pid, {tracks})).playlist); render(); toast("Removed from the playlist"); } catch (e) { toast(e.message); }
 }
 
+const SRCH = {scope: store.get("sscope", "all"), kind: "all", online: {}, added: new Set()};
+const fmtDur = d => typeof d === "number" ? fmt(d) : String(d || "");
+function localMatch(r) {
+  const tt = norm(r.title || ""), aa = norm(r.uploader || "");
+  return L.list.find(t => t._title === tt && (!aa || norm(t.artist || "").includes(aa.split(" ")[0]))) || null;
+}
+async function searchOnline(q) {
+  q = (q || "").trim(); if (!q || SRCH.scope === "local") return;
+  if (!navigator.onLine) { SRCH.online = {q, error: "You are offline: only your music is shown."}; return render(); }
+  SRCH.online = {q, loading: true}; render();
+  try { SRCH.online = {q, results: await MF.search(q)}; }
+  catch (e) { const m = String(e.message || ""); SRCH.online = {q, noModule: !!e.noModule,
+    error: /proxy|connect|network|resolve|timed out|URLError|getaddrinfo/i.test(m) ? "The online search could not connect. Check the connection, then try again." : m.length > 160 ? m.slice(0, 157) + "…" : m}; }
+  if ($("#q").value.trim() === q) render();
+}
 function renderSearch(main, q) {
   const words = norm(q).split(" ").filter(Boolean);
   const hit = s => words.every(w => s.includes(w));
-  const songs = L.list.filter(t => hit(t._q)).sort((a, b) => (b._title.startsWith(words[0]) - a._title.startsWith(words[0])) || a.title.localeCompare(b.title));
-  const arts = [...L.artists.values()].filter(a => hit(a.key)).slice(0, 12);
-  const als = [...L.albums.values()].filter(al => al.name !== UNKNOWN_ALBUM && hit(norm(al.name + " " + al.artist))).slice(0, 12);
-  const fols = [...(L.folders || new Map()).values()].filter(n => n.key && hit(norm(n.name))).slice(0, 12);
-  if (!songs.length && !arts.length && !als.length && !fols.length) { main.innerHTML = `<div class="empty">${ico("search")}Nothing found for “${esc(q)}”.</div>`; return; }
-  main.innerHTML = `<div class="head"><div class="grow"><h1>“${esc(q)}”</h1><div class="sub">${plural(songs.length, "song")}</div></div></div>
-    ${arts.length ? `<h2 class="sec">Artists</h2>` + cardsHtml(arts.map(a => ({go: "artist/" + encodeURIComponent(a.key), cover: a.cover, icon: "person", name: a.name, sub: plural(a.tracks.length, "song")})), true) : ""}
-    ${als.length ? `<h2 class="sec">Albums</h2>` + cardsHtml(als.map(al => ({go: "album/" + encodeURIComponent(al.key), cover: al.cover, icon: "album", name: al.name, sub: al.artist}))) : ""}
-    ${fols.length ? `<h2 class="sec">Folders</h2>` + folderCards(fols) : ""}
-    ${songs.length ? `<h2 class="sec">Songs</h2><div id="list"></div>` : ""}`;
+  const sc = SRCH.scope, k = SRCH.kind, local = sc !== "online", want = x => local && (k === "all" || k === x);
+  const songs = want("songs") ? L.list.filter(t => hit(t._q)).sort((a, b) => (b._title.startsWith(words[0]) - a._title.startsWith(words[0])) || a.title.localeCompare(b.title)) : [];
+  const arts = want("artists") ? [...L.artists.values()].filter(a => hit(a.key)).slice(0, 12) : [];
+  const als = want("albums") ? [...L.albums.values()].filter(al => al.name !== UNKNOWN_ALBUM && hit(norm(al.name + " " + al.artist))).slice(0, 12) : [];
+  const fols = want("folders") ? [...(L.folders || new Map()).values()].filter(n => n.key && hit(norm(n.name))).slice(0, 12) : [];
+  const nLocal = songs.length + arts.length + als.length + fols.length;
+  const chip = (attr, v, label, on) => `<button class="chip${on ? " active" : ""}" ${attr}="${v}">${label}</button>`;
+  const o = SRCH.online, mine = o.q === q;
+  let online = "";
+  if (sc !== "local") {
+    if (!navigator.onLine) online = `<div class="note">${ico("close")}You are offline: only your music is shown.</div>`;
+    else if (!mine) online = `<button class="btn" id="s-online">${ico("search")} Search online for “${esc(q)}”</button><div class="muted" style="margin-top:8px;font-size:12.5px">Or press Enter.</div>`;
+    else if (o.loading) online = `<div class="muted">Searching online…</div><div class="progress-line"><div></div></div>`;
+    else if (o.noModule) online = `<div class="note">${ico("download")}<span>To search and download online, install the Download tab.</span><button class="btn primary" data-r="download">Install</button></div>`;
+    else if (o.error) online = `<div class="note">${ico("close")}<span>${esc(o.error)}</span><button class="btn" id="s-online">Try again</button></div>`;
+    else if (!o.results.length) online = `<div class="muted">Nothing found online.</div>`;
+    else online = `<div class="rows">${o.results.map((r, i) => { const have = localMatch(r), key = (r.title || "") + "|" + (r.uploader || "");
+      return `<div class="row orow" data-oi="${i}"><div class="art">${r.thumbnail ? `<img loading="lazy" src="${esc(r.thumbnail)}" alt="" onerror="this.remove()">` : ico("note")}</div>
+        <div class="txt"><div class="t1">${esc(r.title || "")}</div><div class="t2">${esc([r.uploader, r.album, fmtDur(r.duration)].filter(Boolean).join(" · "))}</div></div>
+        ${have ? `<button class="btn" data-oplay="${have.id}">${ico("play")} In your music</button>`
+          : SRCH.added.has(key) ? `<button class="btn" data-r="download">${ico("download")} Added</button>`
+          : `<button class="btn primary" data-odl="${i}" title="Download">${ico("download")}<span class="hide-s">Download</span></button>`}</div>`; }).join("")}</div>`;
+  }
+  main.innerHTML = `<div class="head"><div class="grow"><h1>“${esc(q)}”</h1><div class="sub">${local ? plural(songs.length, "song") + " in your music" : "Online"}</div></div></div>
+    <div class="chips">${chip("data-sscope", "all", "Everywhere", sc === "all")}${chip("data-sscope", "local", "My music", sc === "local")}${chip("data-sscope", "online", "Online", sc === "online")}</div>
+    ${local ? `<div class="chips kinds">${[["all", "All"], ["songs", "Songs"], ["artists", "Artists"], ["albums", "Albums"], ["folders", "Folders"]].map(([v, l]) => chip("data-skind", v, l, k === v)).join("")}</div>` : ""}
+    ${local && !nLocal ? `<div class="empty" style="padding:24px">${ico("search")}Nothing in your music for “${esc(q)}”.</div>` : ""}
+    ${arts.length ? `<h2 class="sec">Artists</h2>` + cardsHtml(arts.map(a => ({go: "artist/" + encodeURIComponent(a.key), cover: a.cover, icon: "person", name: a.name, sub: plural(a.tracks.length, "song")})), true).replace('class="grid"', 'class="grid shelf"') : ""}
+    ${als.length ? `<h2 class="sec">Albums</h2>` + cardsHtml(als.map(albumCard)).replace('class="grid"', 'class="grid shelf"') : ""}
+    ${fols.length ? `<h2 class="sec">Folders</h2>` + folderCards(fols).replace('class="grid"', 'class="grid shelf"') : ""}
+    ${songs.length ? `<h2 class="sec">Songs</h2><div id="list"></div>` : ""}
+    ${sc !== "local" ? `<h2 class="sec">Online</h2>${online}` : ""}`;
   if (songs.length) mountRows($("#list"), songs, {list: songs});
+  const so = $("#s-online"); if (so) so.onclick = () => searchOnline(q);
+  if (sc === "online" && !mine && navigator.onLine) searchOnline(q);
 }
+document.addEventListener("click", e => {
+  const s1 = e.target.closest("[data-sscope]"), s2 = e.target.closest("[data-skind]"), dl = e.target.closest("[data-odl]"), pl = e.target.closest("[data-oplay]");
+  if (s1) { SRCH.scope = s1.dataset.sscope; store.set("sscope", SRCH.scope); render(); }
+  else if (s2) { SRCH.kind = s2.dataset.skind; render(); }
+  else if (pl) Player.playList([pl.dataset.oplay], 0, false);
+  else if (dl) {
+    const r = (SRCH.online.results || [])[+dl.dataset.odl]; if (!r) return;
+    MF.download(r); SRCH.added.add((r.title || "") + "|" + (r.uploader || ""));
+    toast(`“${r.title}” is downloading. It will appear in your music when it is done.`); render();
+  }
+});
 let searchTimer;
 function searchUi() { $("#search-clear").classList.toggle("hidden", !$("#q").value); }
 $("#q").addEventListener("input", () => { searchUi(); clearTimeout(searchTimer); searchTimer = setTimeout(() => { render(); $("#main").scrollTop = 0; }, 160); });
-$("#q").addEventListener("keydown", e => { if (e.key === "Escape") { $("#q").value = ""; searchUi(); render(); $("#q").blur(); } if (e.key === "Enter") $("#q").blur(); });
+$("#q").addEventListener("keydown", e => { if (e.key === "Escape") { $("#q").value = ""; searchUi(); render(); $("#q").blur(); }
+  if (e.key === "Enter") { $("#q").blur(); clearTimeout(searchTimer); render(); searchOnline($("#q").value); } });
 $("#search-clear").onclick = () => { $("#q").value = ""; searchUi(); render(); };
 document.addEventListener("click", e => { if (e.target.closest("[data-go]")) { $("#q").value = ""; searchUi(); } }, true);
 
