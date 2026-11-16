@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0.3 — 2026-11-16 (Android)
+
+- **Artist and album pages online** (with MusicFlow installed): "All songs of …" lists the artist's popular songs and all their albums and singles; "The whole album online" lists the full album. Songs you have play, the others download one by one or all at once, with their approximate size.
+
 ## 1.0.0.2 — 2026-11-16 (Android)
 
 - **Duplicates**: "Song (feat. B)", "Song [B]" and "Song" by the same main artist now count as the same song (remixes and live versions don't).

@@ -1501,7 +1501,7 @@ const MF = {
       this.post({mfpSearch: q, id, limit: 15});
     });
   },
-  download(item) { this.post({mfpDownload: item}); },
+  async download(item) { if (await this.ensure()) this.post({mfpDownload: item}); else toast("MusicFlow is not ready. Try again."); },
 };
 
 async function showMusicFlow(on) {
@@ -1713,7 +1713,9 @@ const VIEWS = {
     main.innerHTML = `<div class="head"><div class="art" style="border-radius:50%">${a.cover ? artHtml(a.cover) : ico("person")}</div><div class="grow"><div class="sub">Artist</div><h1>${esc(a.name)}</h1><div class="sub">${plural(songs.length, "song")} · ${totalTime(songs)}</div></div></div>
       <div class="actions"><button class="btn primary" id="a-play">${ico("play")} Play</button><button class="btn" id="a-shuf">${ico("shuffle")} Shuffle</button><button class="btn" id="a-more">${ico("more")}</button></div>
       ${albums.length ? `<h2 class="sec">Albums</h2>` + cardsHtml(albums.map(al => ({go: "album/" + encodeURIComponent(al.key), cover: al.cover, icon: "album", name: al.name, sub: [al.year, plural(al.tracks.length, "song")].filter(Boolean).join(" · ")}))) : ""}
-      <h2 class="sec">Songs</h2><div id="list"></div>`;
+      <h2 class="sec">Songs</h2><div id="list"></div><div id="onl" class="mf-only"><h2 class="sec">Online</h2>
+      <div class="actions" style="margin:0"><button class="btn primary" id="o-songs">${ico("note")} All songs of ${esc(a.name)}</button></div></div>`;
+    $("#o-songs").onclick = () => artistOnline($("#onl"), a.name);
     const ids = songs.map(t => t.id);
     $("#a-play").onclick = () => Player.playList(ids, 0, false);
     $("#a-shuf").onclick = () => Player.playList(ids, 0, true);
@@ -1732,7 +1734,13 @@ const VIEWS = {
     const songs = al.tracks, numbers = al.name !== UNKNOWN_ALBUM && songs.some(t => t.track_no);
     main.innerHTML = `<div class="head"><div class="art">${al.cover ? artHtml(al.cover) : ico("album")}</div><div class="grow"><div class="sub">Album</div><h1>${esc(al.name)}</h1>
       <div class="sub">${al.artist ? `<a href="#artist/${encodeURIComponent(norm(al.artist))}" style="color:var(--ink);text-decoration:none;font-weight:600">${esc(al.artist)}</a> · ` : ""}${[al.year, plural(songs.length, "song"), totalTime(songs)].filter(Boolean).join(" · ")}</div></div></div>
-      <div class="actions"><button class="btn primary" id="a-play">${ico("play")} Play</button><button class="btn" id="a-shuf">${ico("shuffle")} Shuffle</button><button class="btn" id="a-more">${ico("more")}</button></div><div id="list"></div>`;
+      <div class="actions"><button class="btn primary" id="a-play">${ico("play")} Play</button><button class="btn" id="a-shuf">${ico("shuffle")} Shuffle</button><button class="btn" id="a-more">${ico("more")}</button></div><div id="list"></div>
+      ${al.name !== UNKNOWN_ALBUM && al.artist ? `<div id="onl" class="mf-only"><h2 class="sec">Online</h2><button class="btn primary" id="o-alb">${ico("download")} The whole album online</button></div>` : ""}`;
+    if ($("#o-alb")) $("#o-alb").onclick = async () => {
+      const box = $("#onl"); box.innerHTML = `<h2 class="sec">Online</h2><div class="muted">Searching online…</div><div class="progress-line"><div></div></div>`;
+      try { const d = await api(`online/album?artist=${encodeURIComponent(al.artist)}&album=${encodeURIComponent(al.name)}`); box.innerHTML = `<h2 class="sec">The whole album online</h2>` + onlineBlock(d.tracks); }
+      catch (e) { box.innerHTML = `<h2 class="sec">Online</h2><div class="note">${ico("close")}<span>${esc(e.message)}</span></div>`; }
+    };
     const ids = songs.map(t => t.id);
     $("#a-play").onclick = () => Player.playList(ids, 0, false);
     $("#a-shuf").onclick = () => Player.playList(ids, 0, true);
@@ -1885,6 +1893,49 @@ async function searchOnline(q) {
     error: /proxy|connect|network|resolve|timed out|URLError|getaddrinfo/i.test(m) ? "The online search could not connect. Check the connection, then try again." : m.length > 160 ? m.slice(0, 157) + "…" : m}; }
   if ($("#q").value.trim() === q) render();
 }
+// Online songs of an artist or album (MusicFlow installed): what you have plays, the rest downloads.
+const ONL = {items: []};
+const mbOf = d => { const p = String(d || "").split(":").map(Number); const sec = p.length > 1 ? p[0] * 60 + (p[1] || 0) : +d || 0; return sec * 40 / 1024; };
+function onlineBlock(items) {
+  const base = ONL.items.length; ONL.items.push(...items);
+  const miss = items.map((r, i) => base + i).filter(i => !localMatch(ONL.items[i]));
+  const mb = miss.reduce((a, i) => a + mbOf(ONL.items[i].duration), 0);
+  return (miss.length > 1 ? `<button class="btn" data-onlall="${miss.join(",")}" style="margin:0 0 8px">${ico("download")} Download ${miss.length} missing (≈ ${Math.round(mb)} MB)</button>` : "")
+    + `<div class="rows">${items.map((r, i) => { const have = localMatch(r), k = (r.title || "") + "|" + (r.uploader || "");
+    return `<div class="row orow"><div class="art">${r.thumbnail ? `<img loading="lazy" src="${esc(r.thumbnail)}" alt="" onerror="this.remove()">` : ico("note")}</div>
+      <div class="txt"><div class="t1">${esc(r.title || "")}</div><div class="t2">${esc([r.album, r.duration, r.duration ? "≈ " + mbOf(r.duration).toFixed(1) + " MB" : ""].filter(Boolean).join(" · "))}</div></div>
+      ${have ? `<button class="btn" data-oplay="${have.id}">${ico("play")}<span class="hide-s">In your music</span></button>`
+        : SRCH.added.has(k) ? `<button class="btn" data-r="download">${ico("download")}<span class="hide-s">Added</span></button>`
+        : `<button class="btn primary" data-onl="${base + i}" title="Download">${ico("download")}<span class="hide-s">Download</span></button>`}</div>`; }).join("")}</div>`;
+}
+async function artistOnline(box, name) {
+  box.innerHTML = `<h2 class="sec">Online</h2><div class="muted">Searching online…</div><div class="progress-line"><div></div></div>`;
+  try {
+    const d = await api("online/artist?name=" + encodeURIComponent(name));
+    box.innerHTML = `<h2 class="sec">Popular songs online</h2>${onlineBlock(d.top || [])}<h2 class="sec">Albums and singles online</h2>
+      <div class="rows">${(d.albums || []).map(a => `<div><div class="row" data-oalb="${a.id}" style="cursor:pointer"><div class="art">${a.cover_art ? `<img loading="lazy" src="${esc(a.cover_art)}" alt="">` : ico("album")}</div>
+        <div class="txt"><div class="t1">${esc(a.song_title)}</div><div class="t2">${esc([a.type === "single" ? "Single" : a.type === "ep" ? "EP" : "Album", (a.date || "").slice(0, 4)].filter(Boolean).join(" · "))}</div></div>${ico("down")}</div><div class="oalb-t"></div></div>`).join("")}</div>`;
+  } catch (e) { box.innerHTML = `<h2 class="sec">Online</h2><div class="note">${ico("close")}<span>${esc(e.message)}</span><button class="btn" id="o-again">Try again</button></div>`; $("#o-again").onclick = () => artistOnline(box, name); }
+}
+function onlDownload(i, btn) {
+  const r = ONL.items[i]; if (!r) return;
+  MF.download(r); SRCH.added.add((r.title || "") + "|" + (r.uploader || ""));
+  if (btn) { btn.outerHTML = `<button class="btn" data-r="download">${ico("download")}<span class="hide-s">Added</span></button>`; }
+}
+document.addEventListener("click", async e => {
+  const one = e.target.closest("[data-onl]"), all = e.target.closest("[data-onlall]"), alb = e.target.closest("[data-oalb]");
+  if (one) { onlDownload(+one.dataset.onl, one); toast("Downloading. It will appear in your music when it is done."); }
+  else if (all) {
+    const ids = all.dataset.onlall.split(",").map(Number); all.disabled = true;
+    for (const i of ids) onlDownload(i, document.querySelector(`[data-onl="${i}"]`));
+    toast(`${ids.length} songs are downloading. Follow them in the Download tab.`);
+  } else if (alb) {
+    const t = alb.nextElementSibling; if (t.innerHTML) { t.innerHTML = ""; return; }
+    t.innerHTML = `<div class="progress-line"><div></div></div>`;
+    try { t.innerHTML = `<div style="padding:6px 0 12px 12px">${onlineBlock((await api("online/album?id=" + alb.dataset.oalb)).tracks)}</div>`; }
+    catch (err) { t.innerHTML = `<div class="note">${esc(err.message)}</div>`; }
+  }
+});
 function renderSearch(main, q) {
   const words = norm(q).split(" ").filter(Boolean);
   const hit = s => words.every(w => s.includes(w));

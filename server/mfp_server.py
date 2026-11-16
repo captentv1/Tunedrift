@@ -24,7 +24,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.0.0.2"
+VERSION = "1.0.0.3"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -298,6 +298,43 @@ def api_lyrics_sync():
         else:
             lyrics_sync.start(index.all(), _save_synced, _save_lyrics_cache)
     return jsonify(lyrics_sync.STATUS)
+
+
+# Online pages of an artist or album (shown when MusicFlow is installed): their songs on Deezer, to download.
+@app.route("/api/online/artist")
+def api_online_artist():
+    import artists
+    import lyrics as ly
+    name = request.args.get("name", "")
+    try:
+        found = artists.search_artists(name, 5)
+        if not found:
+            return jsonify({"error": "This artist was not found online."}), 404
+        a = next((x for x in found if ly._key(x["name"]) == ly._key(name)), found[0])
+        return jsonify(artists.discography(a["id"]))
+    except Exception as exc:
+        return jsonify({"error": f"Online search failed: {exc}"}), 502
+
+
+@app.route("/api/online/album")
+def api_online_album():
+    """?id=<deezer album id>, or ?artist=&album= to find it."""
+    import urllib.parse
+    import artists
+    import lyrics as ly
+    try:
+        aid = request.args.get("id", "")
+        if not aid:
+            art, alb = request.args.get("artist", ""), request.args.get("album", "")
+            q = f'artist:"{ly._artist(art)}" album:"{alb}"'
+            res = (artists._get("/search/album?" + urllib.parse.urlencode({"q": q, "limit": 10})) or {}).get("data") or []
+            res = [r for r in res if ly._key(r.get("title")) == ly._key(alb)] or res
+            if not res:
+                return jsonify({"error": "This album was not found online."}), 404
+            aid = res[0]["id"]
+        return jsonify({"id": aid, "tracks": artists.album_titles(int(aid))})
+    except Exception as exc:
+        return jsonify({"error": f"Online search failed: {exc}"}), 502
 
 
 @app.route("/api/album-fix", methods=["GET", "POST"])
