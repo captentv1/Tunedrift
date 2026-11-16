@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.2 — 2026-11-16 (Fixes)
+
+- **Lyrics synchronization keeps going in the background** on Android (screen off or app closed),
+  with a notification showing the progress. Downloads from the Download tab already do.
+- The Lyrics synchronization button is now in Settings › Library.
+- Updates: the check through the player's server works on Android (its Python had no certificates).
+
 ## 0.7.1 — 2026-11-16 (Fixes, animations)
 
 - **Fixed: tapping an artist (or the album) in the full player did nothing**, and “Go to …” in the

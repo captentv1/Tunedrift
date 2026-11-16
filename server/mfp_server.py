@@ -24,7 +24,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -131,7 +131,8 @@ def api_latest_version():
     location = ""
     try:
         req = urllib.request.Request(RELEASES + "/latest", headers={"User-Agent": "MusicFlowPlay"})
-        urllib.request.build_opener(_NoRedirect).open(req, timeout=15).close()
+        import musicflow_embed  # its SSL context has the certificates (Android's Python has none of its own)
+        urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=musicflow_embed._ssl_context())).open(req, timeout=15).close()
     except urllib.error.HTTPError as exc:
         location = exc.headers.get("Location", "") if exc.code in (301, 302, 303, 307, 308) else ""
     except Exception as exc:
