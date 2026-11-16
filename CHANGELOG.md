@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0.4 — 2026-11-16 (Android)
+
+- **Home screen widget**: the song playing with its cover, and previous, play/pause and next. Tap it to open the app.
+
 ## 1.0.0.3 — 2026-11-16 (Android)
 
 - **Artist and album pages online** (with MusicFlow installed): "All songs of …" lists the artist's popular songs and all their albums and singles; "The whole album online" lists the full album. Songs you have play, the others download one by one or all at once, with their approximate size.
