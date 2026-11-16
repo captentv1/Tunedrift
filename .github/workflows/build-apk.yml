@@ -79,8 +79,12 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace \
             -PbuildPython="$(which python3.13 || which python)" \
             -PciVersionCode="$((GITHUB_RUN_NUMBER + 1))" \
-            -PciVersionName="${{ steps.version.outputs.version }}"
+            -PciVersionName="${{ steps.version.outputs.version }}" -PciKeystore="$HOME/.android/debug.keystore"
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/MusicFlowPlay.apk"
+          # The APK must be signed with the cached key, or it will not install over the previous version.
+          want=$(keytool -list -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey | sed -n 's/.*SHA256: //p' | tr -d ': ' | tr A-F a-f)
+          got=$("$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner" verify --print-certs "$GITHUB_WORKSPACE/MusicFlowPlay.apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
+          echo "key $want, APK $got"; [ -n "$want" ] && [ "$want" = "$got" ]
           ls -la "$GITHUB_WORKSPACE/MusicFlowPlay.apk"
 
       # Same app with WebView debugging on, only for the emulator test (never published).
@@ -90,7 +94,7 @@ jobs:
           ./gradlew assembleRelease --no-daemon \
             -PbuildPython="$(which python3.13 || which python)" \
             -PciVersionCode="$((GITHUB_RUN_NUMBER + 1))" \
-            -PciVersionName="${{ steps.version.outputs.version }}" -PciWebDebug=true
+            -PciVersionName="${{ steps.version.outputs.version }}" -PciKeystore="$HOME/.android/debug.keystore" -PciWebDebug=true
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/MusicFlowPlay-test.apk"
 
       - uses: actions/upload-artifact@v4
