@@ -1522,8 +1522,8 @@ const VIEWS = {
         <div class="addrow"><input class="text" id="f-new" placeholder="Folder path"><button class="btn" id="f-pick">${ico("folder")} Browse</button><button class="btn primary" id="f-add">Add</button></div></div>
       ${NATIVE && !NATIVE.hasAllFiles() ? `<div class="set"><h3>Lyrics files</h3><p>Android only shows music files to the player. To read the synced lyrics (<code>.lrc</code>) saved next to your songs, and to save lyrics into a file, allow access to all files.</p><button class="btn" id="f-all">Allow access to all files</button></div>` : ""}
       <div class="set"><h3>Library</h3><p>${plural(st.count, "song")}${st.scan.running ? ` · reading… ${st.scan.found} found` : ""}${st.scan.error ? ` · ${esc(st.scan.error)}` : ""}</p>
-        <button class="btn" id="f-scan">${ico("refresh")} Read the folders again</button></div>
-      <div class="set"><h3>Lyrics synchronization</h3><p>Finds synced lyrics for every song and replaces the old ones. Only lyrics checked to be the right ones are used: same title, same artist, same length, and the lines fit inside the song. Songs without a sure match keep their lyrics.</p>
+        <button class="btn" id="f-scan">${ico("refresh")} Read the folders again</button>
+        <h3 style="margin-top:18px">Lyrics synchronization</h3><p>Finds synced lyrics for every song and replaces the old ones. Only lyrics checked to be the right ones are used: same title, same artist, same length, and the lines fit inside the song. Songs without a sure match keep their lyrics.</p>
         <button class="btn primary" id="f-sync">${ico("refresh")} Lyrics synchronization</button><button class="btn hidden" id="f-sync-stop" style="margin-left:8px">Stop</button>
         <p id="f-sync-state" style="margin:10px 0 0"></p><div class="progress-line hidden" id="f-sync-bar"><div style="animation:none;width:0"></div></div></div>
       ${NATIVE ? "" : `<div class="set"><h3>Listen on your phone</h3><p>${st.lan ? "The player is open to your Wi-Fi. Open the link printed in the server window on your phone (same Wi-Fi) and add it to the home screen. Controls stay on the lock screen and the music keeps playing in the background." : "Start the server with <code>run_lan.bat</code> (or <code>python server/app.py --lan</code>), then open the link it prints on your phone, on the same Wi-Fi."}</p></div>
@@ -1553,7 +1553,7 @@ const VIEWS = {
       clearTimeout(window.syncTimer);
       if (st.running) window.syncTimer = setTimeout(async () => { if (route().name === "settings") try { syncShow(await api("lyrics-sync")); } catch {} }, 1500);
       else if (st.total && st.updated && window.syncWasRunning) { window.syncWasRunning = false; loadLibrary(true); }
-      if (st.running) window.syncWasRunning = true;
+      if (st.running) { window.syncWasRunning = true; native("backgroundWork"); }
     };
     $("#f-sync").onclick = async () => { try { syncShow(await api("lyrics-sync", {})); } catch (e) { toast(e.message); } };
     $("#f-sync-stop").onclick = async () => { try { syncShow(await api("lyrics-sync", {stop: true})); } catch (e) { toast(e.message); } };
