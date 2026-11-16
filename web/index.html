@@ -385,7 +385,7 @@
       radial-gradient(38% 32% at 85% 30%, var(--b2), transparent 70%),
       radial-gradient(44% 38% at 70% 80%, var(--b3), transparent 70%),
       radial-gradient(34% 30% at 18% 62%, var(--b4), transparent 70%);
-    filter:blur(30px);animation:mf-derive 26s ease-in-out infinite alternate}
+    filter:blur(30px)}
   @keyframes mf-derive{0%{transform:translate(0,0) scale(1)}50%{transform:translate(3%,-2%) scale(1.06)}100%{transform:translate(-3%,2%) scale(1.02)}}
   html.no-anim[data-theme^="glass"] body::before{animation:none}
 
@@ -1260,10 +1260,14 @@ function deleteSongs(ids) {
 // Duplicates: the same song (title, artist, album and length) saved in more than one place. The copy to keep is the
 // best one: lyrics first, then lossless, then the bigger file.
 const LOSSLESS = ["flac", "wav", "alac", "aiff"];
+// "Song (feat. B)", "Song [with B]", "Song (B)" and "Song" are the same song; "(Remix)", "(Live)"… are not.
+const dupTitle = s => norm(String(s || "").replace(/\s*[([]([^)\]]*)[)\]]/g, (m, x) => /remix|mix|live|edit|version|acoustic|instrumental|demo|remaster|karaok|cover|reprise|extended|radio/i.test(x) ? m : "")
+  .replace(/\s+(feat\.?|ft\.?|featuring)\s.*$/i, "")) || norm(s || "");
+const mainArtist = a => norm(String(a || "").split(/\s*(?:,|;|\/|&|\s(?:feat\.?|ft\.?|featuring|x|with|avec|et)\s)\s*/i)[0]);
 function findDuplicates() {
   const groups = new Map();
   for (const t of L.list) {
-    const k = [t._title, norm(t.artist || ""), norm(t.album || ""), Math.round((t.length_s || 0) / 3)].join("\u0001");
+    const k = [dupTitle(t.title), mainArtist(t.artist), Math.round((t.length_s || 0) / 4)].join("\u0001");
     if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t);
   }
   const score = t => (t.lrc || t.lyrics ? 4 : 0) + (LOSSLESS.includes(String(t.format || "").toLowerCase()) ? 2 : 0) + (t.cover ? 1 : 0);
@@ -1468,8 +1472,7 @@ function mfState(st) {
   if (!st || !("musicflow" in st)) return;
   mfUrl = st.musicflow || null;
   document.documentElement.classList.toggle("mf-on", !!mfUrl);
-  // Loaded in the background, so online search answers at once and downloads keep going in any tab.
-  if (mfUrl) setTimeout(mfFrameSrc, 1500);
+  // MusicFlow's page is loaded only when used (online search, Download tab, a download): it rests until then.
   $("#q").placeholder = mfUrl ? "Search your music, or online with Enter" : "Search songs, artists, albums";
 }
 function mfFrameSrc() {
@@ -1560,7 +1563,7 @@ function foldSections(root) {
   for (const d of $$("div.set", root)) {
     const h = d.querySelector("h3"); if (!h) continue;
     const id = h.textContent, det = document.createElement("details"), sum = document.createElement("summary");
-    det.className = "set"; det.open = id in open ? open[id] : !/^(Theme|Updates|Downloads|Duplicates|Gestures|Keyboard)/.test(id);
+    det.className = "set"; det.open = id in open ? open[id] : !/^(Theme|Updates|Downloads|Albums|Duplicates|Gestures|Keyboard)/.test(id);
     sum.append(h); det.append(sum, ...d.childNodes); d.replaceWith(det);
     det.ontoggle = () => { open[id] = det.open; try { localStorage.setItem("mfp.open", JSON.stringify(open)); } catch {} };
   }
@@ -1789,7 +1792,11 @@ const VIEWS = {
       <div class="set"><h3>Downloads</h3>${st.musicflow ? `<p>MusicFlow is installed. Search online from the search box (press Enter) and download with one tap,
         or open the Download tab. Quality, folder, lyrics, accounts and the other download settings are here:</p>
         <div class="actions" style="margin:0"><button class="btn" id="mf-settings">${ico("gear")} Download settings</button><button class="btn" data-r="download">${ico("download")} Download tab</button></div>` : `<div id="mod-box"></div>`}</div>
-      <div class="set"><h3>Duplicates</h3><div id="dup-box"><p>Find songs saved more than once (same title, artist, album and length, in two places) and delete the extra copies.</p>
+      <div class="set"><h3>Albums</h3><p>Finds online the album each song belongs to and writes it in the file (album, album artist,
+        track number, year), so songs of the same album are together. Only sure matches are changed (same title, artist and length).</p>
+        <button class="btn primary" id="f-alb">${ico("refresh")} Fix albums</button><button class="btn hidden" id="f-alb-stop" style="margin-left:8px">Stop</button>
+        <p id="f-alb-state" style="margin:10px 0 0"></p><div class="progress-line hidden" id="f-alb-bar"><div style="animation:none;width:0"></div></div></div>
+      <div class="set"><h3>Duplicates</h3><div id="dup-box"><p>Find songs saved more than once (same title and main artist, also with “(feat. …)”, and same length) and delete the extra copies.</p>
         <button class="btn" id="dup-find">${ico("search")} Find duplicates</button></div></div>
       <div class="set"><h3>Gestures (phone)</h3><p style="margin:0">Mini player: swipe up to open, left/right for next/previous · Cover: swipe left/right for next/previous, swipe up or double tap for lyrics, one tap for the next song, swipe down to close</p></div>
       <div class="set"><h3>Music folders</h3><p>Songs in these folders and their subfolders are shown in the library. Files are never changed, except when you choose “Save into the file” for lyrics.</p>
@@ -1805,6 +1812,20 @@ const VIEWS = {
       <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`}`;
     foldSections(main);
     $("#dup-find").onclick = () => duplicatesView($("#dup-box"));
+    const albShow = st => {
+      if (!$("#f-alb")) return;
+      const pct = st.total ? Math.round(st.done * 100 / st.total) : 0;
+      $("#f-alb").disabled = st.running; setHidden($("#f-alb-stop"), !st.running); setHidden($("#f-alb-bar"), !st.running);
+      $("#f-alb-bar div").style.width = pct + "%";
+      $("#f-alb-state").textContent = st.running ? `${st.done} / ${st.total} songs (${pct} %) · ${st.updated} fixed${st.current ? " · " + st.current : ""}`
+        : st.total ? `${st.stopped ? "Stopped" : "Done"}: ${st.updated} songs moved to their album, ${st.kept} were already right, ${st.not_found} unchanged (no sure match)${st.errors ? `, ${st.errors} could not be changed (no connection or no access to the file?)` : ""}.` : "";
+      clearTimeout(window.albTimer);
+      if (st.running) { window.albWas = true; native("backgroundWork"); window.albTimer = setTimeout(async () => { if (route().name === "settings") try { albShow(await api("album-fix")); } catch {} }, 2000); }
+      else if (window.albWas && st.updated) { window.albWas = false; loadLibrary(true); }
+    };
+    $("#f-alb").onclick = async () => { try { albShow(await api("album-fix", {})); } catch (e) { toast(e.message); } };
+    $("#f-alb-stop").onclick = async () => { try { albShow(await api("album-fix", {stop: true})); } catch (e) { toast(e.message); } };
+    api("album-fix").then(albShow).catch(() => {});
     mfState(st);
     if ($("#mod-box")) { moduleView($("#mod-box"), st.module); if (["downloading", "installed"].includes((st.module || {}).state)) mfWatch(); }
     if ($("#mf-settings")) $("#mf-settings").onclick = async () => { go("download"); if (await MF.ensure()) setTimeout(() => MF.post({mfpOpen: "settings"}), 300); };

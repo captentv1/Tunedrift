@@ -238,3 +238,19 @@ def test_delete_song_removes_the_file_and_its_lyrics(client, tmp_path):
     assert not f.exists() and not f.with_suffix(".lrc").exists()
     assert "First Song" not in _tracks(client)
     assert client.delete(f"/api/tracks/{t['id']}", headers=client.h).status_code == 404
+
+
+def test_album_fix_finds_the_checked_album(monkeypatch):
+    import album_fix
+    import artists
+    hits = {"data": [
+        {"id": 1, "title": "Papaoutai", "duration": 232, "artist": {"name": "Pomme"}, "album": {"title": "Other"}},
+        {"id": 2, "title": "Papaoutai", "duration": 300, "artist": {"name": "Stromae"}, "album": {"title": "Live"}},
+        {"id": 3, "title": "Papaoutai", "duration": 232, "artist": {"name": "Stromae"}, "album": {"title": "Best of hits"}},
+        {"id": 4, "title": "Papaoutai", "duration": 233, "artist": {"name": "Stromae"}, "album": {"title": "Racine carrée"}}]}
+    track = {"track_position": 2, "release_date": "2013-08-16", "artist": {"name": "Stromae"}, "album": {"title": "Racine carrée"}}
+    monkeypatch.setattr(artists, "_get", lambda p: hits if p.startswith("/search") else track)
+    assert album_fix.find("Papaoutai (feat. X)", "Stromae", 232, "") == {
+        "album": "Racine carrée", "album_artist": "Stromae", "track_info": "2", "year": "2013"}
+    assert album_fix.find("Papaoutai", "Stromae", 232, "Racine Carrée") == {}
+    assert album_fix.find("Papaoutai", "Angèle", 232, "") is None

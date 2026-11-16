@@ -24,7 +24,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.0.0.1"
+VERSION = "1.0.0.2"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -298,6 +298,26 @@ def api_lyrics_sync():
         else:
             lyrics_sync.start(index.all(), _save_synced, _save_lyrics_cache)
     return jsonify(lyrics_sync.STATUS)
+
+
+@app.route("/api/album-fix", methods=["GET", "POST"])
+def api_album_fix():
+    """Albums fix of the whole library (Settings). POST {"stop": true} stops it."""
+    import album_fix
+    if request.method == "POST":
+        if (request.get_json(silent=True) or {}).get("stop"):
+            album_fix.stop()
+        else:
+            album_fix.start(index.all(), _save_album)
+    return jsonify(album_fix.STATUS)
+
+
+def _save_album(t: dict, found: dict) -> str:
+    import tag_quality
+    problem = tag_quality.write_value(t["path"], {k: v for k, v in found.items() if v})
+    if not problem:
+        index.refresh(t["id"])
+    return problem
 
 
 def _save_synced(t: dict, found: dict) -> str:
