@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2.1 — 2026-11-16 (Test build)
+
+- Same as 0.7.2, with a new version number: to try the automatic update from 0.7.2.
+
 ## 0.7.2 — 2026-11-16 (Fixes)
 
 - **Lyrics synchronization keeps going in the background** on Android (screen off or app closed),
