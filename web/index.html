@@ -153,6 +153,13 @@
   .empty{padding:56px 20px;text-align:center;color:var(--muted);line-height:1.6}
   .empty > .i{width:52px;height:52px;margin:0 auto 14px;opacity:.5;display:block}
   .more{height:1px}
+  .dups{display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow:auto;padding-right:2px}
+  .dup{border:1px solid var(--border);border-radius:var(--r-md);padding:10px;background:var(--panel)}
+  .dup .dhead{display:flex;align-items:center;gap:10px;margin-bottom:6px}.dup .dhead .art{width:40px;height:40px;flex:none}.dup .txt{min-width:0}
+  .copy{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;cursor:pointer;font-size:13px;word-break:break-all}
+  .copy input{accent-color:var(--accent);flex:none}.copy .grow{flex:1;min-width:0}
+  .copy .keep{font-size:11px;font-weight:800;padding:3px 8px;border-radius:var(--pill);background:var(--t2);color:var(--accent);visibility:hidden;flex:none}
+  .copy:has(input:checked){background:var(--t1)}.copy:has(input:checked) .keep{visibility:visible}
   html:not(.mf-on) [data-r="download"], html:not(.mf-on) .mf-only{display:none!important}
   .note{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--r-md);background:var(--panel);border:1px solid var(--border);color:var(--muted);flex-wrap:wrap}
   .note>span{flex:1;min-width:160px}
@@ -1222,6 +1229,62 @@ function dialog(title, bodyHtml, okLabel, onOk, danger) {
   d.addEventListener("keydown", e => { if (e.key === "Enter") ok(); if (e.key === "Escape") close(); });
   setTimeout(() => (d.querySelector("input") || d.querySelector("[data-ok]")).focus(), 30);
 }
+// Deleting songs: the files are removed from the device (with their .lrc), after a confirmation.
+const fmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.round((b || 0) / 1024) + " KB";
+const shortPath = p => String(p || "").replace(/\\/g, "/").split("/").slice(-3, -1).join("/");
+async function removeFiles(ids) {
+  let done = 0;
+  for (const id of ids) {
+    try { await api("tracks/" + id, null, "DELETE"); done++; }
+    catch (e) {
+      if (/not allowed/i.test(e.message) && NATIVE && NATIVE.requestAllFiles) {
+        dialog("Allow deleting files", `<p class="muted" style="margin:0">Android lets the app delete songs only with access to all files. Allow it on the next screen, come back, then delete again.</p>`, "Allow", () => { native("requestAllFiles"); });
+      } else toast(e.message);
+      break;
+    }
+  }
+  if (done) {
+    if (ids.includes(Player.currentId())) Player.next(false);
+    Player.queue = Player.queue.filter(x => !ids.includes(x)); Player.i = Math.min(Player.i, Player.queue.length - 1); Player.save();
+    toast(done === 1 ? "Song deleted" : `${done} songs deleted`);
+    await loadLibrary(true);
+  }
+  return done;
+}
+function deleteSongs(ids) {
+  const ts = ids.map(id => L.tracks.get(id)).filter(Boolean); if (!ts.length) return;
+  const one = ts.length === 1 ? ts[0] : null;
+  dialog(one ? "Delete this song?" : `Delete ${ts.length} songs?`, `<p class="muted" style="margin:0">${one ? `“${esc(one.title)}” (${esc(one.format || "")}, ${fmtSize(one.size_bytes)}) will be deleted from your device:<br><code>${esc(one.path)}</code>`
+    : `${ts.length} files (${fmtSize(ts.reduce((a, t) => a + (t.size_bytes || 0), 0))}) will be deleted from your device.`}<br><br>This cannot be undone.</p>`, "Delete", () => { removeFiles(ts.map(t => t.id)); }, true);
+}
+// Duplicates: the same song (title, artist, album and length) saved in more than one place. The copy to keep is the
+// best one: lyrics first, then lossless, then the bigger file.
+const LOSSLESS = ["flac", "wav", "alac", "aiff"];
+function findDuplicates() {
+  const groups = new Map();
+  for (const t of L.list) {
+    const k = [t._title, norm(t.artist || ""), norm(t.album || ""), Math.round((t.length_s || 0) / 3)].join("\u0001");
+    if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t);
+  }
+  const score = t => (t.lrc || t.lyrics ? 4 : 0) + (LOSSLESS.includes(String(t.format || "").toLowerCase()) ? 2 : 0) + (t.cover ? 1 : 0);
+  return [...groups.values()].filter(g => g.length > 1).map(g => g.sort((a, b) => score(b) - score(a) || (b.size_bytes || 0) - (a.size_bytes || 0) || (a.mtime || 0) - (b.mtime || 0)));
+}
+function duplicatesView(box) {
+  const groups = findDuplicates();
+  if (!groups.length) { box.innerHTML = `<p style="margin:0">No duplicates: every song is saved only once.</p>`; return; }
+  const extra = groups.reduce((a, g) => a + g.length - 1, 0), size = groups.reduce((a, g) => a + g.slice(1).reduce((x, t) => x + (t.size_bytes || 0), 0), 0);
+  box.innerHTML = `<p>${plural(groups.length, "song")} saved more than once: ${plural(extra, "copy", "copies")} can go (${fmtSize(size)}). The copy marked “Keep” is the best one; tap another copy to keep it instead.</p>
+    <div class="dups">${groups.map((g, gi) => `<div class="dup" data-g="${gi}"><div class="dhead"><div class="art">${artHtml(g.find(t => t.cover)?.id)}</div><div class="txt"><div class="t1">${esc(g[0].title)}</div><div class="t2">${esc([g[0].artist, g[0].album].filter(Boolean).join(" · "))}</div></div></div>
+      ${g.map((t, i) => `<label class="copy"><input type="radio" name="dup${gi}" value="${t.id}"${i ? "" : " checked"}><span class="grow"><b>${esc(shortPath(t.path) || "/")}</b><span class="muted"> · ${esc(String(t.format || "").toUpperCase())} · ${fmtSize(t.size_bytes)}${t.lrc ? " · synced lyrics" : ""}</span></span><span class="keep">Keep</span></label>`).join("")}</div>`).join("")}</div>
+    <button class="btn danger" id="dup-del" style="margin-top:12px">${ico("trash")} Delete the other copies (${extra})</button>`;
+  $("#dup-del").onclick = () => {
+    const ids = [];
+    groups.forEach((g, gi) => { const keep = box.querySelector(`input[name="dup${gi}"]:checked`).value; for (const t of g) if (t.id !== keep) ids.push(t.id); });
+    dialog(`Delete ${plural(ids.length, "copy", "copies")}?`, `<p class="muted" style="margin:0">The copies not marked “Keep” are deleted from your device (${fmtSize(ids.reduce((a, id) => a + ((L.tracks.get(id) || {}).size_bytes || 0), 0))}). One copy of each song stays.<br><br>This cannot be undone.</p>`,
+      "Delete", async () => { await removeFiles(ids); duplicatesView(box); }, true);
+  };
+}
+
 function askName(title, value, okLabel, cb) {
   dialog(title, `<input class="text" maxlength="120" value="${esc(value || "")}" placeholder="Playlist name">`, okLabel, async d => {
     const v = d.querySelector("input").value.trim(); if (!v) return false; await cb(v);
@@ -1269,6 +1332,7 @@ function trackMenu(anchor, id, ctx) {
     "-",
   ];
   (t.artists.length ? t.artists : [UNKNOWN_ARTIST]).slice(0, 3).forEach(n => items.push({label: "Go to " + n, icon: "person", run: () => { closeNowAndGo("artist/" + encodeURIComponent(norm(n))); }}));
+  items.push({label: "Delete from device", icon: "trash", run: () => { closeMenu(); deleteSongs([t.id]); }});
   const fk = folderOf(t); if (fk) items.push({label: "Go to folder", icon: "folder", run: () => { closeNowAndGo("folder/" + encodeURIComponent(fk)); }});
   if (t.album) items.push({label: "Go to album", icon: "album", run: () => { closeNowAndGo("album/" + encodeURIComponent(albumKey(t))); }});
   if (ctx.playlist) items.push("-", {label: "Remove from this playlist", icon: "close", run: () => removeFromPlaylist(ctx.playlist, ctx.pos)});
@@ -1387,7 +1451,7 @@ function sortedSongs(list = L.list, by = store.get("sort", "title")) {
   else a.sort((x, y) => cmp(x.title, y.title));
   return a;
 }
-const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const plural = (n, w, p) => `${n} ${n === 1 ? w : (p || w + "s")}`;
 const totalTime = ts => { const s = ts.reduce((a, t) => a + (t.length_s || 0), 0); return s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.floor(s / 60) % 60} min` : `${Math.round(s / 60)} min`; };
 
 function emptyLibrary() {
@@ -1496,7 +1560,7 @@ function foldSections(root) {
   for (const d of $$("div.set", root)) {
     const h = d.querySelector("h3"); if (!h) continue;
     const id = h.textContent, det = document.createElement("details"), sum = document.createElement("summary");
-    det.className = "set"; det.open = id in open ? open[id] : !/^(Theme|Updates|Downloads|Gestures|Keyboard)/.test(id);
+    det.className = "set"; det.open = id in open ? open[id] : !/^(Theme|Updates|Downloads|Duplicates|Gestures|Keyboard)/.test(id);
     sum.append(h); det.append(sum, ...d.childNodes); d.replaceWith(det);
     det.ontoggle = () => { open[id] = det.open; try { localStorage.setItem("mfp.open", JSON.stringify(open)); } catch {} };
   }
@@ -1725,6 +1789,8 @@ const VIEWS = {
       <div class="set"><h3>Downloads</h3>${st.musicflow ? `<p>MusicFlow is installed. Search online from the search box (press Enter) and download with one tap,
         or open the Download tab. Quality, folder, lyrics, accounts and the other download settings are here:</p>
         <div class="actions" style="margin:0"><button class="btn" id="mf-settings">${ico("gear")} Download settings</button><button class="btn" data-r="download">${ico("download")} Download tab</button></div>` : `<div id="mod-box"></div>`}</div>
+      <div class="set"><h3>Duplicates</h3><div id="dup-box"><p>Find songs saved more than once (same title, artist, album and length, in two places) and delete the extra copies.</p>
+        <button class="btn" id="dup-find">${ico("search")} Find duplicates</button></div></div>
       <div class="set"><h3>Gestures (phone)</h3><p style="margin:0">Mini player: swipe up to open, left/right for next/previous · Cover: swipe left/right for next/previous, swipe up or double tap for lyrics, one tap for the next song, swipe down to close</p></div>
       <div class="set"><h3>Music folders</h3><p>Songs in these folders and their subfolders are shown in the library. Files are never changed, except when you choose “Save into the file” for lyrics.</p>
         <div id="folders">${st.folders.map((f, k) => `<div class="folder">${ico("folder")}<span>${esc(f)}</span><button class="rb iconbtn" data-rm="${k}" title="Remove">${ico("close")}</button></div>`).join("") || `<p>No folder.</p>`}</div>
@@ -1738,6 +1804,7 @@ const VIEWS = {
       ${NATIVE ? "" : `<div class="set"><h3>Listen on your phone</h3><p>${st.lan ? "The player is open to your Wi-Fi. Open the link printed in the server window on your phone (same Wi-Fi) and add it to the home screen. Controls stay on the lock screen and the music keeps playing in the background." : "Start the server with <code>run_lan.bat</code> (or <code>python server/app.py --lan</code>), then open the link it prints on your phone, on the same Wi-Fi."}</p></div>
       <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`}`;
     foldSections(main);
+    $("#dup-find").onclick = () => duplicatesView($("#dup-box"));
     mfState(st);
     if ($("#mod-box")) { moduleView($("#mod-box"), st.module); if (["downloading", "installed"].includes((st.module || {}).state)) mfWatch(); }
     if ($("#mf-settings")) $("#mf-settings").onclick = async () => { go("download"); if (await MF.ensure()) setTimeout(() => MF.post({mfpOpen: "settings"}), 300); };

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0.1 — 2026-11-16 (Android)
+
+- **Delete a song**: ⋯ › Delete from device removes the file (and its .lrc lyrics) after a confirmation.
+- **Duplicates** (Settings): finds the songs saved more than once (same title, artist, album and length, in
+  different folders), marks the best copy to keep (synced lyrics, then lossless, then the bigger file), lets you
+  pick another one, and deletes the extra copies after a confirmation.
+
 ## 1.0.0.0 — 2026-11-16 (Android)
 
 MusicFlow and MusicFlow Play become one app, with a new look.
