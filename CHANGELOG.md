@@ -8,6 +8,9 @@ MusicFlow and MusicFlow Play become one app, with a new look.
   online through MusicFlow, and download a song with one tap. Songs you already have say "In your music" and play.
   Choose where to search (Everywhere, My music, Online) and what (Songs, Artists, Albums, Folders). Offline, only
   your music is shown. The Download tab shows how many downloads are running.
+- **MusicFlow stays out until you install it**: without it, the app is only the player (no Download tab, no
+  online search). Install it from Settings › Downloads › Install MusicFlow; then online search, downloads, the
+  Download tab and the download settings all appear.
 - **One set of settings**: the theme and the updates of the player apply to the Download tab too (its own theme and
   update settings are gone); its download settings open from Settings › Downloads.
 

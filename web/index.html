@@ -153,6 +153,7 @@
   .empty{padding:56px 20px;text-align:center;color:var(--muted);line-height:1.6}
   .empty > .i{width:52px;height:52px;margin:0 auto 14px;opacity:.5;display:block}
   .more{height:1px}
+  html:not(.mf-on) [data-r="download"], html:not(.mf-on) .mf-only{display:none!important}
   .note{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--r-md);background:var(--panel);border:1px solid var(--border);color:var(--muted);flex-wrap:wrap}
   .note>span{flex:1;min-width:160px}
   @media (max-width:760px){.chips.kinds{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-16px;margin-right:-16px;padding:0 16px}.chips.kinds::-webkit-scrollbar{display:none}}
@@ -463,11 +464,11 @@ try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th =
 <div id="ambient"></div>
 <div id="app">
   <header id="topbar">
-    <a class="logo" href="#home" aria-label="MusicFlow Play: home"><span class="wm">MUSIC<span>FLOW</span></span><span class="dot"></span><span class="tag">PLAY</span></a>
+    <a class="logo" href="#home" data-r="home" aria-label="MusicFlow Play: home"><span class="wm">MUSIC<span>FLOW</span></span><span class="dot"></span><span class="tag">PLAY</span></a>
     <button class="iconbtn" id="search-back" title="Close search" aria-label="Close search"><svg class="i" style="transform:rotate(90deg)"><use href="#i-down"/></svg></button>
     <div id="search">
       <svg class="i"><use href="#i-search"/></svg>
-      <input id="q" type="search" placeholder="Search your music, or online with Enter" autocomplete="off" enterkeyhint="search">
+      <input id="q" type="search" placeholder="Search songs, artists, albums" autocomplete="off" enterkeyhint="search">
       <button id="search-clear" class="hidden" title="Clear" aria-label="Clear search">✕</button>
     </div>
     <button class="iconbtn" id="btn-search" title="Search" aria-label="Search"><svg class="i"><use href="#i-search"/></svg></button>
@@ -748,6 +749,7 @@ function folderCards(nodes) {
 async function loadLibrary(quiet) {
   try {
     const [d, c, st] = await Promise.all([api("tracks"), api("collections"), api("state").catch(() => ({}))]);
+    mfState(st);
     L.roots = st.folders || L.roots || [];
     if (st.version && !Upd.version) { Upd.version = st.version; if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000); }
     L.tracks = new Map(d.tracks.map(t => [t.id, t]));
@@ -1306,7 +1308,7 @@ $("#search-back").onclick = () => openSearch(false);
 document.addEventListener("click", e => { const n = e.target.closest("[data-r]"); if (n) { $("#q").value = ""; searchUi(); document.documentElement.classList.remove("searching");
   // The Library tab goes back to the last library view used.
   go(n.dataset.lib !== undefined ? store.get("libview", "folders") : n.dataset.r); } });
-$("#btn-settings").onclick = () => go("settings");
+$("#btn-settings").dataset.r = "settings";
 
 function route() {
   const h = decodeURIComponent(location.hash.slice(1) || "folders"), [name, ...rest] = h.split("/");
@@ -1396,6 +1398,13 @@ function emptyLibrary() {
 // so a search or a download keeps going while you browse the library.
 let mfUrl, mfSeen = 0, mfRescan = 0;
 function setHidden(el, on) { el.classList.toggle("hidden", on); }
+// Search online, downloads and the Download tab appear only once MusicFlow's module is installed (from Settings).
+function mfState(st) {
+  if (!st || !("musicflow" in st)) return;
+  mfUrl = st.musicflow || null;
+  document.documentElement.classList.toggle("mf-on", !!mfUrl);
+  $("#q").placeholder = mfUrl ? "Search your music, or online with Enter" : "Search songs, artists, albums";
+}
 function mfFrameSrc() {
   const frame = $("#mf-frame");
   if (frame.src || !mfUrl) return;
@@ -1432,27 +1441,35 @@ async function showMusicFlow(on) {
   let mod = null;
   if (!mfUrl) { try { const st = await api("state"); mfUrl = st.musicflow || null; mod = st.module; } catch { mfUrl = null; } }
   if (route().name !== "download") return true;
-  if (!mfUrl) { setHidden(frame, true); setHidden(main, false); moduleView(main, mod); return true; }
+  if (!mfUrl) { setHidden(frame, true); setHidden(main, false); openSection("Downloads"); location.replace("#settings"); return true; }
   mfFrameSrc();
   setHidden(main, true); setHidden(frame, false); document.documentElement.classList.add("mf-full");
   return true;
 }
 // The Download tab is a module: installed with a button, from this version's GitHub release.
 let modTimer = 0;
-function moduleView(main, m) {
+function openSection(name) { try { const o = JSON.parse(localStorage.getItem("mfp.open") || "{}"); o[name] = true; localStorage.setItem("mfp.open", JSON.stringify(o)); } catch {} }
+function moduleView(box, m) {
   clearTimeout(modTimer);
+  if (!box || !box.isConnected) return;
   const st = (m || {}).state || "", busy = st === "downloading" || st === "installed";
   let html;
-  if (st === "bundled") html = `Search and download come from MusicFlow.<br>Install its packages (<code>pip install -r musicflow/desktop/requirements.txt</code>), then restart the player.`;
-  else if (st === "downloading") html = `Installing the Download tab… ${m.pct >= 0 ? m.pct + " %" : ""}<div class="progress-line"><div style="${m.pct >= 0 ? `width:${m.pct}%;animation:none` : ""}"></div></div>`;
-  else if (st === "installed") html = `Starting MusicFlow…<div class="progress-line"><div></div></div>`;
-  else html = `<b>Search and download songs</b><br>This tab comes from MusicFlow. It is not in the app until you install it:
-    it downloads from GitHub, once, and then updates with the app.${st === "error" ? `<br><span style="color:var(--danger,#e5484d)">The installation failed: ${esc(m.error)}</span>` : ""}
-    <br><button class="btn primary" id="mod-install" style="margin-top:14px">${ico("download")} Install the Download tab</button>`;
-  main.innerHTML = `<div class="empty">${ico("download")}${html}</div>`;
+  if (st === "bundled") html = `<p>Search and download come from MusicFlow. Install its packages (<code>pip install -r musicflow/desktop/requirements.txt</code>), then restart the player.</p>`;
+  else if (st === "downloading") html = `<p>Installing MusicFlow… ${m.pct >= 0 ? m.pct + " %" : ""}</p><div class="progress-line"><div style="${m.pct >= 0 ? `width:${m.pct}%;animation:none` : ""}"></div></div>`;
+  else if (st === "installed") html = `<p>Starting MusicFlow…</p><div class="progress-line"><div></div></div>`;
+  else html = `<p>Online search, downloads (with covers, tags and lyrics) and the Download tab come from MusicFlow.
+    They are not in the app until you install them: it downloads from GitHub once, then updates with the app.</p>
+    ${st === "error" ? `<p style="color:var(--err)">The installation failed: ${esc(m.error)}</p>` : ""}
+    <button class="btn primary" id="mod-install">${ico("download")} Install MusicFlow</button>`;
+  box.innerHTML = html;
   const b = $("#mod-install");
-  if (b) b.onclick = async () => { b.disabled = true; try { moduleView(main, await api("musicflow/install", {})); } catch (e) { toast(e.message); b.disabled = false; } };
-  if (busy) modTimer = setTimeout(() => { if (route().name === "download") showMusicFlow(true); }, 1000);
+  if (b) b.onclick = async () => { b.disabled = true; try { moduleView(box, await api("musicflow/install", {})); } catch (e) { toast(e.message); b.disabled = false; } };
+  if (busy) modTimer = setTimeout(async () => {
+    let s2 = {}; try { s2 = await api("state"); } catch {}
+    mfState(s2);
+    if (mfUrl) { toast("MusicFlow is installed: online search, downloads and the Download tab are ready."); if (route().name === "settings") render(); }
+    else moduleView(box, s2.module);
+  }, 1000);
 }
 $("#mf-back").onclick = () => { if (history.length > 1) history.back(); else go("folders"); };
 function rescanSoon(delay) { clearTimeout(mfRescan); mfRescan = setTimeout(() => window.MFP_rescan(), delay); }
@@ -1536,7 +1553,7 @@ function render() {
   if (L.error && !L.loaded) { main.innerHTML = `<div class="empty">${ico("close")}${esc(L.error)}<br><button class="btn" onclick="L.error=null;L.tries=0;loadLibrary()" style="margin-top:12px">Try again</button></div>`; return; }
   if (!L.loaded) { main.innerHTML = `<div class="empty">${NATIVE ? "Starting MusicFlow Play…" : "Loading…"}<div class="progress-line"><div></div></div></div>`; return; }
   const q = $("#q").value.trim();
-  if (q && r.name !== "settings") { $("#ambient").classList.remove("on"); return renderSearch(main, q); }
+  if (q) { $("#ambient").classList.remove("on"); return renderSearch(main, q); }
   (VIEWS[r.name] || VIEWS.folders)(main, r.arg);
   decorate(main, inLib && !r.arg ? grp : null);
 }
@@ -1698,9 +1715,9 @@ const VIEWS = {
       ${Upd.usable() ? `<div class="set"><h3>Updates</h3><p id="u-state">MusicFlow Play ${esc(st.version)}</p>
         <button class="btn" id="u-btn">Check for updates</button>
         <label class="chk"><input type="checkbox" id="u-auto"${Upd.on() ? " checked" : ""}> Check for new versions and offer them automatically</label></div>` : ""}
-      <div class="set"><h3>Downloads</h3><p>Search online from the search box (press Enter) and download with one tap, or open the Download tab.
-        Quality, folder, lyrics and the other download settings are here:</p>
-        <button class="btn" id="mf-settings">${ico("download")} Download settings</button></div>
+      <div class="set"><h3>Downloads</h3>${st.musicflow ? `<p>MusicFlow is installed. Search online from the search box (press Enter) and download with one tap,
+        or open the Download tab. Quality, folder, lyrics, accounts and the other download settings are here:</p>
+        <div class="actions" style="margin:0"><button class="btn" id="mf-settings">${ico("gear")} Download settings</button><button class="btn" data-r="download">${ico("download")} Download tab</button></div>` : `<div id="mod-box"></div>`}</div>
       <div class="set"><h3>Gestures (phone)</h3><p style="margin:0">Mini player: swipe up to open, left/right for next/previous · Cover: swipe left/right for next/previous, swipe up or double tap for lyrics, one tap for the next song, swipe down to close</p></div>
       <div class="set"><h3>Music folders</h3><p>Songs in these folders and their subfolders are shown in the library. Files are never changed, except when you choose “Save into the file” for lyrics.</p>
         <div id="folders">${st.folders.map((f, k) => `<div class="folder">${ico("folder")}<span>${esc(f)}</span><button class="rb iconbtn" data-rm="${k}" title="Remove">${ico("close")}</button></div>`).join("") || `<p>No folder.</p>`}</div>
@@ -1714,7 +1731,9 @@ const VIEWS = {
       ${NATIVE ? "" : `<div class="set"><h3>Listen on your phone</h3><p>${st.lan ? "The player is open to your Wi-Fi. Open the link printed in the server window on your phone (same Wi-Fi) and add it to the home screen. Controls stay on the lock screen and the music keeps playing in the background." : "Start the server with <code>run_lan.bat</code> (or <code>python server/app.py --lan</code>), then open the link it prints on your phone, on the same Wi-Fi."}</p></div>
       <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`}`;
     foldSections(main);
-    $("#mf-settings").onclick = async () => { go("download"); if (await MF.ensure()) setTimeout(() => MF.post({mfpOpen: "settings"}), 300); };
+    mfState(st);
+    if ($("#mod-box")) moduleView($("#mod-box"), st.module);
+    if ($("#mf-settings")) $("#mf-settings").onclick = async () => { go("download"); if (await MF.ensure()) setTimeout(() => MF.post({mfpOpen: "settings"}), 300); };
     const ub = $("#u-btn");
     if (ub) {
       ub.onclick = () => Upd.install();
@@ -1763,7 +1782,7 @@ function localMatch(r) {
   return L.list.find(t => t._title === tt && (!aa || norm(t.artist || "").includes(aa.split(" ")[0]))) || null;
 }
 async function searchOnline(q) {
-  q = (q || "").trim(); if (!q || SRCH.scope === "local") return;
+  q = (q || "").trim(); if (!q || SRCH.scope === "local" || !mfUrl) return;
   if (!navigator.onLine) { SRCH.online = {q, error: "You are offline: only your music is shown."}; return render(); }
   SRCH.online = {q, loading: true}; render();
   try { SRCH.online = {q, results: await MF.search(q)}; }
@@ -1774,7 +1793,7 @@ async function searchOnline(q) {
 function renderSearch(main, q) {
   const words = norm(q).split(" ").filter(Boolean);
   const hit = s => words.every(w => s.includes(w));
-  const sc = SRCH.scope, k = SRCH.kind, local = sc !== "online", want = x => local && (k === "all" || k === x);
+  const mfOn = !!mfUrl, sc = mfOn ? SRCH.scope : "local", k = SRCH.kind, local = sc !== "online", want = x => local && (k === "all" || k === x);
   const songs = want("songs") ? L.list.filter(t => hit(t._q)).sort((a, b) => (b._title.startsWith(words[0]) - a._title.startsWith(words[0])) || a.title.localeCompare(b.title)) : [];
   const arts = want("artists") ? [...L.artists.values()].filter(a => hit(a.key)).slice(0, 12) : [];
   const als = want("albums") ? [...L.albums.values()].filter(al => al.name !== UNKNOWN_ALBUM && hit(norm(al.name + " " + al.artist))).slice(0, 12) : [];
@@ -1787,7 +1806,6 @@ function renderSearch(main, q) {
     if (!navigator.onLine) online = `<div class="note">${ico("close")}You are offline: only your music is shown.</div>`;
     else if (!mine) online = `<button class="btn" id="s-online">${ico("search")} Search online for “${esc(q)}”</button><div class="muted" style="margin-top:8px;font-size:12.5px">Or press Enter.</div>`;
     else if (o.loading) online = `<div class="muted">Searching online…</div><div class="progress-line"><div></div></div>`;
-    else if (o.noModule) online = `<div class="note">${ico("download")}<span>To search and download online, install the Download tab.</span><button class="btn primary" data-r="download">Install</button></div>`;
     else if (o.error) online = `<div class="note">${ico("close")}<span>${esc(o.error)}</span><button class="btn" id="s-online">Try again</button></div>`;
     else if (!o.results.length) online = `<div class="muted">Nothing found online.</div>`;
     else online = `<div class="rows">${o.results.map((r, i) => { const have = localMatch(r), key = (r.title || "") + "|" + (r.uploader || "");
@@ -1798,7 +1816,7 @@ function renderSearch(main, q) {
           : `<button class="btn primary" data-odl="${i}" title="Download">${ico("download")}<span class="hide-s">Download</span></button>`}</div>`; }).join("")}</div>`;
   }
   main.innerHTML = `<div class="head"><div class="grow"><h1>“${esc(q)}”</h1><div class="sub">${local ? plural(songs.length, "song") + " in your music" : "Online"}</div></div></div>
-    <div class="chips">${chip("data-sscope", "all", "Everywhere", sc === "all")}${chip("data-sscope", "local", "My music", sc === "local")}${chip("data-sscope", "online", "Online", sc === "online")}</div>
+    <div class="chips mf-only">${chip("data-sscope", "all", "Everywhere", sc === "all")}${chip("data-sscope", "local", "My music", sc === "local")}${chip("data-sscope", "online", "Online", sc === "online")}</div>
     ${local ? `<div class="chips kinds">${[["all", "All"], ["songs", "Songs"], ["artists", "Artists"], ["albums", "Albums"], ["folders", "Folders"]].map(([v, l]) => chip("data-skind", v, l, k === v)).join("")}</div>` : ""}
     ${local && !nLocal ? `<div class="empty" style="padding:24px">${ico("search")}Nothing in your music for “${esc(q)}”.</div>` : ""}
     ${arts.length ? `<h2 class="sec">Artists</h2>` + cardsHtml(arts.map(a => ({go: "artist/" + encodeURIComponent(a.key), cover: a.cover, icon: "person", name: a.name, sub: plural(a.tracks.length, "song")})), true).replace('class="grid"', 'class="grid shelf"') : ""}
