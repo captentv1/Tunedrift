@@ -24,7 +24,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.0.0.0"
+VERSION = "1.0.0.1"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -193,8 +193,31 @@ def api_scan():
 @app.route("/api/tracks")
 def api_tracks():
     keep = ("id", "title", "artist", "artists", "album", "album_artist", "genre", "year", "track_no",
-            "length_s", "cover", "lyrics", "lrc", "format", "mtime", "path")
+            "length_s", "cover", "lyrics", "lrc", "format", "mtime", "path", "size_bytes")
     return jsonify({"tracks": [{k: t.get(k) for k in keep} for t in index.all()], "scan": index.status})
+
+
+@app.route("/api/tracks/<tid>", methods=["DELETE"])
+def api_delete_track(tid):
+    """Deletes a song's file from the device (and its .lrc lyrics file next to it). It cannot be undone."""
+    t, err = _track_or_404(tid)
+    if err:
+        return err
+    f = Path(t["path"])
+    try:
+        f.unlink()
+    except PermissionError:
+        return jsonify({"error": "The app is not allowed to delete this file.", "needs_access": True}), 403
+    except OSError as exc:
+        return jsonify({"error": f"Could not delete the file: {exc}"}), 500
+    lrc = f.with_suffix(".lrc")
+    if lrc.is_file():
+        try:
+            lrc.unlink()
+        except OSError:
+            pass
+    index.remove(tid)
+    return jsonify({"ok": True})
 
 
 def _track_or_404(tid):

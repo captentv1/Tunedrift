@@ -227,3 +227,14 @@ def test_lyrics_sync_replaces_the_old_lyrics(client, monkeypatch):
     assert got["synced"] == new["synced"]
     path = next(t["path"] for t in client.mod.index.all() if t["id"] == tid)
     assert Path(path).with_suffix(".lrc").read_text(encoding="utf-8") == new["synced"]
+
+
+def test_delete_song_removes_the_file_and_its_lyrics(client, tmp_path):
+    t = _tracks(client)["First Song"]
+    f = Path(t["path"])
+    assert t["size_bytes"] > 0
+    r = client.delete(f"/api/tracks/{t['id']}", headers=client.h)
+    assert r.status_code == 200
+    assert not f.exists() and not f.with_suffix(".lrc").exists()
+    assert "First Song" not in _tracks(client)
+    assert client.delete(f"/api/tracks/{t['id']}", headers=client.h).status_code == 404
