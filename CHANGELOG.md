@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 — 2026-11-16
+## 1.0.0.0 — 2026-11-16 (Android)
 
 A new look, between MusicFlow and MusicFlow Play.
 
