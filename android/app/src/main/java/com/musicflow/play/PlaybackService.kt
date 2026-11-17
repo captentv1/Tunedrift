@@ -56,6 +56,12 @@ class PlaybackService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var cover: Bitmap? = null
     private var coverLoadedFor = ""
+    // What was last sent to the system: the page reports several events per song (play, playing, duration, seek…),
+    // and resending the metadata with its cover, the notification and the widget each time kept the phone busy.
+    private var sentMeta = ""
+    private var sentNotif = ""
+    private var sentWidget = ""
+    private var widgetCover: Bitmap? = null
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -104,7 +110,11 @@ class PlaybackService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            ACTION_COMMAND -> send(intent.getStringExtra(EXTRA_COMMAND) ?: "", 0)
+            ACTION_COMMAND -> {
+                // Started as a foreground service (widget buttons): Android wants startForeground again.
+                sentNotif = ""
+                send(intent.getStringExtra(EXTRA_COMMAND) ?: "", 0)
+            }
         }
         refresh()
         return START_NOT_STICKY
@@ -135,14 +145,23 @@ class PlaybackService : Service() {
 
     private fun refresh() {
         loadCoverIfNeeded()
-        PlayerWidget.update(this, cover)
-        val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
-            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
-            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, if (durationMs > 0) durationMs else -1L)
-        cover?.let { metadata.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it) }
-        session.setMetadata(metadata.build())
+        val coverId = System.identityHashCode(cover)
+        val widgetKey = "$title|$artist|$playing|$coverId"
+        if (widgetKey != sentWidget) {
+            sentWidget = widgetKey
+            PlayerWidget.update(this, widgetCover)
+        }
+        val metaKey = "$title|$artist|$album|$durationMs|$coverId"
+        if (metaKey != sentMeta) {
+            sentMeta = metaKey
+            val metadata = MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, if (durationMs > 0) durationMs else -1L)
+            cover?.let { metadata.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it) }
+            session.setMetadata(metadata.build())
+        }
         session.setPlaybackState(
             PlaybackStateCompat.Builder()
                 .setActions(
@@ -169,6 +188,8 @@ class PlaybackService : Service() {
             if (playing) wakeLock?.acquire(4 * 60 * 60 * 1000L)
             else wakeLock?.takeIf { it.isHeld }?.release()
         } catch (e: Exception) { }
+        val notifKey = "$title|$artist|$album|$playing|$shuffle|$repeat|$coverId"
+        if (notifKey == sentNotif) return
         val notification = buildNotification()
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -176,6 +197,7 @@ class PlaybackService : Service() {
             } else {
                 startForeground(NOTIF_ID, notification)
             }
+            sentNotif = notifKey
         } catch (e: Exception) {
             try { getSystemService(NotificationManager::class.java).notify(NOTIF_ID, notification) } catch (e2: Exception) { }
         }
@@ -186,10 +208,12 @@ class PlaybackService : Service() {
         if (wanted == coverLoadedFor) return
         coverLoadedFor = wanted
         cover = null
+        widgetCover = null
         // Security: covers are only read from the app's own local server.
         if (!wanted.startsWith(MainActivity.PAGE_URL)) return
         Thread {
             var bitmap: Bitmap? = null
+            var small: Bitmap? = null
             try {
                 val connection = URL(wanted).openConnection() as HttpURLConnection
                 connection.connectTimeout = 4000
@@ -198,16 +222,27 @@ class PlaybackService : Service() {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                 var sample = 1
+                // 512 px is plenty for the lock screen and the notification; 1024 px covers (4 MB each) were
+                // copied to the system at every update.
                 while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
-                bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+                bitmap = scaled(decoded, 512)
+                small = scaled(bitmap, 256)
             } catch (e: Exception) { }
             mainHandler.post {
                 if (running && coverLoadedFor == wanted && bitmap != null) {
                     cover = bitmap
+                    widgetCover = small
                     refresh()
                 }
             }
         }.start()
+    }
+
+    private fun scaled(b: Bitmap?, max: Int): Bitmap? {
+        if (b == null || (b.width <= max && b.height <= max)) return b
+        val k = max.toFloat() / maxOf(b.width, b.height)
+        return Bitmap.createScaledBitmap(b, maxOf(1, (b.width * k).toInt()), maxOf(1, (b.height * k).toInt()), true)
     }
 
     private fun shuffleIcon() = if (shuffle) R.drawable.ic_shuffle_on else R.drawable.ic_shuffle_off

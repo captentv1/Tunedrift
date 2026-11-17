@@ -82,6 +82,15 @@
   .bn.active .i{animation:mfpPop .22s ease-out}
   .t2 a[data-artist]{color:inherit;text-decoration:none}.t2 a[data-artist]:hover{color:var(--accent);text-decoration:underline}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  /* Battery saver (on by default in the Android app): no blur, no endless animation. Blurs redrawn at every
+     frame (glass panels over a moving list, the progress bar, the pulsing dot) kept the phone's GPU busy and hot. */
+  html.lite *, html.lite *::before, html.lite *::after{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+  html.lite body.is-playing .logo .dot, html.lite body.is-playing .row.playing .eq{animation:none!important}
+  html.lite #main.anim>*{animation:none!important}
+  html.lite #ambient, html.lite #np .bgblur{display:none!important}
+  html.lite[data-theme^="glass"] body::before{filter:none!important}
+  html.lite[data-theme^="glass"] #side, html.lite[data-theme^="glass"] #bar, html.lite[data-theme^="glass"] #bottomnav,
+  html.lite[data-theme^="glass"] .tile:not(.big), html.lite[data-theme^="glass"] .set{background:var(--option-bg)!important}
 
   #main{overflow:auto;padding:8px 28px 36px;min-width:0;overscroll-behavior:contain;position:relative;isolation:isolate}
   #ambient{position:fixed;left:0;right:0;top:0;height:460px;z-index:-1;background:center/cover no-repeat;filter:blur(70px) saturate(1.6);opacity:0;pointer-events:none;
@@ -472,6 +481,7 @@
 if (window.MFPNative) document.documentElement.classList.add('native');
 // Applied before the page is drawn, so it never flashes the default theme.
 try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'white' : '') : th; if (real) document.documentElement.setAttribute('data-theme', real); const z = localStorage.getItem('mfp.textsize'); if (z) document.documentElement.style.zoom = z; } catch (e) {}
+try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) === '1') document.documentElement.classList.add('lite'); } catch (e) {}
 </script>
 </head>
 <body>
@@ -760,6 +770,16 @@ function folderCards(nodes) {
     sub: [n.kids.size ? plural(n.kids.size, "folder") : "", plural(n.all.length, "song")].filter(Boolean).join(" · ")})));
 }
 
+// While the folders are read, a light check every 1.5 s; the whole library is reloaded only every 6 s and at the
+// end (it was reloaded and redrawn every 1.5 s, and several of these loops could run at once).
+function scanWatch(n = 0) {
+  clearTimeout(L.scanTimer);
+  L.scanTimer = setTimeout(async () => {
+    let st = {}; try { st = await api("state"); } catch {}
+    if (!(st.scan || {}).running || (n + 1) % 4 === 0) loadLibrary(true);
+    else { L.scan = st.scan; scanWatch(n + 1); }
+  }, 1500);
+}
 async function loadLibrary(quiet) {
   try {
     const [d, c, st] = await Promise.all([api("tracks"), api("collections"), api("state").catch(() => ({}))]);
@@ -776,7 +796,7 @@ async function loadLibrary(quiet) {
     Player.restoreIfNeeded();
     render();
     updateNow();
-    if (L.scan.running) setTimeout(() => loadLibrary(true), 1500);
+    if (L.scan.running) scanWatch(); else clearTimeout(L.scanTimer);
   } catch (e) {
     if (e instanceof TypeError && !L.loaded && ++L.tries < 80) { setTimeout(() => loadLibrary(quiet), 500); return; }
     L.error = e.message;
@@ -967,6 +987,7 @@ audio.addEventListener("error", () => {
 });
 let lastSaved = 0, lastPos = 0, loggedPlaying = "";
 function updateTime(force) {
+  if (document.hidden && !force) { const now = Date.now(); if (now - lastSaved > 5000) { lastSaved = now; store.set("position", audio.currentTime || 0); } return; }
   const d = audio.duration || (Player.current() || {}).length_s || 0, c = audio.currentTime || 0;
   if (NATIVE && c >= 1.5 && !audio.paused && loggedPlaying !== Player.currentId()) { loggedPlaying = Player.currentId(); const t = Player.current(); console.log("MFP_PLAYING", t ? t.format : "", t ? t.title : ""); }
   if (!seeking) for (const s of $$(".seekbar")) { s.value = d ? Math.round(c / d * 1000) : 0; s.style.setProperty("--p", (d ? c / d * 100 : 0) + "%"); }
@@ -1637,16 +1658,18 @@ const MF = {
   async download(item) { if (await this.ensure()) this.post({mfpDownload: item}); else toast("MusicFlow is not ready. Try again."); },
 };
 
+// MusicFlow's frame rests (no internet check every 20 s) while it is hidden or the app is in the background.
+function mfIdle() { const fr = $("#mf-frame"); if (fr && fr.src) try { fr.contentWindow.postMessage({mfpIdle: document.hidden || fr.classList.contains("hidden"), mfpLite: document.documentElement.classList.contains("lite")}, new URL(fr.src).origin); } catch {} }
 async function showMusicFlow(on) {
   const frame = $("#mf-frame"), main = $("#main");
-  if (!on) { document.documentElement.classList.remove("mf-full"); if (!frame.classList.contains("hidden")) { setHidden(frame, true); setHidden(main, false); rescanSoon(0); } return false; }
+  if (!on) { document.documentElement.classList.remove("mf-full"); if (!frame.classList.contains("hidden")) { setHidden(frame, true); setHidden(main, false); rescanSoon(0); mfIdle(); } return false; }
   document.documentElement.classList.remove("mf-full");
   let mod = null;
   if (!mfUrl) { try { const st = await api("state"); mfUrl = st.musicflow || null; mod = st.module; } catch { mfUrl = null; } }
   if (route().name !== "download") return true;
   if (!mfUrl) { setHidden(frame, true); setHidden(main, false); openSection("Downloads"); location.replace("#settings"); return true; }
   mfFrameSrc();
-  setHidden(main, true); setHidden(frame, false); document.documentElement.classList.add("mf-full");
+  setHidden(main, true); setHidden(frame, false); document.documentElement.classList.add("mf-full"); mfIdle();
   return true;
 }
 // The Download tab is a module: installed with a button, from this version's GitHub release.
@@ -1685,7 +1708,7 @@ window.MFP_toMusicFlow = (fn, args) => { const fr = $("#mf-frame"); if (fr.src) 
 window.addEventListener("message", e => {
   if (!mfUrl || e.origin !== new URL(mfUrl).origin) return;
   const d = e.data || {};
-  if (d.mfReady) window.mfReady = true;
+  if (d.mfReady) { window.mfReady = true; mfIdle(); }
   if (d.mfpResults && MF.waiting.has(d.id)) { MF.waiting.get(d.id)(d); MF.waiting.delete(d.id); }
   if (typeof d.mfActive === "number") { MF.active = d.mfActive; for (const b of $$('[data-r="download"]')) b.dataset.badge = d.mfActive || ""; }
   const n = (e.data || {}).mfDownloaded;
@@ -1926,6 +1949,7 @@ const VIEWS = {
     try { st = await api("state"); } catch (e) { main.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
     main.innerHTML = `<div class="head"><div class="grow"><h1>Settings</h1><div class="sub">MusicFlow Play ${esc(st.version)}</div></div></div>
       <div class="set"><h3>Theme</h3><p>The same themes as MusicFlow.</p><div id="themes">${themeChoices()}</div>
+        <label class="chk"><input type="checkbox" id="f-lite"${document.documentElement.classList.contains("lite") ? " checked" : ""}> Battery saver: no blur or moving effects (less heat and battery)</label>
         <div style="display:flex;align-items:center;gap:10px;margin-top:14px"><span>Text size</span><select id="f-zoom">${[["0.9", "Small"], ["1", "Normal"], ["1.12", "Large"], ["1.25", "Very large"]].map(([v, n]) => `<option value="${v}"${(localStorage.getItem("mfp.textsize") || "1") === v ? " selected" : ""}>${n}</option>`).join("")}</select></div></div>
       ${Upd.usable() ? `<div class="set"><h3>Updates</h3><p id="u-state">MusicFlow Play ${esc(st.version)}</p>
         <button class="btn" id="u-btn">Check for updates</button>
@@ -1988,6 +2012,7 @@ const VIEWS = {
     $("#f-pick").onclick = () => pickFolder(false);
     $("#themes").onclick = e => { const o = e.target.closest(".theme-opt"); if (o) applyTheme(o.dataset.theme); };
     $("#f-zoom").onchange = e => setTextSize(e.target.value);
+    $("#f-lite").onchange = e => { document.documentElement.classList.toggle("lite", e.target.checked); try { localStorage.setItem("mfp.lite", e.target.checked ? "1" : "0"); } catch {} mfIdle(); };
     const all = $("#f-all"); if (all) all.onclick = () => native("requestAllFiles");
     const syncShow = st => {
       if (!$("#f-sync")) return;
@@ -2143,7 +2168,7 @@ document.addEventListener("keydown", e => {
   else if (e.key === "/") { e.preventDefault(); $("#q").focus(); }
   else if (e.key === "Escape") { closeMenu(); closeNow(); }
 });
-document.addEventListener("visibilitychange", () => { if (document.hidden) store.set("position", audio.currentTime || 0); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) store.set("position", audio.currentTime || 0); else updateTime(true); mfIdle(); });
 window.addEventListener("pagehide", () => store.set("position", audio.currentTime || 0));
 
 applyTheme(savedTheme()); syncModeButtons(); syncMute(); render();

@@ -504,6 +504,7 @@ class MainActivity : AppCompatActivity() {
                 try {
                     // Lyrics synchronization and albums fix go on with the app closed (foreground service).
                     val jobs = listOf("lyrics_sync" to "Lyrics synchronization", "album_fix" to "Albums fix")
+                    var shown = ""
                     while (true) {
                         val job = jobs.firstOrNull { (m, _) ->
                             try { Python.getInstance().getModule(m)["STATUS"]!!.callAttr("get", "running").toBoolean() } catch (e: Exception) { false }
@@ -511,10 +512,14 @@ class MainActivity : AppCompatActivity() {
                         val status = Python.getInstance().getModule(job.first)["STATUS"]!!
                         val done = status.callAttr("get", "done").toInt()
                         val total = maxOf(1, status.callAttr("get", "total").toInt())
-                        ContextCompat.startForegroundService(this@MainActivity, Intent(service)
-                            .putExtra(com.musicflow.app.DownloadForegroundService.EXTRA_TEXT, "${job.second}: $done / $total")
-                            .putExtra(com.musicflow.app.DownloadForegroundService.EXTRA_PERCENT, done * 100 / total))
-                        Thread.sleep(2000)
+                        val text = "${job.second}: $done / $total"
+                        if (text != shown) {
+                            shown = text
+                            ContextCompat.startForegroundService(this@MainActivity, Intent(service)
+                                .putExtra(com.musicflow.app.DownloadForegroundService.EXTRA_TEXT, text)
+                                .putExtra(com.musicflow.app.DownloadForegroundService.EXTRA_PERCENT, done * 100 / total))
+                        }
+                        Thread.sleep(3000)
                     }
                 } catch (e: Exception) {
                     Log.e("MFP", "lyrics synchronization notification", e)
