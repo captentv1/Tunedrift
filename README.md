@@ -22,6 +22,7 @@ PC and Android · free · open source (GPL-3.0) · no account, no ads
 - **Background playback** with lock-screen, notification and headphone controls (Android), media keys (PC)
 - **Synced lyrics** (`.lrc` or tags), tap a line to jump; search online on LRCLIB when a song has none
 - **Playlists and favorites**
+- **Edit song info** (title, artist, album…), fix albums online from their track list, song details
 - Formats: MP3, FLAC, WAV, M4A/AAC, Opus, OGG (whatever the browser can play)
 
 ## Install
