@@ -24,7 +24,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.0.0.4"
+VERSION = "1.0.0.5"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -342,19 +342,158 @@ def api_album_fix():
     """Albums fix of the whole library (Settings). POST {"stop": true} stops it."""
     import album_fix
     if request.method == "POST":
-        if (request.get_json(silent=True) or {}).get("stop"):
+        data = request.get_json(silent=True) or {}
+        if data.get("stop"):
             album_fix.stop()
         else:
-            album_fix.start(index.all(), _save_album)
+            album_fix.start(index.all(), _save_album, shorten_names=bool(data.get("shorten")), covers=bool(data.get("covers")))
     return jsonify(album_fix.STATUS)
 
 
 def _save_album(t: dict, found: dict) -> str:
+    fields = {_FIELD_NAMES.get(k, k): v for k, v in found.items() if v and not k.startswith("_")}
+    return _write_tags(t, fields, found.get("_cover"))
+
+
+# Editing a song's information (title, artist, album…), by hand or from what was found online.
+_FIELD_NAMES = {"title": "song_title", "artist": "artist_name", "track_no": "track_info"}
+_EDITABLE = ("title", "artist", "album", "album_artist", "year", "genre", "track_no")
+_write_lock = threading.Lock()
+
+
+def _write_tags(t: dict, fields: dict, cover=None) -> str:
     import tag_quality
-    problem = tag_quality.write_value(t["path"], {k: v for k, v in found.items() if v})
-    if not problem:
-        index.refresh(t["id"])
+    with _write_lock:
+        problem = tag_quality.write_value(t["path"], fields) if fields else ""
+        if not problem and cover:
+            problem = tag_quality.cover_art(t["path"], cover[0], cover[1])
+        if fields or cover:
+            index.refresh(t["id"])
     return problem
+
+
+@app.route("/api/tags", methods=["POST"])
+def api_tags():
+    """{"ids": [...], "fields": {"title", "artist", "album", "album_artist", "year", "genre", "track_no"},
+    "cover_url": "https://…dzcdn.net/…"}: only the fields given are written, in every song given."""
+    import album_fix
+    data = request.get_json(silent=True) or {}
+    ids = [str(i) for i in data.get("ids") or []][:2000]
+    fields = {_FIELD_NAMES.get(k, k): str(v or "").strip()[:500] for k, v in (data.get("fields") or {}).items() if k in _EDITABLE}
+    if "song_title" in fields and not fields["song_title"]:
+        return jsonify({"error": "The title can't be empty."}), 400
+    cover = None
+    if data.get("cover_url"):
+        try:
+            cover = album_fix.cover(str(data["cover_url"]))
+        except Exception as exc:
+            return jsonify({"error": f"The cover could not be downloaded: {exc}"}), 502
+    done, tracks = 0, []
+    for tid in ids:
+        t = index.get(tid)
+        if not t:
+            continue
+        problem = _write_tags(t, fields, cover)
+        if problem:
+            denied = "Errno 13" in problem or "ermission" in problem or "EACCES" in problem
+            return jsonify({"error": "The app is not allowed to change this file." if denied else f"Could not change “{t['title']}”: {problem}",
+                            "needs_access": denied, "done": done}), 403 if denied else 500
+        done += 1
+        tracks.append(index.get(tid))
+    if not done:
+        return jsonify({"error": "Track not found."}), 404
+    return jsonify({"done": done, "tracks": tracks})
+
+
+@app.route("/api/tracks/<tid>/details")
+def api_track_details(tid):
+    """Everything about a song's file: path, size, format, quality, tags, cover and lyrics."""
+    import mutagen
+    import tag_quality
+    t, err = _track_or_404(tid)
+    if err:
+        return err
+    f = Path(t["path"])
+    st = f.stat()
+    out = {"path": str(f), "folder": str(f.parent), "file": f.name, "size_bytes": st.st_size, "mtime": int(st.st_mtime),
+           "format": f.suffix.lower().lstrip("."), "tags": {k: v for k, v in tag_quality.read_value(f).items() if k not in ("cover_art", "lyrics_data", "length_s")}}
+    try:
+        m = mutagen.File(str(f))
+        info = m.info if m else None
+        out.update(length_s=round(getattr(info, "length", 0) or 0, 1), bitrate=int(getattr(info, "bitrate", 0) or 0),
+                   sample_rate=int(getattr(info, "sample_rate", 0) or 0), channels=int(getattr(info, "channels", 0) or 0),
+                   bits=int(getattr(info, "bits_per_sample", 0) or 0), codec=getattr(info, "codec_description", "") or type(info).__module__.rsplit(".", 1)[-1] if info else "")
+    except Exception:
+        pass
+    c = cover_bytes(f)
+    out["cover"] = {"size_bytes": len(c[0]), "mime": c[1]} if c else None
+    ly = file_lyrics(f)
+    out["lyrics"] = "synced (.lrc)" if f.with_suffix(".lrc").is_file() else "synced" if ly["synced"] else "plain" if ly["plain"] else ""
+    return jsonify(out)
+
+
+@app.route("/api/tracks/<tid>/online")
+def api_track_online(tid):
+    """The song found online (Deezer), best first, to fill in its information."""
+    import urllib.parse
+    import album_fix
+    import artists
+    t, err = _track_or_404(tid)
+    if err:
+        return err
+    title, artist = request.args.get("title") or t["title"], request.args.get("artist") or t.get("artist") or ""
+    try:
+        res = []
+        for q in (f'artist:"{lyrics._artist(artist)}" track:"{lyrics._titles(title)[-1]}"' if artist else "", f"{lyrics._artist(artist)} {title}".strip()):
+            if q and len(res) < 3:
+                res += [r for r in (artists._get("/search?" + urllib.parse.urlencode({"q": q, "limit": 15})) or {}).get("data") or []
+                        if r.get("id") not in {x.get("id") for x in res}]
+        length = float(t.get("length_s") or 0)
+
+        def score(r):
+            ra = lyrics._key((r.get("artist") or {}).get("name"))
+            a = lyrics._key(lyrics._artist(artist))
+            d = abs(float(r.get("duration") or 0) - length) if length else 0
+            return album_fix._sim(title, r.get("title") or "") * 2 + (1 if a and ra and (a in ra or ra in a) else 0) - min(d, 30) / 15
+        res.sort(key=score, reverse=True)
+        from concurrent.futures import ThreadPoolExecutor
+        top = res[:6]
+        with ThreadPoolExecutor(6) as pool:
+            full = list(pool.map(lambda r: artists._safe(artists._get, f"/track/{r['id']}") or {}, top))
+    except Exception as exc:
+        return jsonify({"error": f"Online search failed: {exc}"}), 502
+    out = []
+    for r, x in zip(top, full):
+        al = x.get("album") or r.get("album") or {}
+        out.append({"title": r.get("title") or "", "artist": ", ".join(c.get("name") for c in x.get("contributors") or [] if c.get("name")) or (r.get("artist") or {}).get("name") or "",
+                    "album": al.get("title") or "", "album_artist": (x.get("artist") or r.get("artist") or {}).get("name") or "",
+                    "year": (x.get("release_date") or al.get("release_date") or "")[:4], "track_no": str(x.get("track_position") or ""),
+                    "cover": al.get("cover_xl") or al.get("cover_big") or "", "thumb": al.get("cover_medium") or "",
+                    "length_s": r.get("duration") or 0, "sure": score(r) >= 2.8})
+    if not out:
+        return jsonify({"error": "This song was not found online."}), 404
+    return jsonify({"results": out})
+
+
+@app.route("/api/online/album-match", methods=["POST"])
+def api_album_match():
+    """{"ids": [...], "album": optional name to search}: the albums online holding these songs, with the track
+    number of each song on it."""
+    import album_fix
+    data = request.get_json(silent=True) or {}
+    local = [t for t in (index.get(str(i)) for i in (data.get("ids") or [])[:300]) if t]
+    if not local:
+        return jsonify({"error": "Track not found."}), 404
+    try:
+        found = album_fix.match_album(local, str(data.get("album") or ""), str(data.get("artist") or ""))
+    except Exception as exc:
+        return jsonify({"error": f"Online search failed: {exc}"}), 502
+    if not found:
+        return jsonify({"error": "This album was not found online."}), 404
+    for m in found:
+        m["sure"] = album_fix.sure(local, m)
+        m["short"] = album_fix.shorten(m["album"])
+    return jsonify({"results": found[:4], "count": len(local)})
 
 
 def _save_synced(t: dict, found: dict) -> str:
