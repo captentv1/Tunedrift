@@ -23,14 +23,24 @@ PLAYER_ORIGINS = "http://127.0.0.1:5091 http://localhost:5091"
 # Inside the player MusicFlow is part of one app: the theme follows the player, and its own theme and update
 # settings are hidden (the player's apply, and the module is updated with the player). The player's search box
 # searches online through this page (mfpSearch), starts downloads here (mfpDownload) and is told how they go.
-_HEAD = """<style>.mfp-embed #u-card,.mfp-embed #view-accounts>.card:has(#themes){display:none!important}</style>
+_HEAD = """<style>.mfp-embed #u-card,.mfp-embed #view-accounts>.card:has(#themes){display:none!important}
+.mfp-embed body::before{animation:none!important}
+.mfp-lite *,.mfp-lite *::before,.mfp-lite *::after{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+.mfp-lite body::before{filter:none!important}</style>
 <script>(function(){document.documentElement.classList.add('mfp-embed');
+// Battery: while the player hides this frame (or the app is in the background), the page's checks that only
+// refresh what is shown (internet check every 20 s, which goes online, and the 0.7 s menu sync) wait.
+window.MFP_IDLE=false;var si=window.setInterval;window.setInterval=function(f,ms){var a=[].slice.call(arguments,2);
+ if(typeof f!=='function'||(ms!==20000&&ms!==700))return si.apply(window,arguments);
+ return si.call(window,function(){if(!window.MFP_IDLE)f.apply(this,a);},ms);};
 try{var th=new URLSearchParams(location.search).get('theme');if(th!==null)localStorage.setItem('musicflow.theme',th);localStorage.setItem('musicflow.updatesOff','1');}catch(e){}
 // Android app: the token comes in the address fragment (never sent to the server), then is removed from the address.
 var m=/[#&]mft=([\\w-]+)/.exec(location.hash);if(m){window.MF_TOKEN=m[1];history.replaceState(null,'',location.pathname+location.search);}
 var CALLS=['MF_tic','MF_share','MF_voice','onFolderChosen','onScrapeProgress','onScrapeDiag','onScrapeComplete','MF_updateProgress','MF_updateError'];
 addEventListener('message',function(e){if(!/^http:\\/\\/(127\\.0\\.0\\.1|localhost):5091$/.test(e.origin))return;
  var d=e.data||{};if(typeof d.mfpTheme==='string'&&window.applyTheme)applyTheme(d.mfpTheme);
+ if(typeof d.mfpIdle==='boolean'){var was=window.MFP_IDLE;window.MFP_IDLE=d.mfpIdle;if(was&&!d.mfpIdle)try{dispatchEvent(new Event('online'));}catch(x){}}
+ if(typeof d.mfpLite==='boolean')document.documentElement.classList.toggle('mfp-lite',d.mfpLite);
  if(CALLS.indexOf(d.mfCall)>=0&&typeof window[d.mfCall]==='function')window[d.mfCall].apply(null,d.args||[]);
  var to=e.origin;
  if(typeof d.mfpSearch==='string'){fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:d.mfpSearch,limit:d.limit||12})})
