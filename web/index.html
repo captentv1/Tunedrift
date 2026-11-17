@@ -262,6 +262,13 @@
   #dialog{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);padding:16px}
   #dialog .box{background:var(--panel);border:1px solid var(--border);border-radius:var(--r-lg);padding:22px;width:min(440px,100%);box-shadow:var(--shadow)}
   #dialog h3{margin:0 0 14px;font-size:18px}
+  #dialog .box{max-height:calc(100vh - 32px);overflow:auto}
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:10px 10px}.fields .lab{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:650}
+  .fields .lab.wide{grid-column:1 / -1}.fields .inrow{display:flex;gap:6px}.fields .inrow input{flex:1}.fields .btn{height:40px;padding:0 10px;font-size:12px}
+  .cands{display:flex;flex-direction:column;gap:6px;margin-top:12px}.cand{display:flex;gap:10px;align-items:center;padding:8px;border-radius:12px;border:1px solid var(--border);cursor:pointer}
+  .cand:hover,.cand.on{border-color:var(--accent)}.cand img{width:44px;height:44px;border-radius:8px;object-fit:cover;flex:none}.cand .txt{min-width:0}.cand .t1{font-weight:650}.cand .t2{font-size:12px;color:var(--muted)}
+  .cand .ok{font-size:11px;font-weight:800;color:var(--accent)}.newcover{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:13px}.newcover img{width:56px;height:56px;border-radius:8px}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px;margin:0}.kv dt{color:var(--muted)}.kv dd{margin:0;word-break:break-word}
   #dialog .actions{justify-content:flex-end;margin:18px 0 0}
   #toast{position:fixed;left:50%;bottom:calc(var(--bar-h) + var(--nav-h) + var(--safe-b) + 22px);transform:translate(-50%,8px);z-index:90;
     background:var(--ink);color:var(--bg);font-weight:600;padding:11px 18px;border-radius:var(--pill);box-shadow:0 10px 30px rgba(0,0,0,.45);
@@ -622,7 +629,7 @@ async function api(path, body, method) {
   return data;
 }
 const audioUrl = id => `/api/audio/${id}?t=${encodeURIComponent(TOKEN)}`;
-const coverUrl = id => `/api/cover/${id}?t=${encodeURIComponent(TOKEN)}`;
+const coverUrl = id => `/api/cover/${id}?t=${encodeURIComponent(TOKEN)}&v=${(L.tracks.get(id) || {}).mtime || 0}`;
 
 const NATIVE = window.MFPNative || null;
 const THEMES = [
@@ -1324,12 +1331,137 @@ async function addToPlaylist(pid, ids) {
     if (route().name === "playlist") render();
   } catch (e) { toast(e.message); }
 }
+// Editing a song's information (written in the file), by hand or from what is found online.
+const SHORT_WORDS = /soundtrack|motion picture|original score|music from|songs from|from the|inspired by|bande originale|\bost\b|\bb\.?o\.?\b|du film|de la s[ée]rie|deluxe|edition|[ée]dition|remaster|expanded|anniversary|bonus|version|special|collector|super|complete|\bvol\b/i;
+function shortAlbum(a) {
+  let out = a || "";
+  for (;;) {
+    const n = out.replace(/\s*[(\[]([^()\[\]]*)[)\]]\s*$/, (m, x) => SHORT_WORDS.test(x) ? "" : m).replace(/\s+[-–—:]\s+([^-–—:]*)$/, (m, x) => SHORT_WORDS.test(x) ? "" : m);
+    if (n === out) return out.trim() || a || "";
+    out = n;
+  }
+}
+const FIELDS = [["title", "Title", 1], ["artist", "Artist", 1], ["album", "Album", 1], ["album_artist", "Album artist"], ["genre", "Genre"], ["year", "Year"], ["track_no", "Track number"]];
+const fieldsHtml = (v, keys) => `<div class="fields">${FIELDS.filter(f => keys.includes(f[0])).map(([k, label, wide]) => `<${k === "album" ? "div" : "label"} class="lab${wide ? " wide" : ""}">${label}${k === "album"
+  ? `<span class="inrow"><input class="text" data-f="${k}" value="${esc(v[k] ?? "")}"><button class="btn" type="button" data-short title="Remove “(Original Motion Picture Soundtrack)”, “(Deluxe Edition)”…">Shorten</button></span>`
+  : `<input class="text" data-f="${k}" value="${esc(v[k] ?? "")}"${k === "year" || k === "track_no" ? ` inputmode="numeric"` : ""}>`}</${k === "album" ? "div" : "label"}>`).join("")}</div>`;
+function readFields(d, keys) {
+  const out = {};
+  for (const k of keys) { const el = d.querySelector(`[data-f="${k}"]`); if (el) out[k] = el.value.trim(); }
+  return out;
+}
+function fillFields(d, v) { for (const [k, x] of Object.entries(v)) { const el = d.querySelector(`[data-f="${k}"]`); if (el && x !== undefined && x !== null && x !== "") el.value = x; } }
+function wireShort(d) { const b = d.querySelector("[data-short]"); if (b) b.onclick = () => { const el = d.querySelector('[data-f="album"]'); const n = shortAlbum(el.value); if (n === el.value) toast("This name has nothing to remove"); el.value = n; el.focus(); }; }
+async function saveTags(ids, fields, cover) {
+  try {
+    const d = await api("tags", {ids, fields, cover_url: cover || ""});
+    for (const t of d.tracks || []) if (t) L.tracks.set(t.id, Object.assign(L.tracks.get(t.id) || {}, t));
+    toast(d.done === 1 ? "Song info saved" : `${d.done} songs saved`);
+    await loadLibrary(true); updateNow();
+    return true;
+  } catch (e) {
+    if (/not allowed/i.test(e.message) && NATIVE && NATIVE.requestAllFiles)
+      setTimeout(() => dialog("Allow changing files", `<p class="muted" style="margin:0">Android lets the app change songs only with access to all files. Allow it on the next screen, come back, then save again.</p>`, "Allow", () => { native("requestAllFiles"); }), 50);
+    else toast(e.message);
+    return false;
+  }
+}
+function editSong(id) {
+  const t = L.tracks.get(id); if (!t) return;
+  const keys = FIELDS.map(f => f[0]); let cover = "";
+  const v = {title: t.title, artist: t.artist, album: t.album, album_artist: t.album_artist, genre: t.genre, year: t.year, track_no: t.track_no || ""};
+  dialog("Edit song info", fieldsHtml(v, keys) + `<div class="newcover hidden" id="e-cover"></div>
+    <div class="actions" style="justify-content:flex-start;margin:12px 0 0"><button class="btn" type="button" id="e-find">${ico("search")} Find online</button></div><div id="e-res"></div>
+    <p class="muted" style="font-size:12px;margin:10px 0 0">Saved in the file: other apps see it too.</p>`, "Save", async d => {
+    const f = readFields(d, keys); if (!f.title) { toast("The title can't be empty"); return false; }
+    const changed = Object.fromEntries(Object.entries(f).filter(([k, x]) => String(v[k] ?? "") !== x));
+    if (!Object.keys(changed).length && !cover) return;
+    return await saveTags([id], changed, cover);
+  });
+  const d = $("#dialog"); wireShort(d);
+  $("#e-find").onclick = async () => {
+    const box = $("#e-res"); box.innerHTML = `<div class="muted" style="margin-top:10px">Searching online…</div>`;
+    try {
+      const cur = readFields(d, ["title", "artist"]);
+      const r = (await api(`tracks/${id}/online?title=${encodeURIComponent(cur.title)}&artist=${encodeURIComponent(cur.artist)}`)).results;
+      box.innerHTML = `<div class="cands">${r.map((c, k) => `<div class="cand" data-c="${k}">${c.thumb ? `<img src="${esc(c.thumb)}" alt="">` : ""}<div class="txt"><div class="t1">${esc(c.title)}${c.sure ? ` <span class="ok">· same song</span>` : ""}</div>
+        <div class="t2">${esc([c.artist, c.album, c.year, fmt(c.length_s)].filter(Boolean).join(" · "))}</div></div></div>`).join("")}</div><p class="muted" style="font-size:12px;margin:8px 0 0">Tap one to fill in the fields, then Save.</p>`;
+      box.onclick = e => {
+        const el = e.target.closest("[data-c]"); if (!el) return; const c = r[+el.dataset.c];
+        box.querySelectorAll(".cand").forEach(x => x.classList.toggle("on", x === el));
+        fillFields(d, {title: c.title, artist: c.artist, album: store.get("albShort", true) ? shortAlbum(c.album) : c.album, album_artist: c.album_artist, year: c.year, track_no: c.track_no});
+        cover = c.cover || ""; const nc = $("#e-cover"); setHidden(nc, !cover);
+        nc.innerHTML = cover ? `<img src="${esc(c.thumb || cover)}" alt=""><label><input type="checkbox" id="e-usecover" checked> Use this cover</label>` : "";
+        if (cover) $("#e-usecover").onchange = ev => { cover = ev.target.checked ? c.cover : ""; };
+      };
+    } catch (e) { box.innerHTML = `<div class="muted" style="margin-top:10px">${esc(e.message)}</div>`; }
+  };
+}
+// Several songs at once (an album, an artist, a folder): only the fields changed are written, in every song.
+function editSongs(ids) {
+  const ts = ids.map(id => L.tracks.get(id)).filter(Boolean); if (!ts.length) return;
+  const keys = ["album", "album_artist", "artist", "genre", "year"];
+  const same = k => { const x = String(ts[0][k] ?? ""); return ts.every(t => String(t[k] ?? "") === x) ? x : ""; };
+  const v = Object.fromEntries(keys.map(k => [k, same(k)]));
+  dialog(`Edit ${plural(ts.length, "song")}`, fieldsHtml(v, keys) + `<p class="muted" style="font-size:12px;margin:10px 0 0">Only the fields you change are written, in all these songs. Empty fields differ between the songs and stay as they are.</p>`, "Save", async d => {
+    const f = readFields(d, keys), changed = Object.fromEntries(Object.entries(f).filter(([k, x]) => x !== v[k]));
+    if (!Object.keys(changed).length) return;
+    return await saveTags(ts.map(t => t.id), changed);
+  });
+  wireShort($("#dialog"));
+}
+// An album: searched online, its track list is compared with the songs, then album, track numbers, year and cover are written.
+async function fixAlbum(ids, name, artist) {
+  dialog("Fix this album online", `<div id="fa-box"><div class="muted">Searching “${esc(name)}” online and comparing the songs…</div><div class="progress-line"><div></div></div></div>`, "Apply", async d => {
+    const c = d._pick; if (!c) return false;
+    const short = d.querySelector("#fa-short")?.checked, cov = d.querySelector("#fa-cover")?.checked;
+    const album = short ? c.short : c.album; let done = 0;
+    for (const id of ids) {
+      const hit = c.tracks[id]; if (!hit) continue;
+      const ok = await api("tags", {ids: [id], fields: {album, album_artist: c.album_artist, year: c.year, track_no: hit.track_info, ...(c.genre ? {genre: c.genre} : {})}, cover_url: cov ? c.cover : ""}).then(() => true, e => { toast(e.message); return false; });
+      if (!ok) break; done++;
+    }
+    if (done) { toast(`${plural(done, "song")} updated`); await loadLibrary(true); updateNow(); }
+  });
+  const d = $("#dialog"), box = $("#fa-box");
+  try {
+    const r = await api("online/album-match", {ids, album: name, artist}), res = r.results;
+    const show = k => {
+      const c = res[k]; d._pick = c;
+      box.innerHTML = `<div class="cands">${res.map((x, j) => `<div class="cand${j === k ? " on" : ""}" data-c="${j}">${x.cover ? `<img src="${esc(x.cover)}" alt="">` : ""}<div class="txt"><div class="t1">${esc(x.album)}</div>
+        <div class="t2">${esc([x.album_artist, x.year, plural(x.total, "song")].filter(Boolean).join(" · "))}</div><div class="${x.sure ? "ok" : "t2"}">${x.matched} of your ${r.count} songs are on it${x.sure ? "" : " (not sure)"}</div></div></div>`).join("")}</div>
+        <label class="newcover"><input type="checkbox" id="fa-short"${c.short !== c.album ? " checked" : " disabled"}> Short name: “${esc(c.short)}”</label>
+        ${c.cover ? `<label class="newcover"><input type="checkbox" id="fa-cover" checked> Use its cover</label>` : ""}
+        <p class="muted" style="font-size:12px;margin:8px 0 0">Writes the album name, album artist, year, genre and track number in the ${plural(c.matched, "song")} found on it.</p>`;
+    };
+    show(0);
+    box.onclick = e => { const el = e.target.closest("[data-c]"); if (el) show(+el.dataset.c); };
+  } catch (e) { box.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
+}
+async function songDetails(id) {
+  const t = L.tracks.get(id); if (!t) return;
+  dialog("Details", `<div id="dt-box" class="muted">Reading the file…</div>`, "Edit info", () => { setTimeout(() => editSong(id), 50); });
+  const d = $("#dialog"); d.querySelector("[data-x]").textContent = "Close";
+  try {
+    const x = await api(`tracks/${id}/details`), g = x.tags || {};
+    const rows = [["Title", g.song_title || t.title], ["Artist", g.artist_name], ["Album", g.album], ["Album artist", g.album_artist], ["Genre", g.genre], ["Year", g.year], ["Track", g.track_info],
+      ["Length", fmt(x.length_s)], ["Format", [String(x.format || "").toUpperCase(), x.codec && x.codec.toUpperCase() !== String(x.format).toUpperCase() ? x.codec : ""].filter(Boolean).join(" · ")],
+      ["Quality", [x.bitrate ? Math.round(x.bitrate / 1000) + " kbps" : "", x.sample_rate ? (x.sample_rate / 1000) + " kHz" : "", x.bits ? x.bits + " bit" : "", x.channels ? (x.channels === 1 ? "mono" : x.channels === 2 ? "stereo" : x.channels + " channels") : ""].filter(Boolean).join(" · ")],
+      ["Size", fmtSize(x.size_bytes)], ["Cover", x.cover ? `${String(x.cover.mime).replace("image/", "").toUpperCase()} · ${fmtSize(x.cover.size_bytes)}` : "none"], ["Lyrics", x.lyrics || "none"],
+      ["Modified", new Date(x.mtime * 1000).toLocaleString()], ["File", x.file], ["Folder", x.folder]];
+    const box = $("#dt-box"); if (!box) return;
+    box.classList.remove("muted");
+    box.innerHTML = `<dl class="kv">${rows.filter(r => r[1]).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+  } catch (e) { const box = $("#dt-box"); if (box) box.textContent = e.message; }
+}
 function trackMenu(anchor, id, ctx) {
   const t = L.tracks.get(id); if (!t) return;
   const items = [
     {label: "Play next", icon: "playnext", run: () => Player.playNext([id])},
     {label: "Add to queue", icon: "queue", run: () => Player.addToQueue([id])},
     {label: isFav(id) ? "Remove from favorites" : "Add to favorites", icon: isFav(id) ? "heart-f" : "heart", run: () => toggleFav(id)},
+    {label: "Edit info…", icon: "edit", run: () => editSong(id)},
+    {label: "Details", icon: "note", run: () => songDetails(id)},
     "-", {head: "Add to playlist"},
     {label: "New playlist…", icon: "plus", run: () => newPlaylist([id])},
     ...L.playlists.map(p => ({label: p.name, icon: "list", run: () => addToPlaylist(p.id, [id])})),
@@ -1349,6 +1481,7 @@ function listMenu(anchor, ids, extra = []) {
     "-", {head: "Add to playlist"},
     {label: "New playlist…", icon: "plus", run: () => newPlaylist(ids)},
     ...L.playlists.map(p => ({label: p.name, icon: "list", run: () => addToPlaylist(p.id, ids)})),
+    "-", {label: ids.length === 1 ? "Edit info…" : `Edit info of ${ids.length} songs…`, icon: "edit", run: () => ids.length === 1 ? editSong(ids[0]) : editSongs(ids)},
     ...extra,
   ]);
 }
@@ -1744,7 +1877,7 @@ const VIEWS = {
     const ids = songs.map(t => t.id);
     $("#a-play").onclick = () => Player.playList(ids, 0, false);
     $("#a-shuf").onclick = () => Player.playList(ids, 0, true);
-    $("#a-more").onclick = e => listMenu(e.currentTarget, ids);
+    $("#a-more").onclick = e => listMenu(e.currentTarget, ids, al.name === UNKNOWN_ALBUM ? [] : [{label: "Fix this album online…", icon: "refresh", run: () => fixAlbum(ids, al.name, al.artist)}]);
     mountRows($("#list"), songs, {list: songs, numbers, albumArtist: al.artist});
   },
   playlists(main) {
@@ -1801,13 +1934,16 @@ const VIEWS = {
         or open the Download tab. Quality, folder, lyrics, accounts and the other download settings are here:</p>
         <div class="actions" style="margin:0"><button class="btn" id="mf-settings">${ico("gear")} Download settings</button><button class="btn" data-r="download">${ico("download")} Download tab</button></div>` : `<div id="mod-box"></div>`}</div>
       <div class="set"><h3>Albums</h3><p>Finds online the album each song belongs to and writes it in the file (album, album artist,
-        track number, year), so songs of the same album are together. Only sure matches are changed (same title, artist and length).</p>
+        track number, year, genre), so songs of the same album are together. The songs of an album are compared with its track list online;
+        other songs are searched one by one. Only sure matches are changed (close title, same artist or album, same length).</p>
+        <label class="check" style="display:flex;gap:8px;align-items:center;margin:0 0 6px"><input type="checkbox" id="f-alb-short"${store.get("albShort", true) ? " checked" : ""}> Shorten long album names (“… (Original Motion Picture Soundtrack)”, “… (Deluxe Edition)”)</label>
+        <label class="check" style="display:flex;gap:8px;align-items:center;margin:0 0 12px"><input type="checkbox" id="f-alb-cover"${store.get("albCover", true) ? " checked" : ""}> Add the album cover to songs without one</label>
         <button class="btn primary" id="f-alb">${ico("refresh")} Fix albums</button><button class="btn hidden" id="f-alb-stop" style="margin-left:8px">Stop</button>
         <p id="f-alb-state" style="margin:10px 0 0"></p><div class="progress-line hidden" id="f-alb-bar"><div style="animation:none;width:0"></div></div></div>
       <div class="set"><h3>Duplicates</h3><div id="dup-box"><p>Find songs saved more than once (same title and main artist, also with “(feat. …)”, and same length) and delete the extra copies.</p>
         <button class="btn" id="dup-find">${ico("search")} Find duplicates</button></div></div>
       <div class="set"><h3>Gestures (phone)</h3><p style="margin:0">Mini player: swipe up to open, left/right for next/previous · Cover: swipe left/right for next/previous, swipe up or double tap for lyrics, one tap for the next song, swipe down to close</p></div>
-      <div class="set"><h3>Music folders</h3><p>Songs in these folders and their subfolders are shown in the library. Files are never changed, except when you choose “Save into the file” for lyrics.</p>
+      <div class="set"><h3>Music folders</h3><p>Songs in these folders and their subfolders are shown in the library. Files are only changed when you ask: lyrics saved into the file, song info edited, albums fixed.</p>
         <div id="folders">${st.folders.map((f, k) => `<div class="folder">${ico("folder")}<span>${esc(f)}</span><button class="rb iconbtn" data-rm="${k}" title="Remove">${ico("close")}</button></div>`).join("") || `<p>No folder.</p>`}</div>
         <div class="addrow"><input class="text" id="f-new" placeholder="Folder path"><button class="btn" id="f-pick">${ico("folder")} Browse</button><button class="btn primary" id="f-add">Add</button></div></div>
       ${NATIVE && !NATIVE.hasAllFiles() ? `<div class="set"><h3>Lyrics files</h3><p>Android only shows music files to the player. To read the synced lyrics (<code>.lrc</code>) saved next to your songs, and to save lyrics into a file, allow access to all files.</p><button class="btn" id="f-all">Allow access to all files</button></div>` : ""}
@@ -1826,12 +1962,14 @@ const VIEWS = {
       $("#f-alb").disabled = st.running; setHidden($("#f-alb-stop"), !st.running); setHidden($("#f-alb-bar"), !st.running);
       $("#f-alb-bar div").style.width = pct + "%";
       $("#f-alb-state").textContent = st.running ? `${st.done} / ${st.total} songs (${pct} %) · ${st.updated} fixed${st.current ? " · " + st.current : ""}`
-        : st.total ? `${st.stopped ? "Stopped" : "Done"}: ${st.updated} songs moved to their album, ${st.kept} were already right, ${st.not_found} unchanged (no sure match)${st.errors ? `, ${st.errors} could not be changed (no connection or no access to the file?)` : ""}.` : "";
+        : st.total ? `${st.stopped ? "Stopped" : "Done"}: ${st.updated} songs fixed${st.covers ? ` (${st.covers} got a cover)` : ""}, ${st.kept} were already right, ${st.not_found} unchanged (no sure match)${st.errors ? `, ${st.errors} could not be changed (no connection or no access to the file?)` : ""}.` : "";
       clearTimeout(window.albTimer);
       if (st.running) { window.albWas = true; native("backgroundWork"); window.albTimer = setTimeout(async () => { if (route().name === "settings") try { albShow(await api("album-fix")); } catch {} }, 2000); }
       else if (window.albWas && st.updated) { window.albWas = false; loadLibrary(true); }
     };
-    $("#f-alb").onclick = async () => { try { albShow(await api("album-fix", {})); } catch (e) { toast(e.message); } };
+    $("#f-alb-short").onchange = e => store.set("albShort", e.target.checked);
+    $("#f-alb-cover").onchange = e => store.set("albCover", e.target.checked);
+    $("#f-alb").onclick = async () => { try { albShow(await api("album-fix", {shorten: $("#f-alb-short").checked, covers: $("#f-alb-cover").checked})); } catch (e) { toast(e.message); } };
     $("#f-alb-stop").onclick = async () => { try { albShow(await api("album-fix", {stop: true})); } catch (e) { toast(e.message); } };
     api("album-fix").then(albShow).catch(() => {});
     mfState(st);

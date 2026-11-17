@@ -251,6 +251,46 @@ def test_album_fix_finds_the_checked_album(monkeypatch):
     track = {"track_position": 2, "release_date": "2013-08-16", "artist": {"name": "Stromae"}, "album": {"title": "Racine carrée"}}
     monkeypatch.setattr(artists, "_get", lambda p: hits if p.startswith("/search") else track)
     assert album_fix.find("Papaoutai (feat. X)", "Stromae", 232, "") == {
-        "album": "Racine carrée", "album_artist": "Stromae", "track_info": "2", "year": "2013"}
+        "album": "Racine carrée", "album_artist": "Stromae", "track_info": "2", "year": "2013", "cover": ""}
     assert album_fix.find("Papaoutai", "Stromae", 232, "Racine Carrée") == {}
     assert album_fix.find("Papaoutai", "Angèle", 232, "") is None
+
+
+def test_edit_song_info_and_details(client):
+    t = _tracks(client)["First Song"]
+    r = client.post("/api/tags", headers=client.h, json={"ids": [t["id"]], "fields": {
+        "title": "Premier", "artist": "Nouveau", "album": "Court", "album_artist": "Nouveau", "year": "2020", "genre": "Pop", "track_no": "5"}})
+    assert r.status_code == 200 and r.get_json()["done"] == 1
+    e = _tracks(client)["Premier"]
+    assert (e["artist"], e["album"], e["album_artist"], e["year"], e["genre"], e["track_no"]) == ("Nouveau", "Court", "Nouveau", "2020", "Pop", 5)
+    assert e["id"] == t["id"] and e["cover"]
+    assert client.post("/api/tags", headers=client.h, json={"ids": [t["id"]], "fields": {"title": " "}}).status_code == 400
+    d = client.get(f"/api/tracks/{t['id']}/details", headers=client.h).get_json()
+    assert d["file"] == "01 First.mp3" and d["format"] == "mp3" and d["sample_rate"] and d["bitrate"]
+    assert d["tags"]["album"] == "Court" and d["cover"]["mime"] == "image/png" and d["lyrics"] == "synced (.lrc)"
+
+
+def test_shorten_album_names():
+    import album_fix
+    assert album_fix.shorten("Titanic (Original Motion Picture Soundtrack)") == "Titanic"
+    assert album_fix.shorten("Les Misérables - Bande originale du film") == "Les Misérables"
+    assert album_fix.shorten("21 [Deluxe Edition] (Remastered)") == "21"
+    assert album_fix.shorten("Racine carrée") == "Racine carrée"
+    assert album_fix.shorten("(What's the Story) Morning Glory?") == "(What's the Story) Morning Glory?"
+
+
+def test_album_match_compares_the_track_list(monkeypatch):
+    import album_fix
+    import artists
+    albums = {"data": [{"id": 9, "title": "Encanto (Original Motion Picture Soundtrack)"}, {"id": 8, "title": "Encanto (Karaoke)"}]}
+    full = {9: {"title": "Encanto (Original Motion Picture Soundtrack)", "artist": {"name": "Various Artists"}, "release_date": "2021-11-19",
+                "cover_xl": "https://e-cdns-images.dzcdn.net/x.jpg", "genres": {"data": [{"name": "Films/Games"}]}, "nb_tracks": 3,
+                "tracks": {"data": [{"title": "The Family Madrigal", "duration": 205}, {"title": "We Don't Talk About Bruno", "duration": 216},
+                                    {"title": "Surface Pressure", "duration": 182}]}},
+            8: {"title": "Encanto (Karaoke)", "nb_tracks": 1, "tracks": {"data": [{"title": "Waiting on a Miracle (Karaoke)", "duration": 200}]}}}
+    monkeypatch.setattr(artists, "_get", lambda p: albums if p.startswith("/search") else full[int(p.split("/")[2])])
+    local = [{"id": "a", "title": "We Dont Talk About Bruno (From \"Encanto\")", "length_s": 215, "album": "Encanto (Original Motion Picture Soundtrack)", "artist": "Carolina Gaitán"},
+             {"id": "b", "title": "Surface Pressure", "length_s": 183, "album": "Encanto (Original Motion Picture Soundtrack)", "artist": "Jessica Darrow"}]
+    best = album_fix.match_album(local)[0]
+    assert best["id"] == 9 and best["matched"] == 2 and album_fix.sure(local, best)
+    assert best["tracks"]["a"]["track_info"] == "2" and best["tracks"]["b"]["track_info"] == "3" and best["year"] == "2021"
