@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.0.5 — 2026-11-17 (Android)
+
+- **Edit a song's info** (⋯ › Edit info…, from every list, the player and album, artist and folder pages): title, artist,
+  album, album artist, genre, year and track number, written in the file. "Shorten" removes "(Original Motion Picture
+  Soundtrack)", "(Deluxe Edition)"… from an album name. "Find online" shows the song found online: tap it to fill in the
+  fields and use its cover. Several songs at once from ⋯ on an album, artist or folder.
+- **Fix an album online** (⋯ on an album › Fix this album online…): the album is searched online and its track list is
+  compared with your songs; it shows how many of them are on it, then writes the album name (short or not), album
+  artist, year, genre, track numbers and the cover.
+- **Albums fix** (Settings › Albums) now compares whole albums with their track list online, can shorten long album
+  names and add the album cover to songs without one.
+- **Details** (⋯ › Details): file, folder, size, format, quality (kbps, kHz, mono/stereo), tags, cover and lyrics.
+
 ## 1.0.0.4 — 2026-11-16 (Android)
 
 - **Home screen widget**: the song playing with its cover, and previous, play/pause and next. Tap it to open the app.
