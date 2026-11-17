@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1.0 — 2026-11-17 (Android)
+
+- **Less heat and battery**:
+  - **Battery saver** (Settings › Theme, on by default in the app): no blur and no endless animation. The glass
+    panels were blurred again at every frame while a song played (pulsing dot, moving bars, progress bar).
+  - With the screen off or the app in the background, the page no longer redraws the progress bar and lyrics.
+  - MusicFlow's page (Download tab) no longer checks the internet every 20 seconds while it is hidden or the app is
+    in the background, and its background no longer moves.
+  - The notification, lock screen and widget are updated only when something changes, with a smaller cover
+    (512 px instead of 1024 px, 256 px for the widget).
+  - While the folders are read, the library is reloaded every 6 seconds instead of every 1.5 seconds, and only once at a time.
+- **Fixes**: the widget could stay without its cover (cover too big for the widget).
+
 ## 1.0.0.5 — 2026-11-17 (Android)
 
 - **Edit a song's info** (⋯ › Edit info…, from every list, the player and album, artist and folder pages): title, artist,
