@@ -141,6 +141,8 @@ class MainActivity : AppCompatActivity() {
         if (!fresh) {
             loadingView.visibility = View.GONE
             if (insetsJs.isNotEmpty()) callPage(insetsJs)
+            // The new window starts with light status bar icons: the page applies its theme again.
+            callPage("window.MFP_resume && MFP_resume()")
             routeFrom(intent)
             return
         }
