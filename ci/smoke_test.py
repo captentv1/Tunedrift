@@ -1,9 +1,12 @@
 """Emulator test of the Android app. Installs the APK (a test build with WebView debugging on), puts one song
 per format on the device, opens the app and drives its page through the WebView's DevTools socket: it plays
-each song and checks that the position moves. Then it checks that Android's media session reports playback.
+each song and checks that the position moves. Then it checks that Android's media session reports playback, that MusicFlow's search and download loaded inside
+the app, imports a playlist from a computer's MusicFlow Play (PC_LINK) while a song plays, imports it again (nothing
+is copied twice), and swipes the app away from the recent apps while a song plays (the music must go on).
 Usage: smoke_test.py <apk> <out_dir> <songs_dir>
 The songs dir holds one "Fmt <ext> - Tester.<ext>" file per format (made with ffmpeg by the workflow)."""
 import json
+import os
 import re
 import subprocess
 import sys
@@ -67,8 +70,11 @@ def close_system_dialogs():
 
 
 adb("install", "-r", APK, timeout=300)
-for permission in ("READ_MEDIA_AUDIO", "POST_NOTIFICATIONS"):
-    adb("shell", "pm", "grant", PACKAGE, f"android.permission.{permission}")
+# Android 12: no READ_MEDIA_AUDIO / POST_NOTIFICATIONS yet (13+); storage permission instead.
+for permission in ("READ_MEDIA_AUDIO", "POST_NOTIFICATIONS", "READ_EXTERNAL_STORAGE"):
+    adb("shell", "pm", "grant", PACKAGE, f"android.permission.{permission}", check=False)
+# Access to all files: the songs of an import are saved in a root folder of the person's choice.
+adb("shell", "appops", "set", PACKAGE, "MANAGE_EXTERNAL_STORAGE", "allow", check=False)
 adb("shell", "mkdir", "-p", "/sdcard/Music")
 for ext in FORMATS:
     f = SONGS / f"Fmt {ext} - Tester.{ext}"
@@ -200,20 +206,88 @@ def session_playing():
 
 session = wait_for("Android's media session does not report the song as playing", 60, session_playing)
 
-# Download tab: not in the app; Settings › Downloads installs the module (here from this computer, as the release
-# does not exist yet), then MusicFlow's own page opens in its frame.
+# MusicFlow (search and download) is part of the app now: no module to install, it loads by itself.
+mf = wait_for("MusicFlow's search and download did not load in the app", 240,
+              lambda: (js("api('state').then(s => s.musicflow)") or {}).get("state") in ("ready", "error"), every=5)
+mf = js("api('state').then(s => s.musicflow)") or {}
+print("musicflow:", mf)
+if mf.get("state") != "ready":
+    results["musicflow in the app"] = f"FAILED {mf}"
+
+# Import tab: downloads, sources, root folder.
 js("location.hash = 'download'")
-wait_for("the Download tab does not offer to install it", 30, lambda: js("!!document.querySelector('#mod-install')"), every=2)
-screenshot("download-install")
-import os
-subprocess.Popen([sys.executable, "-m", "http.server", "8765", "--directory", os.environ.get("MODULE_DIR", "module")],
-                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-time.sleep(2)
-js("api('musicflow/install', {url: 'http://10.0.2.2:8765/MusicFlowModule-android.zip'}).then(() => mfWatch()).catch(e => console.log('install: ' + e.message))")
-wait_for("the Download tab did not appear after installing MusicFlow", 300, lambda: js("document.documentElement.classList.contains('mf-on')"), every=5)
-js("location.hash = 'download'")
-wait_for("MusicFlow (Download tab) did not open", 120, lambda: js("window.mfReady === true"), every=3)
+wait_for("the Import tab did not open", 60, lambda: js("!!document.querySelector('#src-box') && !!document.querySelector('#dl-box .actions, #dl-box p')"), every=2)
+screenshot("import")
+
+# Import a playlist of the "computer" while a song plays: the songs are copied into the root folder, the music
+# goes on, and the app does not close.
+pid_before = adb("shell", "pidof", PACKAGE, check=False).strip()
+js("Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false)")
 time.sleep(3)
-screenshot("download")
+link = os.environ.get("PC_LINK", "")
+print("computer:", link)
+lists = js(f"api('import/playlists', {{kind: 'server', address: {json.dumps(link)}}}).catch(e => ({{error: e.message}}))") or {}
+print("playlists:", lists)
+party = next((p for p in lists.get("playlists") or [] if p.get("name") == "PC Party"), None)
+if not party:
+    results["import from the computer"] = f"FAILED {lists}"
+else:
+    js("api('dl/settings', {root: '/storage/emulated/0/Music/Imported'})")
+    started = js(f"api('import/start', {{source: {{kind: 'server', base: {json.dumps(lists['base'])}, id: {json.dumps(party['id'])}}}}}).catch(e => ({{error: e.message}}))") or {}
+    print("import:", started)
+    js("location.hash = 'download'; render()")
+
+    def copied():
+        d = js("api('dl')") or {}
+        c = d.get("counts") or {}
+        print("queue:", c)
+        return not c.get("queued") and not c.get("working") and (c.get("done", 0) + c.get("error", 0) + c.get("have", 0)) >= 4 and c
+    counts = wait_for("the import did not finish", 240, copied, every=4)
+    screenshot("import-done")
+    a = js(STATE) or {}
+    pid_after = adb("shell", "pidof", PACKAGE, check=False).strip()
+    print("after import:", counts, a, pid_before, pid_after)
+    if counts.get("done", 0) < 4:
+        results["import from the computer"] = f"FAILED {counts}"
+    if pid_after != pid_before or a.get("paused") or a.get("err"):
+        results["playing while importing"] = f"FAILED pid {pid_before} -> {pid_after}, {a}"
+    # Again: everything is on the device now, nothing is copied a second time.
+    again = js(f"api('import/start', {{source: {{kind: 'server', base: {json.dumps(lists['base'])}, id: {json.dumps(party['id'])}}}}}).then(r => r.import.queued)") or 0
+    time.sleep(8)
+    d = js("api('dl')") or {}
+    linked = [i for i in d.get("items") or [] if i.get("state") == "have"]
+    print("second import:", again, "linked:", len(linked))
+    if len(linked) < 4:
+        results["no download twice"] = f"FAILED {len(linked)} linked, {d.get('counts')}"
+    pl = js("api('collections').then(c => c.playlists.map(p => [p.name, p.tracks.length]))")
+    print("playlists here:", pl)
+    if not any(n == "PC Party" and k == 4 for n, k in pl or []):
+        results["imported playlist"] = f"FAILED {pl}"
+
+# Swiped away from the recent apps while playing: the music goes on (as in Samsung Music).
+js("Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false)")
+time.sleep(3)
+size = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size", check=False))
+w, h = (int(size.group(1)), int(size.group(2))) if size else (1080, 1920)
+adb("shell", "input", "keyevent", "KEYCODE_APP_SWITCH", check=False)
+time.sleep(3)
+screenshot("recents")
+adb("shell", "input", "swipe", str(w // 2), str(h // 2), str(w // 2), str(h // 12), "250", check=False)
+time.sleep(3)
+adb("shell", "input", "keyevent", "KEYCODE_HOME", check=False)
+time.sleep(6)
+screenshot("after-swipe")
+tasks = adb("shell", "dumpsys", "activity", "activities", check=False)
+still_task = f"{PACKAGE}/.MainActivity" in tasks
+pid_now = adb("shell", "pidof", PACKAGE, check=False).strip()
+t1 = js(STATE) if pid_now else {}
+time.sleep(4)
+t2 = js(STATE) if pid_now else {}
+print("after swipe: task", still_task, "pid", pid_now, t1, t2)
+if not pid_now or not t2 or t2.get("paused") or not t2.get("t", 0) > (t1 or {}).get("t", 0):
+    results["music after swiping the app away"] = f"FAILED pid={pid_now} task={still_task} {t1} {t2}"
+if still_task:
+    print("note: the recent-apps swipe did not remove the task on this emulator; the check above is then only partial")
+
 bad = {k: v for k, v in results.items() if v != "ok"}
-finish(f"these formats do not play: {bad}" if bad else None)
+finish(f"failed: {bad}" if bad else None)

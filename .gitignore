@@ -16,3 +16,4 @@ keystore.properties
 *.keystore
 .kotlin/
 build-module/
+pc/
