@@ -293,6 +293,24 @@ time.sleep(2)
 out = js("api('import/state').then(s => s.spotify)") or {}
 results["spotify sign-out"] = "ok" if out.get("connected") is False else f"FAILED {out}"
 
+# Update: the app downloads the latest release by itself, with progress; a second tap does not start it again.
+# The release is older than this test build, so after the whole download the app must refuse it ("not newer").
+js("window.__upd = []; { const p0 = window.MFP_updateProgress, e0 = window.MFP_updateError;"
+   " window.MFP_updateProgress = p => { __upd.push(p); p0(p); }; window.MFP_updateError = m => { __upd.push('error: ' + m); e0(m); }; } true")
+latest = js("api('latest-version').catch(e => ({error: e.message}))") or {}
+apk_url = next((a["url"] for a in latest.get("assets") or [] if a.get("name") == "MusicFlowPlay.apk"),
+               "https://github.com/captentv1/musicflow-play/releases/download/v1.1.0.0/MusicFlowPlay.apk")
+print("update from:", apk_url)
+js(f"native('installUpdate', {json.dumps(apk_url)})")
+time.sleep(3)
+js(f"native('installUpdate', {json.dumps(apk_url)})")  # the second tap of the bug report
+upd = wait_for("the update download did not finish", 300,
+               lambda: (lambda u: u if u and any(isinstance(x, str) or x == 100 for x in u) else None)(js("window.__upd")), every=3)
+print("update events:", upd[:6], "...", upd[-4:])
+ends = [x for x in upd if isinstance(x, str) or x == 100]
+progressed = any(isinstance(x, int) and 0 <= x < 100 for x in upd)
+results["update download"] = "ok" if progressed and ends and (ends[0] == 100 or "not newer" in str(ends[0])) else f"FAILED {upd[-6:]}"
+
 # Swiped away from the recent apps while playing: the music goes on (as in Samsung Music).
 js("Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false)")
 time.sleep(3)

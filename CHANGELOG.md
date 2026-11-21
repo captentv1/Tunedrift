@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1.1 — 2026-11-21 (Android)
+
+- **Fix: "Update" downloaded nothing.** The update went through Android's download manager, whose download could
+  stay waiting for ever (tapping Update again, or after reopening the app, changed nothing). The app now downloads
+  the update itself, shows the percentage, and a second tap only shows the progress again. Errors are shown in a
+  message instead of only in Settings.
+
 ## 1.1.1.0 — 2026-11-21 (Android and PC)
 
 - **Spotify without a key**: Import › Spotify › Connect Spotify signs in with your usual account on Spotify's own
