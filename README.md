@@ -72,7 +72,7 @@ The music is read from the computer, so the computer stays on.
 | Folder | Content |
 |---|---|
 | `musicflow/` | Git submodule of MusicFlow. Its code is used as is, inside the player's server: `core/`, and its server (`desktop/app.py` on PC, `mobile_app.py` on Android) for search and download. Its page is not used. |
-| `server/` | Small Flask server: reads the folders, serves the audio (with seeking), covers, lyrics, playlists and favorites. `downloads.py` is the download queue (songs already on the device are linked), `importer.py` the Import tab (links, Spotify and YouTube APIs, another MusicFlow Play, files), `mf_bridge.py` calls MusicFlow's code. |
+| `server/` | Small Flask server: reads the folders, serves the audio (with seeking), covers, lyrics, playlists and favorites. `downloads.py` is the download queue (songs already on the device are linked), `importer.py` the Import tab (links, Spotify account, YouTube channel, another MusicFlow Play, files), `mf_bridge.py` calls MusicFlow's code. |
 | `web/` | The single page, for PC and phone. |
 | `android/` | The Android app: a WebView on the same page, the same server run by [Chaquopy](https://chaquo.com/chaquopy/), and a media session for the notification and lock screen. |
 | `.github/workflows/build-apk.yml` | Builds the APK, starts it on an Android 12 emulator, plays every format, imports a playlist from a "computer" while playing and swipes the app away (`ci/smoke_test.py`), publishes it as a release on `main`. |
@@ -85,13 +85,13 @@ Settings, the library index, playlists and favorites are stored in `%APPDATA%\Mu
 
 ## Import from Spotify or YouTube
 
-Your playlists are read through the official APIs, with your own (free) developer key, once:
+No key and no developer account:
 
-- **Spotify**: [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) › Create app › Redirect URI
-  `http://127.0.0.1:5091/import/callback/spotify`, Web API › copy the Client ID into Import › Spotify.
-- **YouTube**: [console.cloud.google.com](https://console.cloud.google.com/apis/library/youtube.googleapis.com) ›
-  enable YouTube Data API v3 › OAuth consent screen (External, add yourself as a test user) › Credentials › OAuth
-  client ID, type Desktop app › copy the Client ID and secret into Import › YouTube.
+- **Spotify** (phone app): Import › Spotify › **Connect Spotify** opens Spotify's own sign-in page in the app; sign in
+  with your usual account (e-mail with password or a code). A hidden page of Spotify's web player then reads your
+  playlists and Liked Songs for you. Disconnect removes the session from the app. On the computer, paste a playlist
+  link instead.
+- **YouTube**: paste your channel link or @name: its public playlists are listed (read with yt-dlp, no sign-in).
 
 A playlist link needs no account.
 

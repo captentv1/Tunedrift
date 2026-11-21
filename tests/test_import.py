@@ -125,3 +125,55 @@ def test_local_server_copies_files_once(client, tmp_path):
 def test_musicflow_routes_are_limited(client):
     assert client.post("/api/mf/download", json={}, headers=client.h).status_code == 403
     assert client.post("/api/mf/../state", json={}, headers=client.h).status_code in (403, 404)
+
+
+def test_youtube_channel_links():
+    import importer
+    assert importer.youtube_channel("@Stromae") == "https://www.youtube.com/@Stromae"
+    assert importer.youtube_channel("stromae") == "https://www.youtube.com/@stromae"
+    assert importer.youtube_channel("https://www.youtube.com/@Stromae/videos") == "https://www.youtube.com/@Stromae"
+    assert importer.youtube_channel("music.youtube.com/channel/UC_abc-123") == "https://www.youtube.com/channel/UC_abc-123"
+    for bad in ("https://example.com/@x", "https://www.youtube.com/watch?v=abc", ""):
+        try:
+            importer.youtube_channel(bad)
+            raise AssertionError(bad)
+        except importer.ImportError_:
+            pass
+
+
+class _FakeBot:
+    """SpotifyBot of the phone app, where Spotify refuses its Web API: the lists are read from the page."""
+    def connected(self):
+        return True
+
+    def token(self, timeout):
+        return ""
+
+    def apiBase(self):
+        return "http://127.0.0.1:9/v1"
+
+    def webBase(self):
+        return "https://open.spotify.com"
+
+    def playlists(self, timeout):
+        return '[{"id": "abc123", "name": "Road trip"}, {"id": "abc123", "name": "dup"}, {"id": "", "name": "x"}]'
+
+    def tracks(self, url, timeout):
+        assert url == "https://open.spotify.com/playlist/abc123"
+        return ('{"done": true, "name": "Road trip", "items": [{"title": "One More Time", "artist": "Daft Punk",'
+                ' "album": "Discovery", "duration": "5:20", "cover": ""}, {"title": ""}]}')
+
+
+def test_spotify_without_key(client, monkeypatch):
+    import importer
+    st = client.get("/api/import/state", headers=client.h).get_json()
+    assert st["spotify"] == {"available": False, "connected": False}  # computer: sign-in is in the phone app
+    r = client.post("/api/import/playlists", json={"kind": "spotify"}, headers=client.h)
+    assert r.status_code == 400 and "phone" in r.get_json()["error"]
+    monkeypatch.setattr(importer, "spotify_bot", lambda: _FakeBot())
+    assert client.get("/api/import/state", headers=client.h).get_json()["spotify"]["connected"] is True
+    lists = client.post("/api/import/playlists", json={"kind": "spotify"}, headers=client.h).get_json()["playlists"]
+    assert [(p["id"], p["name"]) for p in lists] == [("liked", "Liked Songs"), ("abc123", "Road trip")]
+    name, tracks = importer.fetch({"kind": "spotify", "id": "abc123"})
+    assert name == "Road trip" and tracks == [{"title": "One More Time", "artist": "Daft Punk", "album": "Discovery",
+                                               "duration": 320, "cover": "", "url": ""}]
