@@ -135,11 +135,6 @@ def suggest_scan(tracks: list[dict], store, cache: dict, force: bool = False) ->
         SUGGEST.update(running=True, total=0, done=0, last=time.time())
     data = store.data
     found, checked, dismissed = data.setdefault("found", {}), data.setdefault("checked", {}), set(data.setdefault("dismissed", []))
-    now = time.time()
-    todo = [t for t in tracks if t.get("id") not in dismissed and t.get("id") not in found
-            and now - float(checked.get(t.get("id"), 0)) > _RECHECK_S and t.get("title") and t.get("length_s")
-            and not has_synced(t, cache)]
-    SUGGEST["total"] = len(todo)
 
     def one(t):
         try:
@@ -156,6 +151,15 @@ def suggest_scan(tracks: list[dict], store, cache: dict, force: bool = False) ->
 
     def run():
         try:
+            # Chosen here, in the background: reading the lyrics of every file must not hold the page's request.
+            now = time.time()
+            todo = []
+            for t in tracks:
+                if (t.get("id") not in dismissed and t.get("id") not in found and t.get("title") and t.get("length_s")
+                        and now - float(checked.get(t.get("id"), 0)) > _RECHECK_S and not has_synced(t, cache)):
+                    todo.append(t)
+                    SUGGEST["total"] = len(todo)
+                time.sleep(0)
             with ThreadPoolExecutor(2) as pool:
                 list(pool.map(one, todo))
         finally:
