@@ -17,6 +17,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -133,9 +134,8 @@ object SpotifyBot {
         // The window already makes room for the keyboard (MainActivity): only the bars are added here, else the
         // sign-in page was squeezed to one line above the keyboard.
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(box) { v, insets ->
-            val t = androidx.core.view.WindowInsetsCompat.Type
-            val bars = insets.getInsets(t.systemBars() or t.displayCutout())
-            val typing = insets.getInsets(t.ime()).bottom > bars.bottom
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val typing = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > bars.bottom
             v.setPadding(0, bars.top, 0, if (typing) 0 else bars.bottom)
             insets
         }
