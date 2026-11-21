@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.4.0 — 2026-11-21 (Android and PC)
+
+- **Search artists online:** in Search › Online, choose **Songs** or **Artists**. Artists shows the artists found
+  (photo, fans, albums); tapping one opens their page: popular songs, every album and single (tap one to see its
+  songs), the songs you already have marked, "Download N missing", and the artist radio. With "Everywhere", the
+  Artists chip also searches artists online.
+
 ## 1.1.3.0 — 2026-11-21 (Android and PC)
 
 - **Spotify radios are back:** Import › **Radio**: type a song or an artist (or paste its Spotify link), and Spotify
