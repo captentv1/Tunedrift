@@ -2094,6 +2094,25 @@ const albumCard = al => ({go: "album/" + encodeURIComponent(al.key), cover: al.c
 const shelf = (title, items, round) => items.length ? `<h2 class="sec">${title}</h2>` + cardsHtml(items, round).replace('class="grid"', 'class="grid shelf"') : "";
 const VIEWS = {
   download(main) { importView(main); },
+  // An artist found online (search › Online › Artists): everything of theirs, to listen to what you have and
+  // download the rest.
+  async oartist(main, arg) {
+    const [id, ...rest] = (arg || "").split("/"), raw = rest.join("/");
+    let name = raw; try { name = decodeURIComponent(raw); } catch {}
+    const mineKey = norm(name), local = L.artists.get(mineKey);
+    main.innerHTML = `<div class="head"><div class="art" style="border-radius:50%" id="oa-pic">${ico("person")}</div><div class="grow"><div class="sub">Artist · online</div><h1>${esc(name)}</h1><div class="sub" id="oa-sub"></div></div></div>
+      <div class="actions" style="flex-wrap:wrap">${mfUrl ? `<button class="btn" id="oa-radio">${ico("shuffle")} Artist radio</button>` : ""}${local ? `<button class="btn" data-go="artist/${esc(encodeURIComponent(mineKey))}">${ico("person")} In your music (${plural(local.tracks.length, "song")})</button>` : ""}</div>
+      <div id="oa-box"><div class="muted">Reading the discography…</div><div class="progress-line"><div></div></div></div>`;
+    if ($("#oa-radio")) $("#oa-radio").onclick = () => openRadio(name, "artist");
+    try {
+      const d = await api("online/artist?id=" + encodeURIComponent(id));
+      if (route().name !== "oartist" || route().arg !== arg) return;
+      const a = d.artist_name || {};
+      if (a.photo) { $("#oa-pic").innerHTML = `<img src="${esc(a.photo)}" alt="">`; decorate(main, null); }
+      $("#oa-sub").textContent = [a.fans ? fmtFans(a.fans) : "", (d.albums || []).length ? plural(d.albums.length, "album and single", "albums and singles") : ""].filter(Boolean).join(" · ");
+      $("#oa-box").innerHTML = discographyHtml(d);
+    } catch (e) { $("#oa-box").innerHTML = `<div class="note">${ico("close")}<span>${esc(e.message)}</span></div>`; }
+  },
   home(main) {
     if (!L.list.length) { main.innerHTML = emptyLibrary(); return; }
     const h = new Date().getHours(), hello = h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
@@ -2347,27 +2366,30 @@ function localMatch(r) {
 // Online search: only once the person stops typing, one at a time (a newer one replaces the one waiting), and
 // answers kept, so typing never piles up searches (that made the app stall for seconds).
 const ONLINE_CACHE = new Map();
+const onlineKind = () => SRCH.kind === "artists" ? "artists" : "songs";
+const onlineKey = q => onlineKind() + ":" + q;
 let onlineTimer = 0, onlineBusy = false, onlineNext = "";
 function searchOnlineSoon(q, wait) { clearTimeout(onlineTimer); onlineTimer = setTimeout(() => searchOnline(q), wait == null ? 700 : wait); }
 async function searchOnline(q) {
   q = (q || "").trim(); clearTimeout(onlineTimer);
   if (!q || SRCH.scope === "local" || !mfUrl) return;
-  if (!navigator.onLine) { SRCH.online = {q, error: "You are offline: only your music is shown."}; return render(); }
-  if (ONLINE_CACHE.has(q)) { SRCH.online = {q, results: ONLINE_CACHE.get(q)}; return render(); }
-  if (onlineBusy) { onlineNext = q; if (SRCH.online.q !== q) { SRCH.online = {q, loading: true}; render(); } return; }
-  onlineBusy = true; SRCH.online = {q, loading: true}; render();
+  const kind = onlineKind(), key = kind + ":" + q;
+  if (!navigator.onLine) { SRCH.online = {q, kind, error: "You are offline: only your music is shown."}; return render(); }
+  if (ONLINE_CACHE.has(key)) { SRCH.online = {q, kind, results: ONLINE_CACHE.get(key)}; return render(); }
+  if (onlineBusy) { onlineNext = q; if (SRCH.online.q !== q || SRCH.online.kind !== kind) { SRCH.online = {q, kind, loading: true}; render(); } return; }
+  onlineBusy = true; SRCH.online = {q, kind, loading: true}; render();
   try {
-    const res = await MF.search(q);
-    ONLINE_CACHE.set(q, res); if (ONLINE_CACHE.size > 40) ONLINE_CACHE.delete(ONLINE_CACHE.keys().next().value);
-    if (SRCH.online.q === q) SRCH.online = {q, results: res};
+    const res = kind === "artists" ? (await api("online/artists?q=" + encodeURIComponent(q))).artists || [] : await MF.search(q);
+    ONLINE_CACHE.set(key, res); if (ONLINE_CACHE.size > 40) ONLINE_CACHE.delete(ONLINE_CACHE.keys().next().value);
+    if (SRCH.online.q === q && SRCH.online.kind === kind) SRCH.online = {q, kind, results: res};
   } catch (e) {
     const m = String(e.message || "");
-    if (!(e.data && e.data.superseded) && SRCH.online.q === q) SRCH.online = {q, error: /proxy|connect|network|resolve|timed out|URLError|getaddrinfo/i.test(m)
+    if (!(e.data && e.data.superseded) && SRCH.online.q === q && SRCH.online.kind === kind) SRCH.online = {q, kind, error: /proxy|connect|network|resolve|timed out|URLError|getaddrinfo/i.test(m)
       ? "The online search could not connect. Check the connection, then try again." : m.length > 160 ? m.slice(0, 157) + "…" : m};
   }
   onlineBusy = false;
   const next = onlineNext; onlineNext = "";
-  if (next && next !== q && $("#q").value.trim() === next) return searchOnline(next);
+  if (next && (next !== q || onlineKind() !== kind) && $("#q").value.trim() === next) return searchOnline(next);
   if ($("#q").value.trim() === q) render();
 }
 // Online songs of an artist or album (MusicFlow installed): what you have plays, the rest downloads.
@@ -2385,13 +2407,17 @@ function onlineBlock(items) {
         : SRCH.added.has(k) ? `<button class="btn" data-r="download">${ico("download")}<span class="hide-s">Added</span></button>`
         : `<button class="btn primary" data-onl="${base + i}" title="Download">${ico("download")}<span class="hide-s">Download</span></button>`}</div>`; }).join("")}</div>`;
 }
+const fmtFans = n => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + " M fans" : n >= 1e3 ? Math.round(n / 1e3) + " k fans" : plural(n, "fan");
+function discographyHtml(d) {
+  return `<h2 class="sec">Popular songs online</h2>${onlineBlock(d.top || [])}<h2 class="sec">Albums and singles online</h2>
+      <div class="rows">${(d.albums || []).map(a => `<div><div class="row" data-oalb="${a.id}" style="cursor:pointer"><div class="art">${a.cover_art ? `<img loading="lazy" src="${esc(a.cover_art)}" alt="">` : ico("album")}</div>
+        <div class="txt"><div class="t1">${esc(a.song_title)}</div><div class="t2">${esc([a.type === "single" ? "Single" : a.type === "ep" ? "EP" : "Album", (a.date || "").slice(0, 4)].filter(Boolean).join(" · "))}</div></div>${ico("down")}</div><div class="oalb-t"></div></div>`).join("")}</div>`;
+}
 async function artistOnline(box, name) {
   box.innerHTML = `<h2 class="sec">Online</h2><div class="muted">Searching online…</div><div class="progress-line"><div></div></div>`;
   try {
     const d = await api("online/artist?name=" + encodeURIComponent(name));
-    box.innerHTML = `<h2 class="sec">Popular songs online</h2>${onlineBlock(d.top || [])}<h2 class="sec">Albums and singles online</h2>
-      <div class="rows">${(d.albums || []).map(a => `<div><div class="row" data-oalb="${a.id}" style="cursor:pointer"><div class="art">${a.cover_art ? `<img loading="lazy" src="${esc(a.cover_art)}" alt="">` : ico("album")}</div>
-        <div class="txt"><div class="t1">${esc(a.song_title)}</div><div class="t2">${esc([a.type === "single" ? "Single" : a.type === "ep" ? "EP" : "Album", (a.date || "").slice(0, 4)].filter(Boolean).join(" · "))}</div></div>${ico("down")}</div><div class="oalb-t"></div></div>`).join("")}</div>`;
+    box.innerHTML = discographyHtml(d);
   } catch (e) { box.innerHTML = `<h2 class="sec">Online</h2><div class="note">${ico("close")}<span>${esc(e.message)}</span><button class="btn" id="o-again">Try again</button></div>`; $("#o-again").onclick = () => artistOnline(box, name); }
 }
 function onlDownload(i, btn) {
@@ -2423,7 +2449,7 @@ function renderSearch(main, q) {
   const fols = want("folders") ? [...(L.folders || new Map()).values()].filter(n => n.key && hit(norm(n.name))).slice(0, 12) : [];
   const nLocal = songs.length + arts.length + als.length + fols.length;
   const chip = (attr, v, label, on) => `<button class="chip${on ? " active" : ""}" ${attr}="${v}">${label}</button>`;
-  const o = SRCH.online, mine = o.q === q;
+  const o = SRCH.online, ok = onlineKind(), mine = o.q === q && o.kind === ok;
   let online = "";
   let searching = false;
   if (sc !== "local") {
@@ -2431,6 +2457,9 @@ function renderSearch(main, q) {
     else if (!mine || o.loading) searching = true;
     else if (o.error) online = `<div class="note">${ico("close")}<span>${esc(o.error)}</span><button class="btn" id="s-online">Try again</button></div>`;
     else if (!o.results.length) online = sc === "online" ? `<div class="muted">Nothing found online.</div>` : "";
+    else if (ok === "artists") online = `<h2 class="sec">Artists online</h2><div class="grid">${o.results.map(a => `<div class="card round" data-go="${esc("oartist/" + a.id + "/" + encodeURIComponent(a.name))}">
+        <div class="art">${a.photo ? `<img loading="lazy" src="${esc(a.photo)}" alt="" onerror="this.style.display='none'">` : ico("person")}</div>
+        <div class="t1">${esc(a.name)}</div><div class="t2">${esc([a.fans ? fmtFans(a.fans) : "", a.albums ? plural(a.albums, "album") : ""].filter(Boolean).join(" · "))}</div></div>`).join("")}</div>`;
     else online = `<h2 class="sec">Online</h2><div class="rows">${o.results.map((r, i) => { const have = localMatch(r), key = (r.title || "") + "|" + (r.uploader || "");
       return `<div class="row orow" data-oi="${i}"><div class="art">${r.thumbnail ? `<img loading="lazy" src="${esc(r.thumbnail)}" alt="" onerror="this.remove()">` : ico("note")}</div>
         <div class="txt"><div class="t1">${esc(r.title || "")}</div><div class="t2">${esc([r.uploader, r.album, fmtDur(r.duration)].filter(Boolean).join(" · "))}</div></div>
@@ -2441,7 +2470,8 @@ function renderSearch(main, q) {
   main.innerHTML = `<div class="head"><div class="grow"><h1>“${esc(q)}”</h1><div class="sub">${local ? plural(songs.length, "song") + " in your music" : "Online"}</div></div></div>
     <div class="chips mf-only">${chip("data-sscope", "all", "Everywhere", sc === "all")}${chip("data-sscope", "local", "My music", sc === "local")}${chip("data-sscope", "online", "Online", sc === "online")}</div>
     ${searching ? `<div class="progress-line slim" style="margin:0 0 10px"><div></div></div>` : ""}
-    ${local ? `<div class="chips kinds">${[["all", "All"], ["songs", "Songs"], ["artists", "Artists"], ["albums", "Albums"], ["folders", "Folders"]].map(([v, l]) => chip("data-skind", v, l, k === v)).join("")}</div>` : ""}
+    ${local ? `<div class="chips kinds">${[["all", "All"], ["songs", "Songs"], ["artists", "Artists"], ["albums", "Albums"], ["folders", "Folders"]].map(([v, l]) => chip("data-skind", v, l, k === v)).join("")}</div>`
+      : `<div class="chips kinds">${[["songs", "Songs"], ["artists", "Artists"]].map(([v, l]) => chip("data-skind", v, l, ok === v)).join("")}</div>`}
     ${local && !nLocal && (sc === "local" || (mine && !o.loading && !(o.results || []).length)) ? `<div class="empty" style="padding:24px">${ico("search")}Nothing in your music for “${esc(q)}”.</div>` : ""}
     ${arts.length ? `<h2 class="sec">Artists</h2>` + cardsHtml(arts.map(a => ({go: "artist/" + encodeURIComponent(a.key), cover: a.cover, icon: "person", name: a.name, sub: plural(a.tracks.length, "song")})), true).replace('class="grid"', 'class="grid shelf"') : ""}
     ${als.length ? `<h2 class="sec">Albums</h2>` + cardsHtml(als.map(albumCard)).replace('class="grid"', 'class="grid shelf"') : ""}
@@ -2449,9 +2479,9 @@ function renderSearch(main, q) {
     ${songs.length ? `<h2 class="sec">Songs</h2><div id="list"></div>` : ""}
     ${online}`;
   if (songs.length) mountRows($("#list"), songs, {list: songs});
-  const so = $("#s-online"); if (so) so.onclick = () => { ONLINE_CACHE.delete(q.trim()); SRCH.online = {}; searchOnline(q); };
+  const so = $("#s-online"); if (so) so.onclick = () => { ONLINE_CACHE.delete(onlineKey(q.trim())); SRCH.online = {}; searchOnline(q); };
   // Online results come by themselves once typing stops (from 2 letters); Enter searches at once.
-  if (sc !== "local" && !mine && navigator.onLine && mfUrl && q.trim().length >= 2) searchOnlineSoon(q, ONLINE_CACHE.has(q.trim()) ? 0 : 700);
+  if (sc !== "local" && !mine && navigator.onLine && mfUrl && q.trim().length >= 2) searchOnlineSoon(q, ONLINE_CACHE.has(onlineKey(q.trim())) ? 0 : 700);
 }
 document.addEventListener("click", e => {
   const s1 = e.target.closest("[data-sscope]"), s2 = e.target.closest("[data-skind]"), dl = e.target.closest("[data-odl]"), pl = e.target.closest("[data-oplay]");

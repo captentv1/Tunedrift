@@ -27,7 +27,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.1.3.0"
+VERSION = "1.1.4.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -409,13 +409,28 @@ def api_lyrics_suggest():
 def api_online_artist():
     import artists
     import lyrics as ly
-    name = request.args.get("name", "")
+    name, aid = request.args.get("name", ""), request.args.get("id", "")
     try:
+        if aid.isdigit():  # an artist picked in the online search
+            return jsonify(artists.discography(int(aid)))
         found = artists.search_artists(name, 5)
         if not found:
             return jsonify({"error": "This artist was not found online."}), 404
         a = next((x for x in found if ly._key(x["name"]) == ly._key(name)), found[0])
         return jsonify(artists.discography(a["id"]))
+    except Exception as exc:
+        return jsonify({"error": f"Online search failed: {exc}"}), 502
+
+
+@app.route("/api/online/artists")
+def api_online_artists():
+    """Artists found online for a search (Search › Online › Artists): name, photo, fans, number of albums."""
+    import artists
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"artists": []})
+    try:
+        return jsonify({"artists": artists.search_artists(q, 12)})
     except Exception as exc:
         return jsonify({"error": f"Online search failed: {exc}"}), 502
 

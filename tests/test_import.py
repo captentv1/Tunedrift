@@ -270,3 +270,14 @@ def test_spotify_radio_goes_to_musicflow(client, monkeypatch):
     r = client.post("/api/mf/spotify-radio", json={"query": "Stromae", "kind": "artist"}, headers=client.h)
     assert r.status_code == 200 and r.get_json()["url"].endswith("radio")
     assert seen == [("spotify-radio", {"query": "Stromae", "kind": "artist"})]
+
+
+def test_online_artists_and_their_page(client, monkeypatch):
+    """Search › Online › Artists lists artists; picking one opens its whole discography by its id."""
+    import artists
+    monkeypatch.setattr(artists, "search_artists", lambda q, n=12: [{"id": 75798, "name": "Stromae", "photo": "", "fans": 5, "albums": 3}])
+    monkeypatch.setattr(artists, "discography", lambda i: {"artist_name": {"id": i, "name": "Stromae"}, "top": [], "albums": []})
+    d = client.get("/api/online/artists?q=strom", headers=client.h).get_json()
+    assert [a["name"] for a in d["artists"]] == ["Stromae"]
+    d = client.get("/api/online/artist?id=75798", headers=client.h).get_json()
+    assert d["artist_name"]["id"] == 75798
