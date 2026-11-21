@@ -4,7 +4,6 @@ import android.app.DownloadManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,38 +25,80 @@ object UpdateManager {
         File(ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: File(ctx.filesDir, "Download"), "MusicFlowPlay-update.apk")
 
     private fun dm(ctx: Context) = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-    fun currentId(ctx: Context): Long = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_ID, -1L)
-    private fun forget(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_ID).apply()
 
-    fun startDownload(ctx: Context, url: String): Long {
-        val previousId = currentId(ctx)
-        if (previousId >= 0) dm(ctx).remove(previousId)
-        val f = file(ctx)
-        f.parentFile?.mkdirs(); f.delete()
-        val req = DownloadManager.Request(Uri.parse(url))
-            .setTitle("MusicFlow Play update")
-            .setDescription("Downloading the new version")
-            .setMimeType("application/vnd.android.package-archive")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
-            .setDestinationUri(Uri.fromFile(f))
-        val id = dm(ctx).enqueue(req)
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(KEY_ID, id).apply()
-        return id
-    }
+    /** Percent of the download under way (-1 = size unknown), or null when nothing is downloading. */
+    @Volatile var progress: Int? = null
+        private set
 
-    fun state(ctx: Context): Pair<Int, Int>? {
-        val id = currentId(ctx)
-        if (id < 0) return null
-        dm(ctx).query(DownloadManager.Query().setFilterById(id)).use { c ->
-            if (!c.moveToFirst()) { forget(ctx); return null }
-            val status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-            val downloaded = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-            val total = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-            return status to (if (total > 0) (downloaded * 100 / total).toInt() else -1)
+    /** Old versions downloaded with Android's download manager: forget that download (it could stay waiting). */
+    fun forgetOldDownload(ctx: Context) {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val id = prefs.getLong(KEY_ID, -1L)
+        if (id >= 0) {
+            try { dm(ctx).remove(id) } catch (e: Exception) { }
+            prefs.edit().remove(KEY_ID).apply()
         }
     }
 
-    fun finished(ctx: Context) = forget(ctx)
+    /**
+     * Downloads the update itself (no download manager: on some phones its download stayed "waiting" for ever, so
+     * "Update" did nothing). Blocking; one at a time: a second call while one runs returns false at once.
+     */
+    fun download(ctx: Context, url: String, onProgress: (Int) -> Unit): Boolean {
+        synchronized(this) {
+            if (progress != null) return false
+            progress = -1
+        }
+        try {
+            forgetOldDownload(ctx)
+            val f = file(ctx)
+            f.parentFile?.mkdirs()
+            val part = File(f.path + ".part")
+            part.delete(); f.delete()
+            var address = url
+            var conn: java.net.HttpURLConnection
+            var hops = 0
+            while (true) {  // GitHub sends the file from another address (redirect)
+                conn = (java.net.URL(address).openConnection() as java.net.HttpURLConnection).apply {
+                    connectTimeout = 20000; readTimeout = 30000; instanceFollowRedirects = false
+                    setRequestProperty("User-Agent", "MusicFlowPlay")
+                }
+                val code = conn.responseCode
+                if (code in 300..399 && hops < 8) {
+                    val next = conn.getHeaderField("Location") ?: throw Exception("download failed (redirect)")
+                    conn.disconnect()
+                    address = java.net.URL(java.net.URL(address), next).toString()
+                    if (!address.startsWith("https://")) throw Exception("download address refused")
+                    hops++
+                    continue
+                }
+                if (code != 200) { conn.disconnect(); throw Exception("download failed (error $code)") }
+                break
+            }
+            val total = conn.contentLengthLong
+            var done = 0L
+            var last = -2
+            conn.inputStream.use { input ->
+                part.outputStream().use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        done += n
+                        val pct = if (total > 0) (done * 100 / total).toInt().coerceAtMost(99) else -1
+                        if (pct != last) { last = pct; progress = pct; onProgress(pct) }
+                    }
+                }
+            }
+            conn.disconnect()
+            if (total > 0 && done != total) throw Exception("download interrupted, try again")
+            if (!part.renameTo(f)) throw Exception("could not save the update")
+            return true
+        } finally {
+            progress = null
+        }
+    }
 
     // Security: only install MusicFlow Play itself, newer, signed with the same key.
     fun verify(ctx: Context, apk: File) {
@@ -82,7 +123,7 @@ object UpdateManager {
 
     fun readyVersion(ctx: Context): String {
         val f = file(ctx)
-        if (!f.exists() || currentId(ctx) >= 0) return ""
+        if (!f.exists() || progress != null) return ""
         return try { verify(ctx, f); ctx.packageManager.getPackageArchiveInfo(f.path, 0)?.versionName ?: "" }
         catch (e: Exception) { "" }
     }
@@ -105,21 +146,4 @@ object UpdateManager {
 
     fun clearNotification(ctx: Context) =
         (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIF_ID)
-}
-
-class UpdateDownloadReceiver : BroadcastReceiver() {
-    override fun onReceive(ctx: Context, intent: Intent) {
-        val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
-        if (id < 0 || id != UpdateManager.currentId(ctx)) return
-        if (MainActivity.updateFollowedByPage) return
-        val state = UpdateManager.state(ctx)
-        UpdateManager.finished(ctx)
-        if (state?.first != DownloadManager.STATUS_SUCCESSFUL) return
-        val version = try {
-            val f = UpdateManager.file(ctx)
-            UpdateManager.verify(ctx, f)
-            ctx.packageManager.getPackageArchiveInfo(f.path, 0)?.versionName ?: ""
-        } catch (e: Exception) { return }
-        UpdateManager.notifyReady(ctx, version)
-    }
 }

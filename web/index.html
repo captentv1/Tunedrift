@@ -1897,13 +1897,17 @@ const Upd = {
   install() {
     if (this.ready) { this.ready = ""; this.state("Opening the installer… Confirm “Install”."); native("installDownloadedUpdate"); return; }
     if (!this.info) return this.check(false);
-    if (NATIVE) { this.state("Downloading the update… A notification says when it is ready."); native("installUpdate", this.info.url); }
+    if (NATIVE) {
+      if (!NATIVE.installUpdate) { toast("Update: download MusicFlowPlay.apk from GitHub"); return; }
+      this.state("Downloading the update…"); toast(`Downloading MusicFlow Play ${this.info.v}…`);
+      try { NATIVE.installUpdate(this.info.url); } catch (e) { this.state(`Update failed: ${e.message || e}`); toast(`Update failed: ${e.message || e}`); }
+    }
     else { window.open(this.info.url, "_blank"); this.state("The new MusicFlowPlay.exe is downloading: close this one, then open the new one."); }
   },
 };
-window.MFP_updateProgress = p => Upd.state(p === -2 ? "Allow MusicFlow Play to install apps, then come back: the installation continues."
+window.MFP_updateProgress = p => (p === 100 || p === -2) && !$("#u-state") ? toast(p === 100 ? "Opening the installer…" : "Allow MusicFlow Play to install apps") : Upd.state(p === -2 ? "Allow MusicFlow Play to install apps, then come back: the installation continues."
   : p >= 100 ? "Opening the installer… Confirm “Install”." : `Downloading the update… ${p >= 0 ? p + "%" : ""}`);
-window.MFP_updateError = m => Upd.state(`Update failed: ${m}. Try again.`);
+window.MFP_updateError = m => { Upd.state(`Update failed: ${m}. Try again.`); toast(`Update failed: ${m}`); };
 
 function render() {
   const main = $("#main"), r = route();
