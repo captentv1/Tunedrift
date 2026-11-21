@@ -499,6 +499,7 @@
 <script>
 if (window.MFPNative) document.documentElement.classList.add('native');
 // Applied before the page is drawn, so it never flashes the default theme.
+try { const n = +(localStorage.getItem('mfp.boots') || 0); if (n >= 2) { localStorage.setItem('mfp.theme', 'glass'); localStorage.setItem('mfp.lite', '1'); localStorage.removeItem('mfp.textsize'); localStorage.setItem('mfp.safe', '1'); localStorage.setItem('mfp.boots', '0'); } else localStorage.setItem('mfp.boots', String(n + 1)); } catch (e) {}
 try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'glass-light' : 'glass') : th; if (real) document.documentElement.setAttribute('data-theme', real); const z = localStorage.getItem('mfp.textsize'); if (z) document.documentElement.style.zoom = z; } catch (e) {}
 try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) === '1') document.documentElement.classList.add('lite'); } catch (e) {}
 </script>
@@ -804,13 +805,22 @@ async function loadLibrary(quiet) {
     L.roots = st.folders || L.roots || [];
     if (st.version && !Upd.version) {
       Upd.version = st.version; if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000);
-      if (!window.__testMode) setTimeout(() => api("import/spotify?warm=1").catch(() => {}), 2500);
+      if (!window.__testMode) setTimeout(() => api("import/spotify?warm=1").catch(() => {}), 8000);
     }
     L.tracks = new Map(d.tracks.map(t => [t.id, t]));
     L.scan = d.scan || {};
     L.favorites = c.favorites || [];
     L.playlists = c.playlists || [];
     L.loaded = true;
+    if (!window.__booted) {
+      window.__booted = true;
+      setTimeout(() => {
+        try {
+          localStorage.setItem("mfp.boots", "0");
+          if (localStorage.getItem("mfp.safe")) { localStorage.removeItem("mfp.safe"); toast("The app did not start well: the theme is back to Glass"); }
+        } catch {}
+      }, 4000);
+    }
     buildIndexes();
     Player.restoreIfNeeded();
     render();
@@ -2450,6 +2460,7 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) store
 window.addEventListener("pagehide", () => store.set("position", audio.currentTime || 0));
 
 applyTheme(savedTheme()); syncModeButtons(); syncMute(); render();
+window.MFP_resume = () => { try { applyTheme(savedTheme()); render(); } catch (e) { console.log("resume", e); } };
 if (TOKEN) loadLibrary();
 </script>
 </body>

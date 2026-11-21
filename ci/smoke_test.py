@@ -331,6 +331,8 @@ ends = [x for x in upd if isinstance(x, str) or x == 100]
 progressed = any(isinstance(x, int) and 0 <= x < 100 for x in upd)
 results["update download"] = "ok" if progressed and ends and (ends[0] == 100 or "not newer" in str(ends[0])) else f"FAILED {upd[-6:]}"
 
+# The light glass themes, kept for the rest of the test: leaving and re-entering the app must leave it usable.
+js("applyTheme('glass-light')")
 # Swiped away from the recent apps while playing: the music goes on (as in Samsung Music).
 js("Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false)")
 time.sleep(3)
@@ -370,6 +372,73 @@ if not pid_now or not t2 or t2.get("paused") or not t2.get("t", 0) > (t1 or {}).
     results["music after swiping the app away"] = f"FAILED pid={pid_now} task={still_task} {t1} {t2}"
 if still_task:
     results["task removed"] = "FAILED the app's task is still in the recent apps"
+
+
+
+def webview_box():
+    """Screen bounds of the player's WebView (the biggest one on screen)."""
+    adb("shell", "uiautomator", "dump", "/sdcard/ui.xml", check=False)
+    ui = adb("shell", "cat", "/sdcard/ui.xml", check=False)
+    boxes = [tuple(map(int, m.groups())) for m in re.finditer(r'class="android.webkit.WebView"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', ui)]
+    return max(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])) if boxes else None
+
+
+def answers():
+    """The page answers within 5 seconds (it is not frozen)."""
+    t0 = time.time()
+    try:
+        ok = js("new Promise(r => requestAnimationFrame(() => r(1)))") == 1
+    except Exception as exc:
+        print("page did not answer:", exc)
+        return False
+    return ok and time.time() - t0 < 5
+
+
+def tap_settings(label):
+    """Taps the Settings button with a real touch: the settings page must open."""
+    js("location.hash = 'folders'")
+    time.sleep(1)
+    box = webview_box()
+    r = js("(() => { const b = document.querySelector('#btn-settings').getBoundingClientRect(); return {x: b.left + b.width / 2, y: b.top + b.height / 2, dpr: devicePixelRatio}; })()") or {}
+    if not box or not r.get("dpr"):
+        return f"no WebView or button {box} {r}"
+    x, y = box[0] + int(r["x"] * r["dpr"]), box[1] + int(r["y"] * r["dpr"])
+    adb("shell", "input", "tap", str(x), str(y), check=False)
+    time.sleep(2)
+    screenshot(label)
+    name = js("route().name")
+    theme = js("document.documentElement.getAttribute('data-theme')")
+    return "ok" if name == "settings" and theme == "glass-light" else f"FAILED route={name} theme={theme} tap=({x},{y})"
+
+
+# Leaving and re-entering the app (Light glass theme): after the swipe (page kept, music playing), after Home,
+# and after a cold start, the page answers and a real tap opens the settings.
+for label, leave in (("re-enter after swipe", None), ("re-enter after home", "home"), ("re-enter after cold start", "cold")):
+    if leave == "home":
+        adb("shell", "input", "keyevent", "KEYCODE_HOME", check=False)
+        time.sleep(4)
+    elif leave == "cold":
+        js("Player.toggle && audio.pause()")
+        adb("shell", "am", "force-stop", PACKAGE, check=False)
+        time.sleep(2)
+    adb("shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity", check=False)
+    time.sleep(6)
+    if leave == "cold":
+        try:
+            ws.close()
+        except Exception:
+            pass
+        sock = wait_for("the app's WebView did not come back after a cold start", 120, devtools_socket)
+        adb("forward", "tcp:9222", f"localabstract:{sock}")
+        target = wait_for("the player page did not load after a cold start", 180, page_target, every=3)
+        ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=30, suppress_origin=True)
+        wait_for("the library did not load after a cold start", 120, lambda: js("L.loaded === true"), every=2)
+    screenshot(label.replace(" ", "-"))
+    if not answers():
+        results[label] = "FAILED the page is frozen"
+        continue
+    results[label] = tap_settings(label.replace(" ", "-") + "-settings")
+    print(label, results[label])
 
 bad = {k: v for k, v in results.items() if v != "ok"}
 finish(f"failed: {bad}" if bad else None)
