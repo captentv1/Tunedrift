@@ -24,7 +24,7 @@ def client(tmp_path, monkeypatch):
     (music / "Album A").mkdir(parents=True)
     monkeypatch.setenv("MFP_DATA_DIR", str(tmp_path / "data"))
     sys.path.insert(0, str(ROOT / "server"))
-    for name in ("mfp_server", "paths", "library_index", "collections_store"):
+    for name in ("mfp_server", "paths", "library_index", "collections_store", "downloads", "importer", "mf_bridge"):
         sys.modules.pop(name, None)
     app_module = importlib.import_module("mfp_server")
     import tag_quality
@@ -147,45 +147,6 @@ def test_app_mode_keeps_token_out_of_the_page(client):
         assert client.mod.CONFIG["token"] not in client.get("/", headers={"Host": "127.0.0.1:5091"}).get_data(as_text=True)
     finally:
         client.mod.CONFIG["token_in_page"] = True
-
-
-def _wait_module(me, states=("installed", "error")):
-    import time
-    for _ in range(100):
-        if me.MODULE["state"] in states:
-            return me.MODULE
-        time.sleep(0.05)
-    return me.MODULE
-
-
-def test_download_tab_module_installs_from_a_zip(tmp_path, monkeypatch):
-    import json
-    import zipfile
-    sys.path.insert(0, str(ROOT / "server"))
-    monkeypatch.setenv("MFP_DATA_DIR", str(tmp_path / "data"))
-    for name in ("musicflow_embed", "paths"):
-        sys.modules.pop(name, None)
-    me = importlib.import_module("musicflow_embed")
-    started = []
-    me.STARTER = lambda: started.append(True)
-
-    good = tmp_path / "good.zip"
-    with zipfile.ZipFile(good, "w") as z:
-        z.writestr("module.json", json.dumps({"version": "9.9"}))
-        z.writestr("app.py", "")
-    me.install(good.as_uri())
-    assert _wait_module(me)["state"] == "installed" and me.module_version() == "9.9" and started
-
-    # Security: a file that would land outside the module's folder is refused.
-    bad = tmp_path / "bad.zip"
-    with zipfile.ZipFile(bad, "w") as z:
-        z.writestr("module.json", "{}")
-        z.writestr("../evil.py", "")
-    me.MODULE["state"] = "missing"
-    me.install(bad.as_uri())
-    assert _wait_module(me)["state"] == "error" and not (tmp_path / "data" / "evil.py").exists()
-    assert me.module_version() == "9.9"
-    sys.path.remove(str(ROOT / "server"))
 
 
 def test_lyrics_sync_only_takes_checked_lyrics(monkeypatch):

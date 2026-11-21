@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.0.0 — 2026-11-21 (Android and PC)
+
+- **Import** (new tab, replaces the Download tab): your playlists, downloaded into one **root folder** you choose
+  once, each playlist in its own folder, with a `.m3u8` file next to the songs so other players (Samsung Music…)
+  see the playlist too. Sources:
+  - **Link**: a playlist or album from Spotify, YouTube, YouTube Music, Deezer, Apple Music or SoundCloud (no account).
+  - **Spotify** and **YouTube** accounts, through their official APIs (your own Client ID, sign-in in the browser):
+    all your playlists, Liked Songs and liked videos.
+  - **Computer (local server)**: the playlists of MusicFlow Play on your computer (`run_lan.bat`), copied over Wi-Fi
+    as they are, without searching or downloading them again.
+  - **File or list**: `.m3u`/`.m3u8`, `.csv` (Exportify), `.txt`, or titles pasted one per line.
+  - **Never downloaded twice**: before downloading, every song is looked for in all your music (same title and
+    main artist, also with "(feat. …)" or "- Remastered", similar length). A song already on the device is only
+    linked in the playlist. "Update" on an imported playlist downloads only its new songs.
+- **MusicFlow is inside the app**: search, best version, tags, cover and lyrics come from MusicFlow's code running
+  in the player itself. Nothing to install any more, no second page or interface (the "Install MusicFlow" step and
+  MusicFlow's own screen are gone). Downloads go through one queue (Import tab) that keeps going with the app closed
+  and starts again after a restart.
+- **Fixed: the app closed while downloading and playing.** The download notification was started again at every
+  progress update without the call Android requires, so Android stopped the whole app a few seconds later; this
+  happened mostly while music played. The page's renderer ended by Android to get memory back also closed the app;
+  the page now loads again instead.
+- **The music goes on after swiping the app away** from the recent apps, as in Samsung Music. Paused, the
+  notification can be swiped away, which closes the player; it also has a ✕ (Close) button.
+- **Lighter on the phone**: no second page and no second server any more, a single download at a time by default
+  (Import › At once), and a new song is added to the library without reading all the folders again.
+- Tested on an Android 12 emulator (GitHub Actions): every format plays, a playlist is imported from a "computer"
+  while a song plays, imported again without copying anything, and the music goes on after swiping the app away.
+
 ## 1.0.1.0 — 2026-11-17 (Android)
 
 - **Less heat and battery**:

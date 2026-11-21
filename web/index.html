@@ -60,14 +60,14 @@
   .nav.active .i{color:var(--accent)}
   .nav-h{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:16px 12px 6px;opacity:.8}
 
-  #mf-frame{border:0;width:100%;height:100%;min-width:0;min-height:0;background:transparent;display:block}
-  /* Download tab: MusicFlow full screen, as in its own app; a small button goes back to the library. */
-  html.mf-full #topbar, html.mf-full #bar, html.mf-full #bottomnav, html.mf-full #side, html.mf-full #main{display:none!important}
-  html.mf-full #mf-frame{position:fixed;left:0;right:0;top:var(--sa-t);bottom:var(--safe-b);width:100%;height:calc(100vh - var(--sa-t) - var(--safe-b));height:calc(100dvh - var(--sa-t) - var(--safe-b));z-index:40;background:var(--bg)}
-  #mf-back{position:fixed;z-index:45;right:108px;top:calc(var(--sa-t) + 7px);width:40px;height:40px;border-radius:50%;border:1px solid var(--border);
-    background:var(--panel2);color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.35);cursor:pointer}
-  #mf-back .i{width:22px;height:22px}
-  html:not(.mf-full) #mf-back{display:none}
+  /* Import tab: downloads, root folder and sources */
+  .dl-row .t2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dl-row .st{font-size:12px;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:auto;padding-left:8px}
+  .st.err{color:var(--err)}.st.ok{color:var(--accent)}
+  .dl-row .bar{height:3px;border-radius:2px;background:var(--accent);margin-top:4px;transition:width .4s}
+  .imp-pl{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+  .imp-pl .grow{min-width:0;flex:1}.imp-pl .t1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  textarea.text{width:100%;min-height:110px;resize:vertical;font:inherit;border-radius:12px;border:1px solid var(--border);background:var(--panel);color:var(--ink);padding:10px 12px;box-sizing:border-box}
 
   /* Animations */
   @keyframes mfpIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
@@ -169,7 +169,7 @@
   .copy input{accent-color:var(--accent);flex:none}.copy .grow{flex:1;min-width:0}
   .copy .keep{font-size:11px;font-weight:800;padding:3px 8px;border-radius:var(--pill);background:var(--t2);color:var(--accent);visibility:hidden;flex:none}
   .copy:has(input:checked){background:var(--t1)}.copy:has(input:checked) .keep{visibility:visible}
-  html:not(.mf-on) [data-r="download"], html:not(.mf-on) .mf-only{display:none!important}
+  html:not(.mf-on) .mf-only{display:none!important}
   .note{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--r-md);background:var(--panel);border:1px solid var(--border);color:var(--muted);flex-wrap:wrap}
   .note>span{flex:1;min-width:160px}
   @media (max-width:760px){.chips.kinds{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-16px;margin-right:-16px;padding:0 16px}.chips.kinds::-webkit-scrollbar{display:none}}
@@ -500,8 +500,6 @@ try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) =
   </header>
   <nav id="side"></nav>
   <main id="main"></main>
-  <button id="mf-back" title="Back to the library" aria-label="Back to the library"><svg class="i"><use href="#i-folder"/></svg></button>
-  <iframe id="mf-frame" class="hidden" title="MusicFlow: search and download" allow="microphone; clipboard-write"></iframe>
 </div>
 
 <div id="bar">
@@ -670,8 +668,6 @@ function applyTheme(id) {
   const meta = document.querySelector('meta[name="theme-color"]'); if (meta && bg) meta.content = bg;
   if (NATIVE && NATIVE.setLightStatusBar) try { NATIVE.setLightStatusBar(LIGHT_THEMES.includes(real)); } catch {}
   for (const el of document.querySelectorAll(".theme-opt")) el.classList.toggle("active", el.dataset.theme === id);
-  const fr = document.getElementById("mf-frame");
-  if (fr && fr.src) try { fr.contentWindow.postMessage({mfpTheme: id}, new URL(fr.src).origin); } catch {}
 }
 try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => { if (savedTheme() === "auto") applyTheme("auto"); }); } catch {}
 function themeChoices() {
@@ -700,10 +696,12 @@ async function useFolder(folder, replace) {
 }
 let pickReplaces = false;
 function pickFolder(replace) {
-  pickReplaces = !!replace;
+  pickReplaces = !!replace; folderCb = null;
   if (NATIVE && NATIVE.pickFolder) NATIVE.pickFolder(); else browseFolder(f => useFolder(f, pickReplaces));
 }
-window.MFP_folderPicked = folder => { if (folder) useFolder(folder, pickReplaces); else toast("This folder can't be used: pick one in the phone's storage or on the SD card."); };
+let folderCb = null;
+function chooseFolder(cb) { folderCb = cb; if (NATIVE && NATIVE.pickFolder) NATIVE.pickFolder(); else browseFolder(f => { folderCb = null; cb(f); }); }
+window.MFP_folderPicked = folder => { const cb = folderCb; folderCb = null; if (cb) { if (folder) cb(folder); else toast("This folder can't be used: pick one in the phone's storage or on the SD card."); return; } if (folder) useFolder(folder, pickReplaces); else toast("This folder can't be used: pick one in the phone's storage or on the SD card."); };
 window.MFP_rescan = async () => { try { await api("scan", {}); } catch {} L.scan.running = true; setTimeout(() => loadLibrary(true), 700); if (route().name === "settings") setTimeout(render, 900); };
 
 let toastTimer;
@@ -784,7 +782,6 @@ async function loadLibrary(quiet) {
   try {
     const [d, c, st] = await Promise.all([api("tracks"), api("collections"), api("state").catch(() => ({}))]);
     mfState(st);
-    if (!mfUrl && ["downloading", "installed"].includes((st.module || {}).state)) mfWatch();
     L.roots = st.folders || L.roots || [];
     if (st.version && !Upd.version) { Upd.version = st.version; if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000); }
     L.tracks = new Map(d.tracks.map(t => [t.id, t]));
@@ -1515,10 +1512,10 @@ const GROUP = {folder: "folders", artist: "artists", album: "albums", playlist: 
 const navItem = n => `<div class="nav" data-r="${n.r}">${ico(n.icon)}${n.label}</div>`;
 $("#side").innerHTML = $("#topbar .logo").outerHTML + navItem({r: "home", label: "Home", icon: "home"}) +
   `<div class="nav-h">Library</div>` + LIB.map(navItem).join("") +
-  `<div class="nav-h">Your music</div>` + [{r: "playlists", label: "Playlists", icon: "list"}, {r: "queue", label: "Queue", icon: "queue"}, {r: "download", label: "Download", icon: "download"}].map(navItem).join("") +
+  `<div class="nav-h">Your music</div>` + [{r: "playlists", label: "Playlists", icon: "list"}, {r: "queue", label: "Queue", icon: "queue"}, {r: "download", label: "Import", icon: "download"}].map(navItem).join("") +
   `<div class="spacer"></div>` + navItem({r: "settings", label: "Settings", icon: "gear"});
 $("#bottomnav").innerHTML = [{r: "home", label: "Home", icon: "home"}, {r: "folders", label: "Library", icon: "library", lib: 1}, {r: "playlists", label: "Playlists", icon: "list"},
-  {r: "download", label: "Download", icon: "download"}].map(n => `<button class="bn" data-r="${n.r}"${n.lib ? " data-lib" : ""}>${ico(n.icon)}${n.label}</button>`).join("");
+  {r: "download", label: "Import", icon: "download"}].map(n => `<button class="bn" data-r="${n.r}"${n.lib ? " data-lib" : ""}>${ico(n.icon)}${n.label}</button>`).join("");
 const libTabs = cur => `<div class="libtabs">${LIB.map(n => `<button class="chip${n.r === cur ? " active" : ""}" data-r="${n.r}">${n.label}</button>`).join("")}</div>`;
 // Phones: the search field opens from the magnifier in the header.
 function openSearch(on) {
@@ -1617,102 +1614,246 @@ function emptyLibrary() {
   return `<div class="empty">${ico("folder")}No music found yet.<br>Choose the folder where your songs are.<br><button class="btn primary" style="margin-top:14px" onclick="pickFolder(true)">${ico("folder")} Choose my music folder</button></div>`;
 }
 
-// MusicFlow (search and download) runs next to the player and is shown in a frame that stays open,
-// so a search or a download keeps going while you browse the library.
-let mfUrl, mfSeen = 0, mfRescan = 0;
+// MusicFlow is part of the app: its code (online search, best video, download with tags, cover and lyrics) runs in
+// the player's own server. No second page, no second interface, nothing to install.
+let mfUrl, mfRescan = 0;
 function setHidden(el, on) { el.classList.toggle("hidden", on); }
-// Search online, downloads and the Download tab appear only once MusicFlow's module is installed (from Settings).
 function mfState(st) {
   if (!st || !("musicflow" in st)) return;
-  mfUrl = st.musicflow || null;
+  const s = (st.musicflow || {}).state;
+  mfUrl = s === "ready" || s === "starting" ? "in-app" : null;
   document.documentElement.classList.toggle("mf-on", !!mfUrl);
-  // MusicFlow's page is loaded only when used (online search, Download tab, a download): it rests until then.
   $("#q").placeholder = mfUrl ? "Search your music, or online with Enter" : "Search songs, artists, albums";
 }
-function mfFrameSrc() {
-  const frame = $("#mf-frame");
-  if (frame.src || !mfUrl) return;
-  let tok = ""; if (NATIVE && NATIVE.musicflowToken) try { tok = NATIVE.musicflowToken(); } catch {}
-  frame.src = mfUrl + "&theme=" + encodeURIComponent(savedTheme()) + (tok ? "#mft=" + tok : "");
-}
-// One app: the search box searches online and starts downloads through MusicFlow (kept loaded, hidden).
 const MF = {
-  seq: 0, waiting: new Map(), active: 0,
-  async ensure() {
-    if (mfUrl === undefined || mfUrl === null) { try { const st = await api("state"); mfUrl = st.musicflow || null; } catch { mfUrl = null; } }
-    if (!mfUrl) return false;
-    mfFrameSrc();
-    for (let k = 0; k < 60 && !window.mfReady; k++) await new Promise(r => setTimeout(r, 250));
-    return !!window.mfReady;
+  async search(q) { return (await api("mf/search", {title: q, limit: 15})).results || []; },
+  download(item) { return DL.add([item]).catch(e => toast(e.message)); },
+};
+function rescanSoon(delay) { clearTimeout(mfRescan); mfRescan = setTimeout(() => window.MFP_rescan(), delay); }
+function openUrl(url) { if (NATIVE && NATIVE.openUrl) native("openUrl", url); else window.open(url, "_blank", "noopener"); }
+
+// The download queue runs in the server (it goes on with the page hidden or the app closed); the page only shows it.
+const DL = {
+  snap: {items: [], counts: {}, settings: {}}, timer: 0, done: -1, libTimer: 0, busy: false,
+  async add(songs, folder) { const r = await api("dl/add", {songs, folder: folder || ""}); this.poll(); return r; },
+  active() { const c = this.snap.counts || {}; return (c.queued || 0) + (c.working || 0); },
+  async poll() {
+    clearTimeout(this.timer);
+    if (this.busy) return; this.busy = true;
+    try { this.snap = await api("dl"); } catch { this.busy = false; this.timer = setTimeout(() => this.poll(), 5000); return; }
+    this.busy = false;
+    const n = this.active(), c = this.snap.counts || {}, fin = (c.done || 0);
+    for (const b of $$('[data-r="download"]')) b.dataset.badge = n || "";
+    // New songs on the device: the library is read again (at most every 6 s), without leaving the current view.
+    if (this.done >= 0 && fin !== this.done) { clearTimeout(this.libTimer); this.libTimer = setTimeout(() => this.refreshLib(), n ? 6000 : 500); }
+    this.done = fin;
+    if (route().name === "download") IMP.drawQueue();
+    if (n) native("backgroundWork");  // Android: a notification keeps the downloads going with the app closed
+    if (n || route().name === "download") this.timer = setTimeout(() => this.poll(), document.hidden ? 15000 : n ? 1500 : 4000);
   },
-  post(msg) { const fr = $("#mf-frame"); fr.contentWindow.postMessage(msg, new URL(fr.src).origin); },
-  async search(q) {
-    if (!await this.ensure()) throw Object.assign(new Error("The Download tab is not installed."), {noModule: true});
-    const id = ++this.seq;
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(() => { this.waiting.delete(id); reject(new Error("No answer from the online search. Try again.")); }, 45000);
-      this.waiting.set(id, d => { clearTimeout(t); d.error ? reject(new Error(d.error)) : resolve(d.mfpResults || []); });
-      this.post({mfpSearch: q, id, limit: 15});
-    });
+  async refreshLib() {
+    try {
+      const [d, c] = await Promise.all([api("tracks"), api("collections")]);
+      L.tracks = new Map(d.tracks.map(t => [t.id, t])); L.favorites = c.favorites || []; L.playlists = c.playlists || [];
+      buildIndexes();
+      if (route().name !== "download" && !$("#q").value.trim() && !document.hidden) render();
+    } catch {}
   },
-  async download(item) { if (await this.ensure()) this.post({mfpDownload: item}); else toast("MusicFlow is not ready. Try again."); },
+  async control(action, id) { try { this.snap = await api("dl/control", {action, id: id || ""}); IMP.drawQueue(); this.poll(); } catch (e) { toast(e.message); } },
+  async set(conf) { try { this.snap = await api("dl/settings", conf); IMP.drawRoot(); } catch (e) { toast(e.message); } },
 };
 
-// MusicFlow's frame rests (no internet check every 20 s) while it is hidden or the app is in the background.
-function mfIdle() { const fr = $("#mf-frame"); if (fr && fr.src) try { fr.contentWindow.postMessage({mfpIdle: document.hidden || fr.classList.contains("hidden"), mfpLite: document.documentElement.classList.contains("lite")}, new URL(fr.src).origin); } catch {} }
-async function showMusicFlow(on) {
-  const frame = $("#mf-frame"), main = $("#main");
-  if (!on) { document.documentElement.classList.remove("mf-full"); if (!frame.classList.contains("hidden")) { setHidden(frame, true); setHidden(main, false); rescanSoon(0); mfIdle(); } return false; }
-  document.documentElement.classList.remove("mf-full");
-  let mod = null;
-  if (!mfUrl) { try { const st = await api("state"); mfUrl = st.musicflow || null; mod = st.module; } catch { mfUrl = null; } }
-  if (route().name !== "download") return true;
-  if (!mfUrl) { setHidden(frame, true); setHidden(main, false); openSection("Downloads"); location.replace("#settings"); return true; }
-  mfFrameSrc();
-  setHidden(main, true); setHidden(frame, false); document.documentElement.classList.add("mf-full"); mfIdle();
-  return true;
+const SOURCES = [["link", "Link"], ["spotify", "Spotify"], ["youtube", "YouTube"], ["server", "Computer (local server)"], ["file", "File or list"]];
+const FORMATS = [["mp3-320", "MP3 320 kbps"], ["mp3-192", "MP3 192 kbps"], ["mp3-128", "MP3 128 kbps"], ["flac", "FLAC (lossless)"], ["opus", "Opus"], ["aac", "AAC (m4a)"]];
+const IMP = {
+  src: store.get("impsrc", "link"), st: null, lists: {}, preview: null,
+  stateLabel(i) {
+    if (i.state === "working") return "";
+    if (i.state === "queued") return `<span class="st muted">Waiting</span>`;
+    if (i.state === "done") return `<span class="st ok">Downloaded</span>`;
+    if (i.state === "have") return `<span class="st ok" title="${esc(i.path)}">On the device: linked</span>`;
+    if (i.state === "stopped") return `<span class="st muted">Stopped</span>`;
+    return `<span class="st err" title="${esc(i.msg)}">${esc((i.msg || "Failed").slice(0, 70))}</span>`;
+  },
+  drawQueue() {
+    const box = $("#dl-box"); if (!box) return;
+    const s = DL.snap, c = s.counts || {}, items = (s.items || []).slice().reverse();
+    const working = items.filter(i => i.state === "working"), waiting = items.filter(i => i.state === "queued").reverse();
+    const finished = items.filter(i => !["working", "queued"].includes(i.state)).slice(0, 40);
+    const parts = [working.length ? `${working.length} downloading` : "", c.queued ? `${c.queued} waiting` : "", c.done ? `${c.done} downloaded` : "",
+      c.have ? `${c.have} already on the device` : "", c.error ? `${c.error} failed` : "", s.paused ? "paused" : ""].filter(Boolean);
+    const row = i => `<div class="row dl-row" style="cursor:default;min-height:52px"><div class="art">${i.cover ? `<img loading="lazy" src="${esc(i.cover)}" alt="" onerror="this.remove()">` : ico(i.state === "have" ? "folder" : "note")}</div>
+      <div class="txt" style="min-width:0;flex:1"><div class="t1">${esc(i.title || "…")}</div><div class="t2">${esc(i.state === "working" ? [i.msg || "Downloading…", i.pct ? Math.round(i.pct) + " %" : ""].filter(Boolean).join(" · ") : i.artist)}</div>
+      ${i.state === "working" ? `<div class="bar" style="width:${Math.max(3, Math.min(100, i.pct || 0))}%"></div>` : ""}</div>
+      ${this.stateLabel(i)}${["working", "queued"].includes(i.state) ? `<button class="iconbtn" data-dlact="stop" data-dlid="${i.id}" title="Stop">${ico("close")}</button>`
+        : ["error", "stopped"].includes(i.state) ? `<button class="iconbtn" data-dlact="retry" data-dlid="${i.id}" title="Try again">${ico("refresh")}</button>` : ""}</div>`;
+    box.innerHTML = `<p style="margin:0 0 8px">${parts.join(" · ") || "Nothing to download. Search online, open an artist or import a playlist below."}</p>
+      <div class="actions" style="margin:0 0 6px;flex-wrap:wrap">${s.paused ? `<button class="btn primary" data-dlact="resume">${ico("play")} Resume</button>` : working.length || waiting.length ? `<button class="btn" data-dlact="pause">${ico("pause")} Pause</button>` : ""}
+        ${c.error || c.stopped ? `<button class="btn" data-dlact="retry">${ico("refresh")} Try the failed ones again</button>` : ""}
+        ${waiting.length ? `<button class="btn" data-dlact="stop">Stop all</button>` : ""}${finished.length ? `<button class="btn" data-dlact="clear">Clear the list</button>` : ""}</div>
+      <div class="rows">${working.map(row).join("")}${waiting.slice(0, 5).map(row).join("")}${waiting.length > 5 ? `<p class="muted" style="margin:6px 8px">… and ${waiting.length - 5} more waiting</p>` : ""}${finished.map(row).join("")}</div>`;
+  },
+  drawRoot() {
+    const box = $("#root-box"); if (!box) return;
+    const conf = DL.snap.settings || {}, def = (this.st || {}).default_root || "";
+    const noAccess = NATIVE && NATIVE.hasAllFiles && !NATIVE.hasAllFiles();
+    box.innerHTML = `<p>Each imported playlist goes into its own folder inside this one. Before downloading a song, the app looks for it in all your music:
+        if it is already on the device, it is only linked in the playlist, never downloaded again.</p>
+      <div class="folder">${ico("folder")}<span style="word-break:break-all">${esc(conf.root || (def ? def + " (default)" : "Not chosen yet"))}</span></div>
+      <div class="actions" style="margin:10px 0 0;flex-wrap:wrap"><button class="btn primary" id="root-pick">${ico("folder")} Choose the root folder</button></div>
+      ${noAccess ? `<div class="note" style="margin-top:12px">${ico("folder")}<span style="flex:1;min-width:200px">To save songs in a folder of your choice (e.g. Music/MusicFlow) and find the songs you already have, allow access to all files.</span><button class="btn" id="root-all">Allow</button></div>` : ""}
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px"><span>Format</span><select id="dl-fmt">${FORMATS.map(([v, n]) => `<option value="${v}"${(conf.format || "mp3-320") === v ? " selected" : ""}>${n}</option>`).join("")}</select>
+        <span>At once</span><select id="dl-par">${[1, 2, 3].map(n => `<option${(conf.parallel || 1) === n ? " selected" : ""}>${n}</option>`).join("")}</select></div>
+      <label class="chk"><input type="checkbox" id="dl-sub"${conf.subfolders !== false ? " checked" : ""}> One folder per playlist</label>
+      <label class="chk"><input type="checkbox" id="dl-m3u"${conf.m3u !== false ? " checked" : ""}> Also write the playlist as a .m3u8 file (other players, like Samsung Music, see it)</label>
+      <label class="chk"><input type="checkbox" id="dl-lyr"${conf.lyrics !== false ? " checked" : ""}> Lyrics in the files</label>`;
+    $("#root-pick").onclick = () => chooseFolder(f => DL.set({root: f}).then(() => toast("Root folder saved")));
+    if ($("#root-all")) $("#root-all").onclick = () => native("requestAllFiles");
+    $("#dl-fmt").onchange = e => DL.set({format: e.target.value});
+    $("#dl-par").onchange = e => DL.set({parallel: +e.target.value});
+    $("#dl-sub").onchange = e => DL.set({subfolders: e.target.checked});
+    $("#dl-m3u").onchange = e => DL.set({m3u: e.target.checked});
+    $("#dl-lyr").onchange = e => DL.set({lyrics: e.target.checked});
+  },
+  steps(kind) {
+    const red = esc(((this.st || {}).redirect || {})[kind] || "");
+    const copy = `<button class="btn" data-copy="${red}">Copy</button>`;
+    if (kind === "spotify") return `<p>Spotify gives access to your playlists through its official API. Once, on a computer or this phone:</p>
+      <ol class="muted" style="margin:0 0 12px;padding-left:20px;line-height:1.6"><li>Open <a href="#" style="color:var(--accent)" data-ext="https://developer.spotify.com/dashboard">developer.spotify.com/dashboard</a>, sign in, then <b>Create app</b> (any name).</li>
+      <li>Redirect URI: <code style="word-break:break-all;white-space:normal">${red}</code> ${copy} · API: <b>Web API</b>.</li><li>Copy the app's <b>Client ID</b> here.</li></ol>
+      <div class="addrow"><input class="text" id="acc-id" placeholder="Client ID"><button class="btn primary" id="acc-save">Save</button></div>`;
+    return `<p>YouTube gives access to your playlists through its official API (YouTube Data API v3). Once:</p>
+      <ol class="muted" style="margin:0 0 12px;padding-left:20px;line-height:1.6"><li>Open <a href="#" style="color:var(--accent)" data-ext="https://console.cloud.google.com/apis/library/youtube.googleapis.com">console.cloud.google.com</a>, create a project and enable <b>YouTube Data API v3</b>.</li>
+      <li><b>OAuth consent screen</b>: External, and add your Google account as a test user.</li>
+      <li><b>Credentials › Create credentials › OAuth client ID</b>, type <b>Desktop app</b>. (Redirect used: <code style="word-break:break-all;white-space:normal">${red}</code>)</li><li>Copy the <b>Client ID</b> and the <b>Client secret</b> here.</li></ol>
+      <div class="addrow"><input class="text" id="acc-id" placeholder="Client ID"></div><div class="addrow" style="margin-top:8px"><input class="text" id="acc-secret" placeholder="Client secret"><button class="btn primary" id="acc-save">Save</button></div>`;
+  },
+  async drawSource() {
+    const box = $("#src-box"); if (!box) return;
+    for (const b of $$("[data-src]")) b.classList.toggle("active", b.dataset.src === this.src);
+    const k = this.src, st = this.st || {};
+    if (!mfUrl && ["link", "spotify", "youtube", "file"].includes(k)) {
+      box.innerHTML = `<div class="note">${ico("close")}<span>Search and download are not available here${st.musicflow && st.musicflow.error ? ": " + esc(st.musicflow.error) : ""}.</span></div>`; return;
+    }
+    if (k === "link") {
+      box.innerHTML = `<p>A playlist or album link from Spotify, YouTube, YouTube Music, Deezer, Apple Music or SoundCloud. No account needed.</p>
+        <div class="addrow"><input class="text" id="src-url" placeholder="https://open.spotify.com/playlist/…" inputmode="url"><button class="btn primary" id="src-go">Read</button></div><div id="pv"></div>`;
+      $("#src-go").onclick = () => { const url = $("#src-url").value.trim(); if (url) this.showPreview({kind: "link", url}); };
+      $("#src-url").onkeydown = e => { if (e.key === "Enter") $("#src-go").click(); };
+    } else if (k === "spotify" || k === "youtube") {
+      const a = st[k] || {}, label = k === "spotify" ? "Spotify" : "YouTube";
+      if (!a.client_id || (k === "youtube" && !a.has_secret)) {
+        box.innerHTML = this.steps(k);
+        $("#acc-save").onclick = async () => {
+          try { await api("import/account", {provider: k, client_id: $("#acc-id").value.trim(), client_secret: $("#acc-secret") ? $("#acc-secret").value.trim() : undefined}); this.st = await api("import/state"); this.drawSource(); }
+          catch (e) { toast(e.message); }
+        };
+      } else if (!a.connected) {
+        box.innerHTML = `<p>Sign in to ${label} in the browser that opens, then come back here: your playlists appear.</p>
+          <div class="actions" style="margin:0;flex-wrap:wrap"><button class="btn primary" id="acc-login">Connect ${label}</button><button class="btn" id="acc-again">${ico("refresh")} I signed in</button><button class="btn" id="acc-edit">Change the Client ID</button></div>`;
+        $("#acc-login").onclick = async () => { try { openUrl((await api("import/login/" + k)).url); } catch (e) { toast(e.message); } };
+        $("#acc-again").onclick = async () => { this.st = await api("import/state").catch(() => this.st); this.drawSource(); };
+        $("#acc-edit").onclick = async () => { this.st[k].client_id = ""; this.st[k].has_secret = false; this.drawSource(); };
+      } else {
+        box.innerHTML = `<div class="actions" style="margin:0 0 8px;flex-wrap:wrap"><span style="align-self:center">Connected${a.user ? " as <b>" + esc(a.user) + "</b>" : ""}</span>
+          <button class="btn" id="acc-out">Disconnect</button></div><div id="pl-list"><div class="progress-line"><div></div></div></div><div id="pv"></div>`;
+        $("#acc-out").onclick = async () => { await api("import/account", {provider: k, logout: true}).catch(() => {}); this.st = await api("import/state"); this.lists[k] = null; this.drawSource(); };
+        this.drawLists(k, {kind: k});
+      }
+    } else if (k === "server") {
+      const servers = st.servers || [];
+      box.innerHTML = `<p>Copy the playlists of MusicFlow Play on your computer to this device, over Wi-Fi: the files are copied as they are (nothing is searched or downloaded again).
+          On the computer, start <code>run_lan.bat</code> (or <code>mfp_server.py --lan</code>) and paste the link it shows.</p>
+        <div class="addrow"><input class="text" id="srv-addr" placeholder="http://192.168.1.20:5091/?t=…" inputmode="url"><button class="btn primary" id="srv-go">Connect</button></div>
+        ${servers.filter(x => x.token).length ? `<div class="chips" style="margin:10px 0 0">${servers.filter(x => x.token).map(x => `<button class="chip" data-srv="${esc(x.base)}">${esc(x.base.replace(/^https?:\/\//, ""))}</button>`).join("")}</div>` : ""}
+        <div id="pl-list"></div><div id="pv"></div>`;
+      $("#srv-go").onclick = () => { const v = $("#srv-addr").value.trim(); if (v) this.drawLists("server", {kind: "server", address: v}); };
+      for (const b of $$("[data-srv]", box)) b.onclick = () => this.drawLists("server", {kind: "server", base: b.dataset.srv});
+    } else {
+      box.innerHTML = `<p>A playlist file (<code>.m3u</code>, <code>.m3u8</code>, <code>.csv</code> exported from Spotify with Exportify, <code>.txt</code>), or a list of titles: one “Artist - Title” per line.</p>
+        <input type="file" id="src-file" accept=".m3u,.m3u8,.csv,.txt,text/plain,text/csv,audio/x-mpegurl" style="margin-bottom:10px">
+        <textarea class="text" id="src-text" placeholder="Daft Punk - One More Time&#10;Stromae - Papaoutai"></textarea>
+        <div class="addrow" style="margin-top:8px"><input class="text" id="src-name" placeholder="Playlist name"><button class="btn primary" id="src-go">Read</button></div><div id="pv"></div>`;
+      let fname = "";
+      $("#src-file").onchange = async e => { const f = e.target.files[0]; if (!f) return; fname = f.name; $("#src-text").value = await f.text(); if (!$("#src-name").value) $("#src-name").value = f.name.replace(/\.[^.]+$/, ""); };
+      $("#src-go").onclick = () => { const text = $("#src-text").value; if (text.trim()) this.showPreview({kind: "text", text, filename: fname || ($("#src-name").value.trim() || "List") + ".txt"}, $("#src-name").value.trim()); };
+    }
+  },
+  async drawLists(k, req) {
+    const box = $("#pl-list"); if (!box) return;
+    box.innerHTML = `<div class="progress-line"><div></div></div>`;
+    let d;
+    try { d = await api("import/playlists", req); } catch (e) { box.innerHTML = `<div class="note">${ico("close")}<span>${esc(e.message)}</span></div>`; return; }
+    const base = d.base || "";
+    if (k === "server" && base) { this.st = await api("import/state").catch(() => this.st); }
+    box.innerHTML = `<div style="margin-top:8px">${(d.playlists || []).map(p => `<div class="imp-pl"><div class="art" style="width:44px;height:44px;border-radius:10px;overflow:hidden;flex:none;display:grid;place-items:center;background:var(--option-bg)">${p.image ? `<img loading="lazy" src="${esc(p.image)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ico("list")}</div>
+      <div class="grow"><div class="t1">${esc(p.name)}</div><div class="t2 muted" style="font-size:13px">${p.count == null ? "" : plural(p.count, "song")}</div></div>
+      <button class="btn" data-pl="${esc(p.id)}">${ico("download")} Import</button></div>`).join("") || `<p class="muted">No playlist.</p>`}</div>`;
+    for (const b of $$("[data-pl]", box)) b.onclick = () => this.showPreview(k === "server" ? {kind: "server", base, id: b.dataset.pl} : {kind: k, id: b.dataset.pl});
+  },
+  async showPreview(source, name) {
+    const box = $("#pv"); if (!box) return;
+    box.innerHTML = `<div class="muted" style="margin-top:12px">Reading the playlist…</div><div class="progress-line"><div></div></div>`;
+    box.scrollIntoView({block: "nearest", behavior: "smooth"});
+    let d;
+    try { d = await api("import/preview", {source}); } catch (e) { box.innerHTML = `<div class="note" style="margin-top:12px">${ico("close")}<span>${esc(e.message)}</span></div>`; return; }
+    const tracks = d.tracks || [], miss = tracks.length - d.have;
+    const conf = DL.snap.settings || {}, root = conf.root || (this.st || {}).default_root || "";
+    box.innerHTML = `<div class="set" style="margin:14px 0 0;background:var(--option-bg)"><div class="addrow" style="margin:0 0 8px"><input class="text" id="pv-name" value="${esc(name || d.name)}"></div>
+      <p style="margin:0 0 10px">${plural(tracks.length, "song")} · <b>${d.have}</b> already on this device (linked, not downloaded) · <b>${miss}</b> to ${source.kind === "server" ? "copy" : "download"}
+        <br><span class="muted">Into: ${esc(root ? root + (conf.subfolders !== false ? "/" + (name || d.name) : "") : "choose the root folder above")}</span></p>
+      <button class="btn primary" id="pv-go"${tracks.length ? "" : " disabled"}>${ico("download")} ${miss ? `${source.kind === "server" ? "Copy" : "Download"} ${miss} and make the playlist` : "Make the playlist"}</button>
+      <div class="rows" style="margin-top:10px;max-height:40vh;overflow:auto">${tracks.slice(0, 300).map(t => `<div class="row" style="min-height:44px;cursor:default"><div class="txt" style="min-width:0;flex:1"><div class="t1">${esc(t.title)}</div><div class="t2">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</div></div>
+        <span class="st ${t.have ? "ok" : "muted"}" style="font-size:12px">${t.have ? "On the device" : ""}</span></div>`).join("")}${tracks.length > 300 ? `<p class="muted">… ${tracks.length - 300} more</p>` : ""}</div></div>`;
+    $("#pv-go").onclick = async () => {
+      if (!root) { toast("Choose the root folder first"); $("#root-box").scrollIntoView({behavior: "smooth"}); return; }
+      $("#pv-go").disabled = true;
+      try {
+        const r = await api("import/start", {source, name: $("#pv-name").value.trim() || d.name, tracks});
+        toast(r.import.queued ? `${r.import.queued} songs added to the downloads` : "Playlist made: every song is already on the device");
+        box.innerHTML = ""; this.st = await api("import/state").catch(() => this.st); this.drawImports(); DL.poll(); await loadLibrary(true);
+        $("#dl-box") && $("#dl-box").scrollIntoView({behavior: "smooth"});
+      } catch (e) { toast(e.message); $("#pv-go").disabled = false; }
+    };
+  },
+  drawImports() {
+    const box = $("#imp-box"); if (!box) return;
+    const list = (this.st || {}).imports || [];
+    const kind = {link: "Link", spotify: "Spotify", youtube: "YouTube", server: "Computer", text: "List"};
+    box.innerHTML = list.length ? list.map(i => `<div class="imp-pl"><div class="grow"><div class="t1">${esc(i.name)}</div>
+      <div class="t2 muted" style="font-size:13px">${esc(kind[(i.source || {}).kind] || "")} · ${i.have || 0} / ${i.count || 0} on the device${i.last ? " · " + new Date(i.last * 1000).toLocaleDateString() : ""}</div></div>
+      ${(i.source || {}).kind !== "text" ? `<button class="iconbtn" data-isync="${i.id}" title="Update: download the new songs">${ico("refresh")}</button>` : ""}
+      <button class="iconbtn" data-iopen="${esc(i.playlist)}" title="Open the playlist">${ico("list")}</button>
+      <button class="iconbtn" data-idel="${i.id}" title="Forget (the songs and the playlist stay)">${ico("close")}</button></div>`).join("")
+      : `<p class="muted" style="margin:0">Nothing imported yet.</p>`;
+  },
+};
+async function importView(main) {
+  main.innerHTML = `<div class="head"><div class="grow"><h1>Import</h1><div class="sub">Your playlists from Spotify, YouTube, a link, your computer or a file, downloaded into one folder</div></div></div>
+    <div class="set"><h3>Downloads</h3><div id="dl-box"><div class="progress-line"><div></div></div></div></div>
+    <div class="set"><h3>Import a playlist</h3><div class="chips">${SOURCES.map(([v, n]) => `<button class="chip${IMP.src === v ? " active" : ""}" data-src="${v}">${n}</button>`).join("")}</div><div id="src-box"></div></div>
+    <div class="set"><h3>Imported playlists</h3><div id="imp-box"></div></div>
+    <div class="set"><h3>Root folder and format</h3><div id="root-box"></div></div>`;
+  try { [IMP.st] = await Promise.all([api("import/state"), DL.poll()]); } catch (e) { $("#src-box").innerHTML = `<div class="note">${esc(e.message)}</div>`; return; }
+  if (route().name !== "download") return;
+  mfState({musicflow: IMP.st.musicflow});
+  IMP.drawQueue(); IMP.drawRoot(); IMP.drawSource(); IMP.drawImports();
 }
-// The Download tab is a module: installed with a button, from this version's GitHub release.
-let modTimer = 0;
-function openSection(name) { try { const o = JSON.parse(localStorage.getItem("mfp.open") || "{}"); o[name] = true; localStorage.setItem("mfp.open", JSON.stringify(o)); } catch {} }
-function moduleView(box, m) {
-  clearTimeout(modTimer);
-  if (!box || !box.isConnected) return;
-  const st = (m || {}).state || "";
-  let html;
-  if (st === "bundled") html = `<p>Search and download come from MusicFlow. Install its packages (<code>pip install -r musicflow/desktop/requirements.txt</code>), then restart the player.</p>`;
-  else if (st === "downloading") html = `<p>Installing MusicFlow… ${m.pct >= 0 ? m.pct + " %" : ""}</p><div class="progress-line"><div style="${m.pct >= 0 ? `width:${m.pct}%;animation:none` : ""}"></div></div>`;
-  else if (st === "installed") html = `<p>Starting MusicFlow…</p><div class="progress-line"><div></div></div>`;
-  else html = `<p>Online search, downloads (with covers, tags and lyrics) and the Download tab come from MusicFlow.
-    They are not in the app until you install them: it downloads from GitHub once, then updates with the app.</p>
-    ${st === "error" ? `<p style="color:var(--err)">The installation failed: ${esc(m.error)}</p>` : ""}
-    <button class="btn primary" id="mod-install">${ico("download")} Install MusicFlow</button>`;
-  box.innerHTML = html;
-  const b = $("#mod-install");
-  if (b) b.onclick = async () => { b.disabled = true; try { moduleView(box, await api("musicflow/install", {})); mfWatch(); } catch (e) { toast(e.message); b.disabled = false; } };
-}
-// Follows an installation (from Settings, or after an app update) until MusicFlow runs, whatever the open view.
-async function mfWatch() {
-  clearTimeout(modTimer);
-  let s2 = {}; try { s2 = await api("state"); } catch {}
-  mfState(s2);
-  if (mfUrl) { toast("MusicFlow is installed: online search, downloads and the Download tab are ready."); if (route().name === "settings") render(); return; }
-  if ($("#mod-box")) moduleView($("#mod-box"), s2.module);
-  const st = (s2.module || {}).state;
-  if (st === "downloading" || st === "installed") modTimer = setTimeout(mfWatch, 1000);
-}
-$("#mf-back").onclick = () => { if (history.length > 1) history.back(); else go("folders"); };
-function rescanSoon(delay) { clearTimeout(mfRescan); mfRescan = setTimeout(() => window.MFP_rescan(), delay); }
-// Android app: answers from the phone (folder chosen, voice search…) go to MusicFlow's frame.
-window.MFP_toMusicFlow = (fn, args) => { const fr = $("#mf-frame"); if (fr.src) fr.contentWindow.postMessage({mfCall: fn, args: args || []}, new URL(fr.src).origin); };
-window.addEventListener("message", e => {
-  if (!mfUrl || e.origin !== new URL(mfUrl).origin) return;
-  const d = e.data || {};
-  if (d.mfReady) { window.mfReady = true; mfIdle(); }
-  if (d.mfpResults && MF.waiting.has(d.id)) { MF.waiting.get(d.id)(d); MF.waiting.delete(d.id); }
-  if (typeof d.mfActive === "number") { MF.active = d.mfActive; for (const b of $$('[data-r="download"]')) b.dataset.badge = d.mfActive || ""; }
-  const n = (e.data || {}).mfDownloaded;
-  if (typeof n === "number" && n !== mfSeen) { if (n > mfSeen) rescanSoon(3000); mfSeen = n; }
+document.addEventListener("click", async e => {
+  const t = e.target.closest("[data-dlact],[data-src],[data-copy],[data-ext],[data-isync],[data-iopen],[data-idel]"); if (!t) return;
+  if (t.dataset.dlact) DL.control(t.dataset.dlact, t.dataset.dlid);
+  else if (t.dataset.src) { IMP.src = t.dataset.src; store.set("impsrc", IMP.src); IMP.drawSource(); }
+  else if (t.dataset.copy !== undefined) { try { await navigator.clipboard.writeText(t.dataset.copy); toast("Copied"); } catch { toast(t.dataset.copy); } }
+  else if (t.dataset.ext) { e.preventDefault(); openUrl(t.dataset.ext); }
+  else if (t.dataset.isync) { t.disabled = true; try { const r = await api("import/" + t.dataset.isync, {}); toast(r.import.queued ? `${r.import.queued} new songs to download` : "Up to date"); DL.poll(); } catch (err) { toast(err.message); } t.disabled = false; }
+  else if (t.dataset.iopen) { if (L.playlists.some(p => p.id === t.dataset.iopen)) go("playlist/" + t.dataset.iopen); else { await loadLibrary(true); go("playlist/" + t.dataset.iopen); } }
+  else if (t.dataset.idel) { dialog("Forget this import?", `<p class="muted">The songs and the playlist stay; the import can no longer be updated.</p>`, "Forget", async () => { await api("import/" + t.dataset.idel, null, "DELETE").catch(err => toast(err.message)); IMP.st = await api("import/state").catch(() => IMP.st); IMP.drawImports(); }); }
+});
+// Back from the browser after signing in to Spotify or YouTube: the Import tab shows the playlists.
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden || route().name !== "download" || !IMP.st) return;
+  const k = IMP.src; if (k !== "spotify" && k !== "youtube" || (IMP.st[k] || {}).connected) return;
+  IMP.st = await api("import/state").catch(() => IMP.st); if ((IMP.st[k] || {}).connected) IMP.drawSource();
 });
 function foldSections(root) {
   let open = {}; try { open = JSON.parse(localStorage.getItem("mfp.open") || "{}"); } catch {}
@@ -1774,8 +1915,6 @@ window.MFP_updateError = m => Upd.state(`Update failed: ${m}. Try again.`);
 
 function render() {
   const main = $("#main"), r = route();
-  if (r.name === "download" && TOKEN) { showMusicFlow(true); for (const n of $$("[data-r]")) n.classList.toggle("active", n.dataset.r === "download"); return; }
-  showMusicFlow(false);
   const grp = GROUP[r.name] || r.name, inLib = LIB.some(n => n.r === grp);
   if (inLib) store.set("libview", grp);
   for (const n of $$("[data-r]")) n.classList.toggle("active", n.dataset.lib !== undefined ? inLib : n.dataset.r === grp);
@@ -1799,6 +1938,7 @@ const albumCard = al => ({go: "album/" + encodeURIComponent(al.key), cover: al.c
   sub: al.name === UNKNOWN_ALBUM ? plural(al.tracks.length, "song") : [al.artist, al.year].filter(Boolean).join(" · ")});
 const shelf = (title, items, round) => items.length ? `<h2 class="sec">${title}</h2>` + cardsHtml(items, round).replace('class="grid"', 'class="grid shelf"') : "";
 const VIEWS = {
+  download(main) { importView(main); },
   home(main) {
     if (!L.list.length) { main.innerHTML = emptyLibrary(); return; }
     const h = new Date().getHours(), hello = h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
@@ -1954,9 +2094,9 @@ const VIEWS = {
       ${Upd.usable() ? `<div class="set"><h3>Updates</h3><p id="u-state">MusicFlow Play ${esc(st.version)}</p>
         <button class="btn" id="u-btn">Check for updates</button>
         <label class="chk"><input type="checkbox" id="u-auto"${Upd.on() ? " checked" : ""}> Check for new versions and offer them automatically</label></div>` : ""}
-      <div class="set"><h3>Downloads</h3>${st.musicflow ? `<p>MusicFlow is installed. Search online from the search box (press Enter) and download with one tap,
-        or open the Download tab. Quality, folder, lyrics, accounts and the other download settings are here:</p>
-        <div class="actions" style="margin:0"><button class="btn" id="mf-settings">${ico("gear")} Download settings</button><button class="btn" data-r="download">${ico("download")} Download tab</button></div>` : `<div id="mod-box"></div>`}</div>
+      <div class="set"><h3>Downloads</h3><p>Search online from the search box (press Enter) and download with one tap. The root folder,
+        the format, your Spotify and YouTube accounts and the playlists to import are in the Import tab.</p>
+        <div class="actions" style="margin:0"><button class="btn" data-r="download">${ico("download")} Import tab</button></div></div>
       <div class="set"><h3>Albums</h3><p>Finds online the album each song belongs to and writes it in the file (album, album artist,
         track number, year, genre), so songs of the same album are together. The songs of an album are compared with its track list online;
         other songs are searched one by one. Only sure matches are changed (close title, same artist or album, same length).</p>
@@ -1997,8 +2137,6 @@ const VIEWS = {
     $("#f-alb-stop").onclick = async () => { try { albShow(await api("album-fix", {stop: true})); } catch (e) { toast(e.message); } };
     api("album-fix").then(albShow).catch(() => {});
     mfState(st);
-    if ($("#mod-box")) { moduleView($("#mod-box"), st.module); if (["downloading", "installed"].includes((st.module || {}).state)) mfWatch(); }
-    if ($("#mf-settings")) $("#mf-settings").onclick = async () => { go("download"); if (await MF.ensure()) setTimeout(() => MF.post({mfpOpen: "settings"}), 300); };
     const ub = $("#u-btn");
     if (ub) {
       ub.onclick = () => Upd.install();
@@ -2012,7 +2150,7 @@ const VIEWS = {
     $("#f-pick").onclick = () => pickFolder(false);
     $("#themes").onclick = e => { const o = e.target.closest(".theme-opt"); if (o) applyTheme(o.dataset.theme); };
     $("#f-zoom").onchange = e => setTextSize(e.target.value);
-    $("#f-lite").onchange = e => { document.documentElement.classList.toggle("lite", e.target.checked); try { localStorage.setItem("mfp.lite", e.target.checked ? "1" : "0"); } catch {} mfIdle(); };
+    $("#f-lite").onchange = e => { document.documentElement.classList.toggle("lite", e.target.checked); try { localStorage.setItem("mfp.lite", e.target.checked ? "1" : "0"); } catch {} };
     const all = $("#f-all"); if (all) all.onclick = () => native("requestAllFiles");
     const syncShow = st => {
       if (!$("#f-sync")) return;
@@ -2091,7 +2229,7 @@ document.addEventListener("click", async e => {
   else if (all) {
     const ids = all.dataset.onlall.split(",").map(Number); all.disabled = true;
     for (const i of ids) onlDownload(i, document.querySelector(`[data-onl="${i}"]`));
-    toast(`${ids.length} songs are downloading. Follow them in the Download tab.`);
+    toast(`${ids.length} songs are downloading. Follow them in the Import tab.`);
   } else if (alb) {
     const t = alb.nextElementSibling; if (t.innerHTML) { t.innerHTML = ""; return; }
     t.innerHTML = `<div class="progress-line"><div></div></div>`;
@@ -2168,7 +2306,7 @@ document.addEventListener("keydown", e => {
   else if (e.key === "/") { e.preventDefault(); $("#q").focus(); }
   else if (e.key === "Escape") { closeMenu(); closeNow(); }
 });
-document.addEventListener("visibilitychange", () => { if (document.hidden) store.set("position", audio.currentTime || 0); else updateTime(true); mfIdle(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) store.set("position", audio.currentTime || 0); else { updateTime(true); DL.poll(); } });
 window.addEventListener("pagehide", () => store.set("position", audio.currentTime || 0));
 
 applyTheme(savedTheme()); syncModeButtons(); syncMute(); render();

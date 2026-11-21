@@ -1,0 +1,123 @@
+"""Import and download queue: songs already on the device are linked, never downloaded again; playlists from
+files, lists of titles and another MusicFlow Play (local server)."""
+import threading
+import time
+from pathlib import Path
+
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path[:0] = [str(ROOT / "server"), str(ROOT / "musicflow" / "core")]
+from test_server import _song, client  # noqa: E402,F401  (fixture)
+
+
+def _wait(fn, seconds=20):
+    end = time.time() + seconds
+    while time.time() < end:
+        v = fn()
+        if v:
+            return v
+        time.sleep(0.1)
+    return fn()
+
+
+def test_song_key_ignores_feat_and_remaster_but_not_remix():
+    import downloads as d
+    assert d.song_key("Song (feat. B)", "Artist A, B") == d.song_key("Song", "Artist A")
+    assert d.song_key("Song - Remastered 2011", "Artist A") == d.song_key("Song", "artist a")
+    assert d.song_key("Song (Remix)", "Artist A") != d.song_key("Song", "Artist A")
+    assert d.song_key("Été", "Zaz") == d.song_key("Ete", "ZAZ")
+
+
+def test_parse_m3u_csv_and_text():
+    import importer
+    name, t = importer.parse_text("#EXTM3U\n#EXTINF:215,Daft Punk - One More Time\nmusic/a.mp3\nC:\\x\\Zaz - Je veux.flac\n", "Road.m3u8")
+    assert name == "Road" and t[0] == {"title": "One More Time", "artist": "Daft Punk", "duration": 215}
+    assert t[1]["title"] == "Je veux" and t[1]["artist"] == "Zaz"
+    csv_text = '"Track URI","Track Name","Artist Name(s)","Album Name","Duration (ms)"\n"x","Halo","Beyoncé","I Am","261640"\n'
+    _, t = importer.parse_text(csv_text, "liked.csv")
+    assert t == [{"title": "Halo", "artist": "Beyoncé", "album": "I Am", "duration": 261}]
+    _, t = importer.parse_text("Stromae - Alors on danse\nJust a title\n")
+    assert t[0]["artist"] == "Stromae" and t[1] == {"title": "Just a title", "artist": "", "duration": 0}
+
+
+def test_youtube_titles_become_songs():
+    import importer
+    assert importer.youtube_song("Stromae - Papaoutai (Official Video)", "StromaeVEVO") == ("Papaoutai", "Stromae")
+    assert importer.youtube_song("Halo", "Beyoncé - Topic") == ("Halo", "Beyoncé")
+
+
+def test_import_links_songs_already_on_the_device(client, tmp_path):
+    root = tmp_path / "Root"
+    h = client.h
+    assert client.post("/api/dl/settings", json={"root": str(root)}, headers=h).status_code == 200
+    assert str(root) in client.mod.settings.data["folders"]
+    text = "Other Artist - Untagged\nArtiste Été - First Song\n"
+    r = client.post("/api/import/preview", json={"source": {"kind": "text", "text": text}}, headers=h).get_json()
+    assert r["have"] == 2
+    r = client.post("/api/import/start", json={"source": {"kind": "text", "text": text}, "name": "Mine"}, headers=h).get_json()
+    imp = r["import"]
+    assert imp["folder"] == str(root / "Mine")
+    q = client.mod.queue
+    _wait(lambda: all(i["state"] == "have" for i in q.items) and len(q.items) == 2)
+    assert [i["state"] for i in q.items] == ["have", "have"]
+    pl = _wait(lambda: next((p for p in client.mod.collections.snapshot()["playlists"] if p["id"] == imp["playlist"] and len(p["tracks"]) == 2), None))
+    titles = [client.mod.index.get(t)["title"] for t in pl["tracks"]]
+    assert titles == ["Untagged", "First Song"]  # order of the source
+    m3u = _wait(lambda: (root / "Mine" / "Mine.m3u8").is_file() and (root / "Mine" / "Mine.m3u8").read_text().count(".mp3") == 2)
+    assert m3u and "../../Music/Album A/01 First.mp3" in (root / "Mine" / "Mine.m3u8").read_text()
+    # Nothing was downloaded: no file in the root folder.
+    assert not [f for f in root.rglob("*.mp3")]
+
+
+def test_local_server_copies_files_once(client, tmp_path):
+    """The phone imports a playlist of the computer (MusicFlow Play started with --lan): the files are copied."""
+    from werkzeug.serving import make_server
+    import importlib, sys
+    other_dir = tmp_path / "pc"
+    (other_dir / "Music").mkdir(parents=True)
+    _song(other_dir / "Music" / "Remote Song - Far Artist.mp3")
+    # A second server: same code, other data folder, LAN mode.
+    mod = client.mod
+    pc = importlib.util.spec_from_file_location("pc_server", str(Path(mod.__file__)))
+    import os
+    os.environ["MFP_DATA_DIR"] = str(other_dir / "data")
+    pcm = importlib.util.module_from_spec(pc)
+    import importer
+    saved = dict(importer.CTX)  # both servers share the importer module in this test: keep the phone's
+    pc.loader.exec_module(pcm)
+    importer.CTX.update(saved)
+    mod.queue.on_song = importer.on_song
+    pcm.CONFIG.update(lan=True, token="k" * 20)
+    pcm.index.scan([str(other_dir / "Music")])
+    tid = next(iter(pcm.index.tracks))
+    pcm.collections.create("Party", [tid])
+    srv = make_server("127.0.0.1", 0, pcm.app, threaded=True)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    address = f"http://127.0.0.1:{srv.server_port}/?t={'k' * 20}"
+    try:
+        h = client.h
+        client.post("/api/dl/settings", json={"root": str(tmp_path / "Root")}, headers=h)
+        r = client.post("/api/import/playlists", json={"kind": "server", "address": address}, headers=h).get_json()
+        party = next(p for p in r["playlists"] if p["name"] == "Party")
+        src = {"kind": "server", "base": r["base"], "id": party["id"]}
+        r = client.post("/api/import/start", json={"source": src}, headers=h).get_json()
+        assert "import" in r, r
+        imp = r["import"]
+        q = client.mod.queue
+        _wait(lambda: q.items and q.items[-1]["state"] in ("done", "error"))
+        assert q.items[-1]["state"] == "done", q.items[-1]
+        copied = Path(q.items[-1]["path"])
+        assert copied.is_file() and copied.parent == tmp_path / "Root" / "Party"
+        # Updating the import: the song is already there, nothing is copied again.
+        assert client.post(f"/api/import/{imp['id']}", json={}, headers=h).status_code == 200
+        _wait(lambda: q.items[-1]["state"] != "queued" and q.items[-1]["state"] != "working")
+        st = client.get("/api/import/state", headers=h).get_json()
+        assert "token" not in str(st["imports"])  # the key of the other device is not shown
+    finally:
+        srv.shutdown()
+
+
+def test_musicflow_routes_are_limited(client):
+    assert client.post("/api/mf/download", json={}, headers=client.h).status_code == 403
+    assert client.post("/api/mf/../state", json={}, headers=client.h).status_code in (403, 404)

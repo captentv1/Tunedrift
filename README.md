@@ -23,6 +23,9 @@ PC and Android · free · open source (GPL-3.0) · no account, no ads
 - **Synced lyrics** (`.lrc` or tags), tap a line to jump; search online on LRCLIB when a song has none
 - **Playlists and favorites**
 - **Edit song info** (title, artist, album…), fix albums online from their track list, song details
+- **Search online and download** (MusicFlow inside the app): best version, tags, cover and lyrics
+- **Import** playlists from a link, your Spotify or YouTube account, your computer (over Wi-Fi) or a file, into one
+  root folder; songs already on the device are linked, never downloaded twice
 - Formats: MP3, FLAC, WAV, M4A/AAC, Opus, OGG (whatever the browser can play)
 
 ## Install
@@ -32,14 +35,13 @@ PC and Android · free · open source (GPL-3.0) · no account, no ads
 2. Open it and allow installing from this source.
 3. Allow access to music and notifications. Songs in `Music` and `Download` appear; add other folders in **Settings**.
 
-MusicFlow's default download folder on Android is private to MusicFlow: choose a folder such as
-`Music/MusicFlow` in MusicFlow's settings so that the player can read the songs.
+In **Import**, choose the root folder (e.g. `Music/MusicFlow`) and allow access to all files when asked.
 
 **Windows 10/11**
 1. Download [`MusicFlowPlay.exe`](https://github.com/captentv1/musicflow-play/releases/latest/download/MusicFlowPlay.exe).
 2. Double-click it: the player opens in your browser. (If Windows shows “Windows protected your PC”: *More info › Run anyway*.)
 
-The **Download** tab is MusicFlow (search and download) inside the player. From source it needs
+Search, download and **Import** come from MusicFlow's code inside the player. From source they need
 MusicFlow's packages: `pip install -r musicflow/desktop/requirements.txt`.
 
 Other systems: run from source, below.
@@ -69,17 +71,29 @@ The music is read from the computer, so the computer stays on.
 
 | Folder | Content |
 |---|---|
-| `musicflow/` | Git submodule of MusicFlow. `musicflow/core/` is used as is: `library.py`, `tag_quality.py`, `lyrics.py`, `audio_check.py`. |
-| `server/` | Small Flask server: reads the folders, serves the audio (with seeking), covers, lyrics, playlists and favorites. |
+| `musicflow/` | Git submodule of MusicFlow. Its code is used as is, inside the player's server: `core/`, and its server (`desktop/app.py` on PC, `mobile_app.py` on Android) for search and download. Its page is not used. |
+| `server/` | Small Flask server: reads the folders, serves the audio (with seeking), covers, lyrics, playlists and favorites. `downloads.py` is the download queue (songs already on the device are linked), `importer.py` the Import tab (links, Spotify and YouTube APIs, another MusicFlow Play, files), `mf_bridge.py` calls MusicFlow's code. |
 | `web/` | The single page, for PC and phone. |
 | `android/` | The Android app: a WebView on the same page, the same server run by [Chaquopy](https://chaquo.com/chaquopy/), and a media session for the notification and lock screen. |
-| `.github/workflows/build-apk.yml` | Builds the APK, starts it on an emulator and plays a song (`ci/smoke_test.py`), publishes it as a release on `main`. |
+| `.github/workflows/build-apk.yml` | Builds the APK, starts it on an Android 12 emulator, plays every format, imports a playlist from a "computer" while playing and swipes the app away (`ci/smoke_test.py`), publishes it as a release on `main`. |
 | `tests/` | `python -m pytest tests` (needs `ffmpeg` to make test songs). |
 
 To take a newer MusicFlow: `git submodule update --remote musicflow`, then commit.
 
 Settings, the library index, playlists and favorites are stored in `%APPDATA%\MusicFlowPlay`
 (`~/.local/share/musicflow-play` elsewhere). Songs are never changed, except lyrics saved on request.
+
+## Import from Spotify or YouTube
+
+Your playlists are read through the official APIs, with your own (free) developer key, once:
+
+- **Spotify**: [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) › Create app › Redirect URI
+  `http://127.0.0.1:5091/import/callback/spotify`, Web API › copy the Client ID into Import › Spotify.
+- **YouTube**: [console.cloud.google.com](https://console.cloud.google.com/apis/library/youtube.googleapis.com) ›
+  enable YouTube Data API v3 › OAuth consent screen (External, add yourself as a test user) › Credentials › OAuth
+  client ID, type Desktop app › copy the Client ID and secret into Import › YouTube.
+
+A playlist link needs no account.
 
 ## Next
 
