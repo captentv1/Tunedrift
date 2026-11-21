@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.2.0 — 2026-11-21 (Android and PC)
+
+- **Spotify sign-in page visible:** with the keyboard open, the page was squeezed to one line (the keyboard's room was
+  counted twice). It now keeps its full height.
+- **Spotify playlists with their covers and real names**, and tapping a playlist shows its songs (with covers) before
+  importing it.
+- **Faster online search:** Deezer's catalogue answers first (about a second); the slower search (Spotify page,
+  YouTube) only runs when it finds nothing.
+- **Downloads:** two songs at once by default (Import › Root folder and format › At once).
+- **Synced lyrics suggested:** the app checks, in the background, the songs that have no synced lyrics. When it finds
+  some, a card on Home says how many; "See" lists them (with a preview) to pick, "Add all" adds them. Songs where
+  nothing is found are not shown. Nothing is written before you say yes.
+- **Downloads get both lyrics:** each new song gets its synced lyrics (.lrc) and the plain text, when found.
+- **Themes fixed:** Light glass and Sakura kept the dark background and panels with dark text (unreadable header,
+  player and menu). They now have light backgrounds, panels and menus. Automatic follows the phone with the glass look
+  (Light glass by day, Glass at night).
+
+- **Search no longer stalls the app.** With "Online" (or "Everywhere"), every pause while typing started an online
+  search, and they ran one after the other (each opens a web page and runs yt-dlp), so the app froze for seconds.
+  Now one search starts once typing stops; a newer one replaces the one waiting; answers are kept 10 minutes, so
+  going back to a search is instant.
+- **Search page without fixed blocks:** no more "Online / Searching online…" block or "Search online" button. A thin
+  bar shows the search, and the online results appear by themselves under your music when they are there.
+
 ## 1.1.1.1 — 2026-11-21 (Android)
 
 - **Fix: "Update" downloaded nothing.** The update went through Android's download manager, whose download could

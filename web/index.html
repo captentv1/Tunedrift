@@ -304,6 +304,7 @@
   .addrow input.text{flex:1 1 160px;width:auto}
   code{background:var(--panel2);padding:2px 6px;border-radius:6px;word-break:break-all}
   .progress-line{height:4px;background:var(--panel2);border-radius:2px;overflow:hidden;margin-top:12px}
+  .progress-line.slim{height:3px;margin-top:0}
   .progress-line div{height:100%;width:40%;background:var(--accent);animation:slide 1.2s infinite linear;border-radius:2px}
   @keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
 
@@ -430,9 +431,27 @@
     --b1:rgba(202,138,4,.45);--b2:rgba(120,53,15,.55);--b3:rgba(234,179,8,.30);--b4:rgba(68,64,60,.60);
     --g1:#eab308;--g2:#ca8a04;--g3:#a16207;--gshadow:rgba(202,138,4,.40);--t-a:#fde68a;--t-b:#fcd34d}
 
+  /* The two light glass themes: every colour of the dark glass themes is redefined (background, panels, menus,
+     blobs, accents), else the text turned dark on the dark glass background and could not be read. */
   html[data-theme="glass-light"], html[data-theme="glass-sakura"]{
-    --ink:#1c1733;--muted:rgba(28,23,51,.62);--border:rgba(28,23,51,.12);--line:rgba(28,23,51,.25);
-    --glass:rgba(255,255,255,.55);--glass-strong:rgba(255,255,255,.72);--panel:rgba(255,255,255,.55);--panel2:rgba(255,255,255,.70)}
+    --bg:#eef2ff;--ink:#1c1733;--muted:rgba(28,23,51,.62);--border:rgba(28,23,51,.12);--line:rgba(28,23,51,.25);
+    --glass:rgba(255,255,255,.55);--glass-strong:rgba(255,255,255,.72);--panel:rgba(255,255,255,.55);--panel2:rgba(255,255,255,.70);
+    --accent:#6d28d9;--ok:#0f8a52;--err:#c62839;--gold:#b26a00;
+    --t1:rgba(109,40,217,.07);--t2:rgba(109,40,217,.13);--t3:rgba(109,40,217,.20);--glow:0 0 14px rgba(109,40,217,.18);
+    --backdrop:#eef2ff;--option-bg:#ffffff;
+    --b1:rgba(165,180,252,.70);--b2:rgba(249,168,212,.55);--b3:rgba(196,181,253,.55);--b4:rgba(147,197,253,.45);
+    --g1:#8b5cf6;--g2:#6366f1;--g3:#3b82f6;--gshadow:rgba(99,102,241,.25);--t-a:#6d28d9;--t-b:#2563eb}
+  html[data-theme="glass-sakura"]{--bg:#fff1f5;--backdrop:#fff1f5;--option-bg:#fffafc;--accent:#be185d;
+    --t1:rgba(190,24,93,.07);--t2:rgba(190,24,93,.13);--t3:rgba(190,24,93,.20);
+    --b1:rgba(251,207,232,.85);--b2:rgba(221,214,254,.70);--b3:rgba(253,164,175,.45);--b4:rgba(254,215,170,.40);
+    --g1:#ec4899;--g2:#db2777;--g3:#a855f7;--gshadow:rgba(219,39,119,.25);--t-a:#be185d;--t-b:#7c3aed}
+  html[data-theme="glass-light"] .btn:not(.primary), html[data-theme="glass-sakura"] .btn:not(.primary),
+  html[data-theme="glass-light"] .chip:not(.active):not(.on), html[data-theme="glass-sakura"] .chip:not(.active):not(.on),
+  html[data-theme="glass-light"] .iconbtn, html[data-theme="glass-sakura"] .iconbtn{background:rgba(28,23,51,.06)}
+  html[data-theme="glass-light"] .logo .tag, html[data-theme="glass-sakura"] .logo .tag{background:rgba(28,23,51,.08)}
+  html[data-theme="glass-light"] .row:hover, html[data-theme="glass-sakura"] .row:hover,
+  html[data-theme="glass-light"] .nav:hover, html[data-theme="glass-sakura"] .nav:hover{background:rgba(28,23,51,.05)}
+  html[data-theme="glass-light"] select, html[data-theme="glass-sakura"] select{background:rgba(255,255,255,.7);border-color:rgba(28,23,51,.14);color:var(--ink)}
   html[data-theme="oled"]{--bg:#000;--grid:transparent;--panel:#0a0a0a;--panel2:#141414;--ink:#f5f5f5;--muted:#9a9a9a;
     --line:#333;--accent:#1ed760;--ok:#1ed760;--err:#ff5470;--border:#1f1f1f;--t1:rgba(30,215,96,.08);--t2:rgba(30,215,96,.15)}
   html[data-theme="oled"]{background:#000!important}
@@ -480,7 +499,7 @@
 <script>
 if (window.MFPNative) document.documentElement.classList.add('native');
 // Applied before the page is drawn, so it never flashes the default theme.
-try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'white' : '') : th; if (real) document.documentElement.setAttribute('data-theme', real); const z = localStorage.getItem('mfp.textsize'); if (z) document.documentElement.style.zoom = z; } catch (e) {}
+try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'glass-light' : 'glass') : th; if (real) document.documentElement.setAttribute('data-theme', real); const z = localStorage.getItem('mfp.textsize'); if (z) document.documentElement.style.zoom = z; } catch (e) {}
 try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) === '1') document.documentElement.classList.add('lite'); } catch (e) {}
 </script>
 </head>
@@ -633,7 +652,7 @@ async function api(path, body, method) {
   const r = await fetch("/api/" + path, opt);
   let data = {};
   try { data = await r.json(); } catch {}
-  if (!r.ok) throw new Error(data.error || (r.status === 403 ? "Access refused: open the link shown on the computer that runs the player." : "Server error " + r.status));
+  if (!r.ok) { const e = new Error(data.error || (r.status === 403 ? "Access refused: open the link shown on the computer that runs the player." : "Server error " + r.status)); e.status = r.status; e.data = data; throw e; }
   return data;
 }
 const audioUrl = id => `/api/audio/${id}?t=${encodeURIComponent(TOKEN)}`;
@@ -661,7 +680,7 @@ const THEMES = [
 const LIGHT_THEMES = ["white", "glass-light", "glass-sakura"];
 function savedTheme() { try { return localStorage.getItem("mfp.theme") ?? "glass"; } catch { return "glass"; } }
 function applyTheme(id) {
-  const real = id === "auto" ? (matchMedia("(prefers-color-scheme: light)").matches ? "white" : "") : id;
+  const real = id === "auto" ? (matchMedia("(prefers-color-scheme: light)").matches ? "glass-light" : "glass") : id;
   if (real) document.documentElement.setAttribute("data-theme", real); else document.documentElement.removeAttribute("data-theme");
   try { localStorage.setItem("mfp.theme", id); } catch {}
   const bg = getComputedStyle(document.documentElement).getPropertyValue(real.startsWith("glass") ? "--backdrop" : "--bg").trim();
@@ -1244,6 +1263,46 @@ function menu(anchor, items) {
   m.style.left = Math.max(8, x) + "px"; m.style.top = y + "px";
   m.onclick = e => { const mi = e.target.closest(".mi"); if (!mi) return; closeMenu(); items[+mi.dataset.k].run(); };
 }
+// Synced lyrics suggestions: the app looks by itself (in the background) for synced lyrics of the songs without
+// them, and only shows a card here when it found some. Nothing is written before the person says yes.
+const LYS = {
+  timer: 0, items: [],
+  t: 0,
+  async load(now, poll) {
+    if (!now && !poll && Date.now() - this.t < 60000) return;
+    this.t = Date.now(); clearTimeout(this.timer);
+    let d; try { d = await api("lyrics-suggest" + (now ? "?now=1" : "")); } catch { return; }
+    this.items = d.items || [];
+    this.draw();
+    if (d.running) this.timer = setTimeout(() => { if (route().name === "home") this.load(false, true); }, 8000);
+  },
+  draw() {
+    const box = $("#ly-sug"); if (!box) return;
+    const n = this.items.length;
+    box.innerHTML = n ? `<div class="note" style="margin:0 0 16px;align-items:center;flex-wrap:wrap">${ico("note")}<span style="flex:1;min-width:180px">Synced lyrics found for <b>${plural(n, "song")}</b> that had none.</span>
+      <button class="btn" id="lys-see">See</button><button class="btn primary" id="lys-all">Add all</button></div>` : "";
+    if (!n) return;
+    $("#lys-all").onclick = () => this.apply("all", []);
+    $("#lys-see").onclick = () => this.show();
+  },
+  show() {
+    const rows = this.items.map(i => `<label class="chk" style="align-items:flex-start;margin:0 0 12px"><input type="checkbox" data-lys="${esc(i.id)}" checked>
+      <span style="min-width:0"><b>${esc(i.title)}</b> <span class="muted">${esc(i.artist)}</span><br><span class="muted" style="font-size:13px">${esc(i.preview.join(" / "))}</span></span></label>`).join("");
+    dialog("Synced lyrics found", `<p class="muted" style="margin:0 0 10px">Checked songs get the synced lyrics (and the plain text). Unchecked ones are not suggested again.</p>
+      <div style="max-height:55vh;overflow:auto">${rows}</div>`, "Add", d => {
+      const yes = [], no = [];
+      for (const c of $$("[data-lys]", d)) (c.checked ? yes : no).push(c.dataset.lys);
+      this.apply(yes, no);
+    });
+  },
+  async apply(yes, no) {
+    try {
+      const r = await api("lyrics-suggest", {apply: yes, dismiss: no});
+      toast(r.applied ? `Synced lyrics added to ${plural(r.applied, "song")}` : "Done");
+      this.load(false, true);
+    } catch (e) { toast(e.message); }
+  },
+};
 function dialog(title, bodyHtml, okLabel, onOk, danger) {
   const d = document.createElement("div"); d.id = "dialog";
   d.innerHTML = `<div class="box"><h3>${esc(title)}</h3>${bodyHtml}<div class="actions"><button class="btn" data-x>Cancel</button><button class="btn ${danger ? "danger" : "primary"}" data-ok>${esc(okLabel)}</button></div></div>`;
@@ -1703,7 +1762,7 @@ const IMP = {
       <div class="actions" style="margin:10px 0 0;flex-wrap:wrap"><button class="btn primary" id="root-pick">${ico("folder")} Choose the root folder</button></div>
       ${noAccess ? `<div class="note" style="margin-top:12px">${ico("folder")}<span style="flex:1;min-width:200px">To save songs in a folder of your choice (e.g. Music/MusicFlow) and find the songs you already have, allow access to all files.</span><button class="btn" id="root-all">Allow</button></div>` : ""}
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px"><span>Format</span><select id="dl-fmt">${FORMATS.map(([v, n]) => `<option value="${v}"${(conf.format || "mp3-320") === v ? " selected" : ""}>${n}</option>`).join("")}</select>
-        <span>At once</span><select id="dl-par">${[1, 2, 3].map(n => `<option${(conf.parallel || 1) === n ? " selected" : ""}>${n}</option>`).join("")}</select></div>
+        <span>At once</span><select id="dl-par">${[1, 2, 3].map(n => `<option${(conf.parallel || 2) === n ? " selected" : ""}>${n}</option>`).join("")}</select></div>
       <label class="chk"><input type="checkbox" id="dl-sub"${conf.subfolders !== false ? " checked" : ""}> One folder per playlist</label>
       <label class="chk"><input type="checkbox" id="dl-m3u"${conf.m3u !== false ? " checked" : ""}> Also write the playlist as a .m3u8 file (other players, like Samsung Music, see it)</label>
       <label class="chk"><input type="checkbox" id="dl-lyr"${conf.lyrics !== false ? " checked" : ""}> Lyrics in the files</label>`;
@@ -1777,10 +1836,13 @@ const IMP = {
     try { d = await api("import/playlists", req); } catch (e) { box.innerHTML = `<div class="note">${ico("close")}<span>${esc(e.message)}</span></div>`; return; }
     const base = d.base || "";
     if (k === "server" && base) { this.st = await api("import/state").catch(() => this.st); }
-    box.innerHTML = `<div style="margin-top:8px">${(d.playlists || []).map(p => `<div class="imp-pl"><div class="art" style="width:44px;height:44px;border-radius:10px;overflow:hidden;flex:none;display:grid;place-items:center;background:var(--option-bg)">${p.image ? `<img loading="lazy" src="${esc(p.image)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ico("list")}</div>
+    box.innerHTML = `<div style="margin-top:8px">${(d.playlists || []).map(p => `<div class="imp-pl" data-plview="${esc(p.id)}" style="cursor:pointer" title="See the songs"><div class="art" style="width:44px;height:44px;border-radius:10px;overflow:hidden;flex:none;display:grid;place-items:center;background:var(--option-bg)">${p.image ? `<img loading="lazy" src="${esc(p.image)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ico("list")}</div>
       <div class="grow"><div class="t1">${esc(p.name)}</div><div class="t2 muted" style="font-size:13px">${p.count == null ? "" : plural(p.count, "song")}</div></div>
       <button class="btn" data-pl="${esc(p.id)}">${ico("download")} Import</button></div>`).join("") || `<p class="muted">No playlist.</p>`}</div>`;
-    for (const b of $$("[data-pl]", box)) b.onclick = () => this.showPreview(k === "server" ? {kind: "server", base, id: b.dataset.pl} : {kind: k, id: b.dataset.pl});
+    const src = id => k === "server" ? {kind: "server", base, id} : {kind: k, id};
+    for (const b of $$("[data-pl]", box)) b.onclick = e => { e.stopPropagation(); this.showPreview(src(b.dataset.pl)); };
+    // Tapping a playlist shows its songs (with their covers) before importing it.
+    for (const r of $$("[data-plview]", box)) r.onclick = () => this.showPreview(src(r.dataset.plview));
   },
   async showPreview(source, name) {
     const box = $("#pv"); if (!box) return;
@@ -1794,7 +1856,7 @@ const IMP = {
       <p style="margin:0 0 10px">${plural(tracks.length, "song")} · <b>${d.have}</b> already on this device (linked, not downloaded) · <b>${miss}</b> to ${source.kind === "server" ? "copy" : "download"}
         <br><span class="muted">Into: ${esc(root ? root + (conf.subfolders !== false ? "/" + (name || d.name) : "") : "choose the root folder above")}</span></p>
       <button class="btn primary" id="pv-go"${tracks.length ? "" : " disabled"}>${ico("download")} ${miss ? `${source.kind === "server" ? "Copy" : "Download"} ${miss} and make the playlist` : "Make the playlist"}</button>
-      <div class="rows" style="margin-top:10px;max-height:40vh;overflow:auto">${tracks.slice(0, 300).map(t => `<div class="row" style="min-height:44px;cursor:default"><div class="txt" style="min-width:0;flex:1"><div class="t1">${esc(t.title)}</div><div class="t2">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</div></div>
+      <div class="rows" style="margin-top:10px;max-height:50vh;overflow:auto">${tracks.slice(0, 300).map(t => `<div class="row" style="min-height:44px;cursor:default"><div class="art" style="width:40px;height:40px;flex:none;border-radius:8px;overflow:hidden;display:grid;place-items:center;background:var(--option-bg)">${t.cover ? `<img loading="lazy" src="${esc(t.cover)}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">` : ico("note")}</div><div class="txt" style="min-width:0;flex:1"><div class="t1">${esc(t.title)}</div><div class="t2">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</div></div>
         <span class="st ${t.have ? "ok" : "muted"}" style="font-size:12px">${t.have ? "On the device" : ""}</span></div>`).join("")}${tracks.length > 300 ? `<p class="muted">… ${tracks.length - 300} more</p>` : ""}</div></div>`;
     $("#pv-go").onclick = async () => {
       if (!root) { toast("Choose the root folder first"); $("#root-box").scrollIntoView({behavior: "smooth"}); return; }
@@ -1946,6 +2008,7 @@ const VIEWS = {
     const cur = Player.current(), fav = L.favorites.filter(id => L.tracks.has(id));
     const artists = [...L.artists.values()].filter(a => a.name !== UNKNOWN_ARTIST).sort((a, b) => b.tracks.length - a.tracks.length).slice(0, 12);
     main.innerHTML = `<div class="hello"><h1>${hello}</h1><div class="sub">${plural(L.list.length, "song")} · ${plural(albums.length, "album")} · ${totalTime(L.list)}</div></div>
+      <div id="ly-sug"></div>
       <div class="tiles">
         <button class="tile big" id="h-shuf"><span class="ic">${ico("shuffle")}</span><span style="min-width:0"><div class="t1">Shuffle everything</div><div class="t2">${plural(L.list.length, "song")}, in a random order</div></span></button>
         ${cur ? `<button class="tile" id="h-cur"><span class="art">${artHtml(cur.cover ? cur.id : null)}</span><span style="min-width:0"><div class="t1">${esc(cur.title)}</div><div class="t2">Continue listening</div></span></button>` : ""}
@@ -1958,6 +2021,8 @@ const VIEWS = {
       ${shelf("Your artists", artists.map(a => ({go: "artist/" + encodeURIComponent(a.key), cover: a.cover, icon: "person", name: a.name, sub: plural(a.tracks.length, "song")})), true)}
       ${shelf("Something different", shuffled(albums).slice(0, 12).map(albumCard))}`;
     $("#h-shuf").onclick = () => Player.playList(L.list.map(t => t.id), 0, true);
+    if (LYS.items.length) LYS.draw();
+    if (!window.__testMode) LYS.load();
     if (cur) $("#h-cur").onclick = () => { if (audio.paused) Player.toggle(); openNow(); };
   },
   folders(main) { VIEWS.folder(main, ""); },
@@ -2181,13 +2246,30 @@ function localMatch(r) {
   const tt = norm(r.title || ""), aa = norm(r.uploader || "");
   return L.list.find(t => t._title === tt && (!aa || norm(t.artist || "").includes(aa.split(" ")[0]))) || null;
 }
+// Online search: only once the person stops typing, one at a time (a newer one replaces the one waiting), and
+// answers kept, so typing never piles up searches (that made the app stall for seconds).
+const ONLINE_CACHE = new Map();
+let onlineTimer = 0, onlineBusy = false, onlineNext = "";
+function searchOnlineSoon(q, wait) { clearTimeout(onlineTimer); onlineTimer = setTimeout(() => searchOnline(q), wait == null ? 700 : wait); }
 async function searchOnline(q) {
-  q = (q || "").trim(); if (!q || SRCH.scope === "local" || !mfUrl) return;
+  q = (q || "").trim(); clearTimeout(onlineTimer);
+  if (!q || SRCH.scope === "local" || !mfUrl) return;
   if (!navigator.onLine) { SRCH.online = {q, error: "You are offline: only your music is shown."}; return render(); }
-  SRCH.online = {q, loading: true}; render();
-  try { SRCH.online = {q, results: await MF.search(q)}; }
-  catch (e) { const m = String(e.message || ""); SRCH.online = {q, noModule: !!e.noModule,
-    error: /proxy|connect|network|resolve|timed out|URLError|getaddrinfo/i.test(m) ? "The online search could not connect. Check the connection, then try again." : m.length > 160 ? m.slice(0, 157) + "…" : m}; }
+  if (ONLINE_CACHE.has(q)) { SRCH.online = {q, results: ONLINE_CACHE.get(q)}; return render(); }
+  if (onlineBusy) { onlineNext = q; if (SRCH.online.q !== q) { SRCH.online = {q, loading: true}; render(); } return; }
+  onlineBusy = true; SRCH.online = {q, loading: true}; render();
+  try {
+    const res = await MF.search(q);
+    ONLINE_CACHE.set(q, res); if (ONLINE_CACHE.size > 40) ONLINE_CACHE.delete(ONLINE_CACHE.keys().next().value);
+    if (SRCH.online.q === q) SRCH.online = {q, results: res};
+  } catch (e) {
+    const m = String(e.message || "");
+    if (!(e.data && e.data.superseded) && SRCH.online.q === q) SRCH.online = {q, error: /proxy|connect|network|resolve|timed out|URLError|getaddrinfo/i.test(m)
+      ? "The online search could not connect. Check the connection, then try again." : m.length > 160 ? m.slice(0, 157) + "…" : m};
+  }
+  onlineBusy = false;
+  const next = onlineNext; onlineNext = "";
+  if (next && next !== q && $("#q").value.trim() === next) return searchOnline(next);
   if ($("#q").value.trim() === q) render();
 }
 // Online songs of an artist or album (MusicFlow installed): what you have plays, the rest downloads.
@@ -2245,13 +2327,13 @@ function renderSearch(main, q) {
   const chip = (attr, v, label, on) => `<button class="chip${on ? " active" : ""}" ${attr}="${v}">${label}</button>`;
   const o = SRCH.online, mine = o.q === q;
   let online = "";
+  let searching = false;
   if (sc !== "local") {
-    if (!navigator.onLine) online = `<div class="note">${ico("close")}You are offline: only your music is shown.</div>`;
-    else if (!mine) online = `<button class="btn" id="s-online">${ico("search")} Search online for “${esc(q)}”</button><div class="muted" style="margin-top:8px;font-size:12.5px">Or press Enter.</div>`;
-    else if (o.loading) online = `<div class="muted">Searching online…</div><div class="progress-line"><div></div></div>`;
+    if (!navigator.onLine) online = sc === "online" ? `<div class="note">${ico("close")}You are offline: only your music is shown.</div>` : "";
+    else if (!mine || o.loading) searching = true;
     else if (o.error) online = `<div class="note">${ico("close")}<span>${esc(o.error)}</span><button class="btn" id="s-online">Try again</button></div>`;
-    else if (!o.results.length) online = `<div class="muted">Nothing found online.</div>`;
-    else online = `<div class="rows">${o.results.map((r, i) => { const have = localMatch(r), key = (r.title || "") + "|" + (r.uploader || "");
+    else if (!o.results.length) online = sc === "online" ? `<div class="muted">Nothing found online.</div>` : "";
+    else online = `<h2 class="sec">Online</h2><div class="rows">${o.results.map((r, i) => { const have = localMatch(r), key = (r.title || "") + "|" + (r.uploader || "");
       return `<div class="row orow" data-oi="${i}"><div class="art">${r.thumbnail ? `<img loading="lazy" src="${esc(r.thumbnail)}" alt="" onerror="this.remove()">` : ico("note")}</div>
         <div class="txt"><div class="t1">${esc(r.title || "")}</div><div class="t2">${esc([r.uploader, r.album, fmtDur(r.duration)].filter(Boolean).join(" · "))}</div></div>
         ${have ? `<button class="btn" data-oplay="${have.id}">${ico("play")} In your music</button>`
@@ -2260,16 +2342,18 @@ function renderSearch(main, q) {
   }
   main.innerHTML = `<div class="head"><div class="grow"><h1>“${esc(q)}”</h1><div class="sub">${local ? plural(songs.length, "song") + " in your music" : "Online"}</div></div></div>
     <div class="chips mf-only">${chip("data-sscope", "all", "Everywhere", sc === "all")}${chip("data-sscope", "local", "My music", sc === "local")}${chip("data-sscope", "online", "Online", sc === "online")}</div>
+    ${searching ? `<div class="progress-line slim" style="margin:0 0 10px"><div></div></div>` : ""}
     ${local ? `<div class="chips kinds">${[["all", "All"], ["songs", "Songs"], ["artists", "Artists"], ["albums", "Albums"], ["folders", "Folders"]].map(([v, l]) => chip("data-skind", v, l, k === v)).join("")}</div>` : ""}
-    ${local && !nLocal ? `<div class="empty" style="padding:24px">${ico("search")}Nothing in your music for “${esc(q)}”.</div>` : ""}
+    ${local && !nLocal && (sc === "local" || (mine && !o.loading && !(o.results || []).length)) ? `<div class="empty" style="padding:24px">${ico("search")}Nothing in your music for “${esc(q)}”.</div>` : ""}
     ${arts.length ? `<h2 class="sec">Artists</h2>` + cardsHtml(arts.map(a => ({go: "artist/" + encodeURIComponent(a.key), cover: a.cover, icon: "person", name: a.name, sub: plural(a.tracks.length, "song")})), true).replace('class="grid"', 'class="grid shelf"') : ""}
     ${als.length ? `<h2 class="sec">Albums</h2>` + cardsHtml(als.map(albumCard)).replace('class="grid"', 'class="grid shelf"') : ""}
     ${fols.length ? `<h2 class="sec">Folders</h2>` + folderCards(fols).replace('class="grid"', 'class="grid shelf"') : ""}
     ${songs.length ? `<h2 class="sec">Songs</h2><div id="list"></div>` : ""}
-    ${sc !== "local" ? `<h2 class="sec">Online</h2>${online}` : ""}`;
+    ${online}`;
   if (songs.length) mountRows($("#list"), songs, {list: songs});
-  const so = $("#s-online"); if (so) so.onclick = () => searchOnline(q);
-  if (sc === "online" && !mine && navigator.onLine) searchOnline(q);
+  const so = $("#s-online"); if (so) so.onclick = () => { ONLINE_CACHE.delete(q.trim()); SRCH.online = {}; searchOnline(q); };
+  // Online results come by themselves once typing stops (from 2 letters); Enter searches at once.
+  if (sc !== "local" && !mine && navigator.onLine && mfUrl && q.trim().length >= 2) searchOnlineSoon(q, ONLINE_CACHE.has(q.trim()) ? 0 : 700);
 }
 document.addEventListener("click", e => {
   const s1 = e.target.closest("[data-sscope]"), s2 = e.target.closest("[data-skind]"), dl = e.target.closest("[data-odl]"), pl = e.target.closest("[data-oplay]");

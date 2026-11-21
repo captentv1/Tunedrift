@@ -157,7 +157,9 @@ def spotify_playlists() -> list[dict]:
         pid = re.sub(r"[^A-Za-z0-9]", "", r.get("id") or "")
         if pid and pid not in seen:
             seen.add(pid)
-            out.append({"id": pid, "name": r.get("name") or "Playlist", "count": None, "image": ""})
+            image = str(r.get("image") or "")
+            out.append({"id": pid, "name": r.get("name") or "Playlist", "count": None,
+                        "image": image if image.startswith("https://") else ""})
     return out
 
 

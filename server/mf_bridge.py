@@ -5,9 +5,11 @@ in this process and called directly (Flask's test client, which does not open an
 and its download queue use MusicFlow's whole download chain without ever showing MusicFlow's interface."""
 from __future__ import annotations
 
+import json
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 from paths import ROOT, data_dir
@@ -104,6 +106,39 @@ def call(path: str, payload=None, method: str = "POST") -> tuple[int, dict]:
         return r.status_code, (r.get_json(silent=True) or {})
     except Exception as exc:
         return 500, {"error": f"{type(exc).__name__}: {exc}"}
+
+
+_SEARCH = {"lock": threading.Lock(), "gen": 0, "cache": {}}
+
+
+def search(payload: dict) -> tuple[int, dict]:
+    """Online search, one at a time and only the latest: while the person types, each pause asked for a search and
+    they all ran one after the other (MusicFlow's search opens a web page and runs yt-dlp), so the app stalled for
+    seconds. Now a search that waited while a newer one was asked returns at once, and answers are kept 10 min."""
+    key = json.dumps({k: payload.get(k) for k in ("title", "limit", "source")}, sort_keys=True).lower()
+    hit = _SEARCH["cache"].get(key)
+    if hit and time.time() - hit[0] < 600:
+        return 200, hit[1]
+    with _LOCK:
+        _SEARCH["gen"] += 1
+        mine = _SEARCH["gen"]
+    with _SEARCH["lock"]:
+        if mine != _SEARCH["gen"]:
+            return 409, {"superseded": True, "error": "A newer search was asked."}
+        hit = _SEARCH["cache"].get(key)
+        if hit and time.time() - hit[0] < 600:
+            return 200, hit[1]
+        code, data = 200, {}
+        if not payload.get("source"):  # Deezer's catalogue answers in about a second; the slower chain only if empty
+            code, data = call("search", dict(payload, source="deezer"))
+        if code != 200 or not data.get("results"):
+            code, data = call("search", payload)
+    if code == 200 and data.get("results") is not None:
+        cache = _SEARCH["cache"]
+        cache[key] = (time.time(), data)
+        for k in sorted(cache, key=lambda k: cache[k][0])[:-50]:
+            cache.pop(k, None)
+    return code, data
 
 
 def allowed(path: str) -> bool:

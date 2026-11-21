@@ -17,6 +17,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -130,9 +131,12 @@ object SpotifyBot {
             WebHost.eval("window.MFP_spotifyDone && MFP_spotifyDone(false)")
         }
         root.addView(box, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        box.setOnApplyWindowInsetsListener { v, insets ->
-            @Suppress("DEPRECATION")
-            v.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
+        // The window already makes room for the keyboard (MainActivity): only the bars are added here, else the
+        // sign-in page was squeezed to one line above the keyboard.
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(box) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val typing = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > bars.bottom
+            v.setPadding(0, bars.top, 0, if (typing) 0 else bars.bottom)
             insets
         }
         box.requestApplyInsets()
@@ -334,21 +338,30 @@ object SpotifyBot {
 (function(){
   try { var m = document.querySelector('meta[name=viewport]'); if (m && m.content !== 'width=1280') m.content = 'width=1280'; } catch (e) {}
   var seen = {}, out = [];
-  function add(id, name) {
+  function add(id, name, image) {
     if (!id || seen[id]) return;
     seen[id] = 1;
-    out.push({ id: id, name: ((name || '').trim().split('\n')[0] || 'Playlist').slice(0, 200) });
+    out.push({ id: id, name: ((name || '').trim().split('\n')[0] || 'Playlist').slice(0, 200), image: image || '' });
   }
+  function nameOf(el, id) {
+    var t = document.getElementById('listrow-title-spotify:playlist:' + id);
+    var n = t ? t.textContent : '';
+    if (!n) { var img = el.querySelector('img[alt]'); n = img ? img.getAttribute('alt') : ''; }
+    if (!n) n = el.getAttribute('aria-label') || '';
+    if (!n) n = (el.innerText || '').split('\n').filter(function (x) { return x.trim() && !/^(playlist|liste de lecture)\b/i.test(x.trim()); })[0] || '';
+    return n;
+  }
+  function imgOf(el) { var i = el.querySelector('img'); return i ? (i.getAttribute('src') || '') : ''; }
   document.querySelectorAll('[aria-labelledby*="spotify:playlist:"], [id*="spotify:playlist:"]').forEach(function (el) {
     var m = ((el.getAttribute('aria-labelledby') || '') + ' ' + el.id).match(/spotify:playlist:([A-Za-z0-9]+)/);
     if (!m) return;
-    var t = document.getElementById('listrow-title-spotify:playlist:' + m[1]);
-    add(m[1], t ? t.textContent : (el.innerText || el.getAttribute('aria-label')));
+    var row = el.closest('[role="row"]') || el;
+    add(m[1], nameOf(row, m[1]), imgOf(row));
   });
   var side = document.querySelector('#Desktop_LeftSidebar_Id, [data-testid="left-sidebar"], nav[aria-label]') || document;
   side.querySelectorAll('a[href*="/playlist/"]').forEach(function (a) {
     var m = (a.getAttribute('href') || '').match(/\/playlist\/([A-Za-z0-9]+)/);
-    if (m) add(m[1], a.innerText || a.getAttribute('title') || a.getAttribute('aria-label'));
+    if (m) add(m[1], a.innerText || a.getAttribute('title') || a.getAttribute('aria-label'), imgOf(a.closest('[role="row"]') || a));
   });
   // The library list only shows what is on screen: move it down a screen for the next look.
   var row = side.querySelector('[role="row"], a[href*="/playlist/"]');

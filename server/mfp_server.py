@@ -27,7 +27,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.1.1.1"
+VERSION = "1.1.2.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -111,7 +111,8 @@ def api_mf(sub):
     """Online search, links, artists… answered by MusicFlow's code in this process (no second page)."""
     if not _is_local_request() or not mf_bridge.allowed(sub):
         return jsonify({"error": "Not available."}), 403
-    code, data = mf_bridge.call(sub, request.get_json(silent=True) or {}, request.method)
+    payload = request.get_json(silent=True) or {}
+    code, data = mf_bridge.search(payload) if sub == "search" and request.method == "POST" else mf_bridge.call(sub, payload, request.method)
     return jsonify(data), code
 
 
@@ -347,6 +348,60 @@ def api_lyrics_sync():
         else:
             lyrics_sync.start(index.all(), _save_synced, _save_lyrics_cache)
     return jsonify(lyrics_sync.STATUS)
+
+
+def _lyrics_for_new(t: dict) -> None:
+    """A downloaded song gets its synced lyrics (and the plain ones) right away when they are found and checked."""
+    if not queue.conf().get("lyrics", True):
+        return
+
+    def run():
+        import lyrics_sync
+        try:
+            got = lyrics_sync.find(t.get("title") or "", (t.get("artists") or [t.get("artist") or ""])[0], t.get("length_s") or 0)
+            if got:
+                _save_synced(t, got)
+                _save_lyrics_cache()
+        except Exception as exc:
+            print(f"Synced lyrics for a new song failed: {exc}", flush=True)
+    threading.Thread(target=run, daemon=True).start()
+
+
+queue.lib.on_add = _lyrics_for_new
+
+lyrics_suggest = JsonStore(DATA_DIR / "lyrics-suggest.json", {"found": {}, "checked": {}, "dismissed": []})
+
+
+@app.route("/api/lyrics-suggest", methods=["GET", "POST"])
+def api_lyrics_suggest():
+    """Synced lyrics found by the app for songs without them. GET also starts a look (at most every 6 h; after a
+    download, at once). POST {"apply": [ids] | "all"} writes them (synced and plain); {"dismiss": [ids]} forgets them."""
+    import lyrics_sync
+    data = request.get_json(silent=True) or {}
+    store = lyrics_suggest.data
+    found = store.setdefault("found", {})
+    if request.method == "POST":
+        ids = list(found) if data.get("apply") == "all" else [str(i) for i in data.get("apply") or []]
+        done = 0
+        for tid in ids:
+            entry, t = found.get(tid), index.get(tid)
+            if entry and t:
+                _save_synced(t, {"synced": entry["synced"], "plain": entry.get("plain") or ""})
+                done += 1
+            found.pop(tid, None)
+        for tid in data.get("dismiss") or []:
+            if found.pop(str(tid), None) is not None:
+                store.setdefault("dismissed", []).append(str(tid))
+        with lyrics_suggest.lock:
+            lyrics_suggest.save()
+        _save_lyrics_cache()
+        return jsonify({"applied": done, "count": len(found)})
+    if not index.status.get("running"):
+        lyrics_sync.suggest_scan(index.all(), lyrics_suggest, lyrics_cache.data, force=bool(request.args.get("now")))
+    items = [{"id": tid, "title": e.get("title", ""), "artist": e.get("artist", ""),
+              "preview": [l.split("]", 1)[-1].strip() for l in e.get("synced", "").splitlines() if l.split("]", 1)[-1].strip()][:4]}
+             for tid, e in found.items() if index.get(tid)]
+    return jsonify({**lyrics_sync.SUGGEST, "count": len(items), "items": items})
 
 
 # Online pages of an artist or album (shown when MusicFlow is installed): their songs on Deezer, to download.
