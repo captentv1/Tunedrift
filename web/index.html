@@ -802,7 +802,10 @@ async function loadLibrary(quiet) {
     const [d, c, st] = await Promise.all([api("tracks"), api("collections"), api("state").catch(() => ({}))]);
     mfState(st);
     L.roots = st.folders || L.roots || [];
-    if (st.version && !Upd.version) { Upd.version = st.version; if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000); }
+    if (st.version && !Upd.version) {
+      Upd.version = st.version; if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000);
+      if (!window.__testMode) setTimeout(() => api("import/spotify?warm=1").catch(() => {}), 2500);
+    }
     L.tracks = new Map(d.tracks.map(t => [t.id, t]));
     L.scan = d.scan || {};
     L.favorites = c.favorites || [];
@@ -1797,9 +1800,10 @@ const IMP = {
         $("#sp-login").onclick = () => native("spotifyLogin");
       } else {
         box.innerHTML = `<div class="actions" style="margin:0 0 8px;flex-wrap:wrap"><span style="align-self:center">Spotify connected</span>
-          <button class="btn" id="acc-out">Disconnect</button></div><p class="muted" style="font-size:13px;margin:0">Reading your library can take a little while the first time.</p><div id="pl-list"></div><div id="pv"></div>`;
+          <button class="btn" id="acc-out">Disconnect</button><button class="iconbtn" id="sp-refresh" title="Read again">${ico("refresh")}</button></div><div id="pl-list"></div><div id="pv"></div>`;
         $("#acc-out").onclick = async () => { native("spotifyLogout"); this.st = await api("import/state").catch(() => this.st); this.st.spotify = {available: true, connected: false}; this.drawSource(); };
-        this.drawLists("spotify", {kind: "spotify"});
+        $("#sp-refresh").onclick = () => this.spLists("?refresh=1");
+        this.spLists();
       }
     } else if (k === "youtube") {
       const ch = (st.youtube || {}).channel || "";
@@ -1836,28 +1840,84 @@ const IMP = {
     try { d = await api("import/playlists", req); } catch (e) { box.innerHTML = `<div class="note">${ico("close")}<span>${esc(e.message)}</span></div>`; return; }
     const base = d.base || "";
     if (k === "server" && base) { this.st = await api("import/state").catch(() => this.st); }
-    box.innerHTML = `<div style="margin-top:8px">${(d.playlists || []).map(p => `<div class="imp-pl" data-plview="${esc(p.id)}" style="cursor:pointer" title="See the songs"><div class="art" style="width:44px;height:44px;border-radius:10px;overflow:hidden;flex:none;display:grid;place-items:center;background:var(--option-bg)">${p.image ? `<img loading="lazy" src="${esc(p.image)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ico("list")}</div>
+    box.innerHTML = this.listRows(d.playlists || []) || `<p class="muted">No playlist.</p>`;
+    this.bindLists(box, id => k === "server" ? {kind: "server", base, id} : {kind: k, id});
+  },
+  listRows(lists) {
+    if (!lists.length) return "";
+    return `<div style="margin-top:8px">${lists.map(p => `<div class="imp-pl" data-plview="${esc(p.id)}" style="cursor:pointer" title="See the songs"><div class="art" style="width:44px;height:44px;border-radius:10px;overflow:hidden;flex:none;display:grid;place-items:center;background:var(--option-bg)">${p.image ? `<img loading="lazy" src="${esc(p.image)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ico("list")}</div>
       <div class="grow"><div class="t1">${esc(p.name)}</div><div class="t2 muted" style="font-size:13px">${p.count == null ? "" : plural(p.count, "song")}</div></div>
-      <button class="btn" data-pl="${esc(p.id)}">${ico("download")} Import</button></div>`).join("") || `<p class="muted">No playlist.</p>`}</div>`;
-    const src = id => k === "server" ? {kind: "server", base, id} : {kind: k, id};
+      <button class="btn" data-pl="${esc(p.id)}">${ico("download")} Import</button></div>`).join("")}</div>`;
+  },
+  bindLists(box, src) {
     for (const b of $$("[data-pl]", box)) b.onclick = e => { e.stopPropagation(); this.showPreview(src(b.dataset.pl)); };
     // Tapping a playlist shows its songs (with their covers) before importing it.
     for (const r of $$("[data-plview]", box)) r.onclick = () => this.showPreview(src(r.dataset.plview));
   },
+  // Spotify: the playlists kept on the device show at once; while the app reads them again, each one found
+  // appears as it comes.
+  async spLists(q = "") {
+    const box = $("#pl-list"); if (!box) return;
+    clearTimeout(this.spT);
+    let d;
+    try { d = await api("import/spotify" + q); } catch (e) { box.innerHTML = `<div class="note">${ico("close")}<span>${esc(e.message)}</span></div>`; return; }
+    if ($("#pl-list") !== box || this.src !== "spotify") return;
+    const lists = d.playlists || [], sig = JSON.stringify([lists, d.running, d.error]);
+    if (sig !== this.spSig || !box.innerHTML) {
+      this.spSig = sig;
+      box.innerHTML = (d.running ? `<div class="progress-line slim"><div></div></div>` : "") + (this.listRows(lists)
+        || (d.running ? `<p class="muted" style="margin:8px 0 0">Reading your library…</p>` : d.error ? `<div class="note">${ico("close")}<span>${esc(d.error)}</span></div>` : `<p class="muted">No playlist.</p>`));
+      this.bindLists(box, id => ({kind: "spotify", id}));
+    }
+    if (d.running) this.spT = setTimeout(() => this.spLists(), 1500);
+  },
+  // A Spotify playlist: its kept songs at once, or the songs found so far while it is read.
+  async spPreview(id, first) {
+    const box = $("#pv"); if (!box) return;
+    clearTimeout(this.pvT);
+    if (first) {
+      this.pvId = id; this.pvSig = "";
+      box.innerHTML = `<div class="muted" style="margin-top:12px">Reading the playlist…</div><div class="progress-line"><div></div></div>`;
+      box.scrollIntoView({block: "nearest", behavior: "smooth"});
+    }
+    let d;
+    try { d = await api("import/spotify?pid=" + encodeURIComponent(id)); } catch (e) { box.innerHTML = `<div class="note" style="margin-top:12px">${ico("close")}<span>${esc(e.message)}</span></div>`; return; }
+    if (this.pvId !== id || $("#pv") !== box) return;
+    const tracks = d.tracks || [];
+    if (!tracks.length && !d.tracks_running) {
+      box.innerHTML = `<div class="note" style="margin-top:12px">${ico("close")}<span>${esc(d.tracks_error || "Spotify showed no songs for this playlist.")}</span></div>`; return;
+    }
+    const sig = [tracks.length, d.have, d.complete, d.tracks_running].join("|");
+    if (tracks.length && sig !== this.pvSig) { this.pvSig = sig; this.renderPreview({kind: "spotify", id}, "", d, !d.complete); }
+    if (d.tracks_running) this.pvT = setTimeout(() => this.spPreview(id), 1500);
+  },
   async showPreview(source, name) {
     const box = $("#pv"); if (!box) return;
+    clearTimeout(this.pvT); this.pvId = "";
+    if (source.kind === "spotify") return this.spPreview(source.id, true);
     box.innerHTML = `<div class="muted" style="margin-top:12px">Reading the playlist…</div><div class="progress-line"><div></div></div>`;
     box.scrollIntoView({block: "nearest", behavior: "smooth"});
     let d;
     try { d = await api("import/preview", {source}); } catch (e) { box.innerHTML = `<div class="note" style="margin-top:12px">${ico("close")}<span>${esc(e.message)}</span></div>`; return; }
+    this.renderPreview(source, name, d, false);
+  },
+  renderPreview(source, name, d, partial) {
+    const box = $("#pv"); if (!box) return;
+    const typed = $("#pv-name") && $("#pv-name").dataset.edited ? $("#pv-name").value : "";
+    const list = $(".rows", box), top = list ? list.scrollTop : 0;
     const tracks = d.tracks || [], miss = tracks.length - d.have;
     const conf = DL.snap.settings || {}, root = conf.root || (this.st || {}).default_root || "";
     box.innerHTML = `<div class="set" style="margin:14px 0 0;background:var(--option-bg)"><div class="addrow" style="margin:0 0 8px"><input class="text" id="pv-name" value="${esc(name || d.name)}"></div>
       <p style="margin:0 0 10px">${plural(tracks.length, "song")} · <b>${d.have}</b> already on this device (linked, not downloaded) · <b>${miss}</b> to ${source.kind === "server" ? "copy" : "download"}
         <br><span class="muted">Into: ${esc(root ? root + (conf.subfolders !== false ? "/" + (name || d.name) : "") : "choose the root folder above")}</span></p>
-      <button class="btn primary" id="pv-go"${tracks.length ? "" : " disabled"}>${ico("download")} ${miss ? `${source.kind === "server" ? "Copy" : "Download"} ${miss} and make the playlist` : "Make the playlist"}</button>
+      ${partial ? `<div class="progress-line slim"><div></div></div><button class="btn primary" disabled>Reading… ${plural(tracks.length, "song")} so far</button>`
+        : `<button class="btn primary" id="pv-go"${tracks.length ? "" : " disabled"}>${ico("download")} ${miss ? `${source.kind === "server" ? "Copy" : "Download"} ${miss} and make the playlist` : "Make the playlist"}</button>`}
       <div class="rows" style="margin-top:10px;max-height:50vh;overflow:auto">${tracks.slice(0, 300).map(t => `<div class="row" style="min-height:44px;cursor:default"><div class="art" style="width:40px;height:40px;flex:none;border-radius:8px;overflow:hidden;display:grid;place-items:center;background:var(--option-bg)">${t.cover ? `<img loading="lazy" src="${esc(t.cover)}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">` : ico("note")}</div><div class="txt" style="min-width:0;flex:1"><div class="t1">${esc(t.title)}</div><div class="t2">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</div></div>
         <span class="st ${t.have ? "ok" : "muted"}" style="font-size:12px">${t.have ? "On the device" : ""}</span></div>`).join("")}${tracks.length > 300 ? `<p class="muted">… ${tracks.length - 300} more</p>` : ""}</div></div>`;
+    if (typed) { $("#pv-name").value = typed; $("#pv-name").dataset.edited = "1"; }
+    $("#pv-name").oninput = e => { e.target.dataset.edited = "1"; };
+    if (list && $(".rows", box)) $(".rows", box).scrollTop = top;
+    if (partial) return;
     $("#pv-go").onclick = async () => {
       if (!root) { toast("Choose the root folder first"); $("#root-box").scrollIntoView({behavior: "smooth"}); return; }
       $("#pv-go").disabled = true;

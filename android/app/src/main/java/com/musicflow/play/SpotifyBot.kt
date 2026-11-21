@@ -277,11 +277,21 @@ object SpotifyBot {
         }
     }
 
+    /** What the reading in progress (playlists() or tracks()) has found so far, read while it runs. */
+    @Volatile private var partialJson = ""
+
+    @JvmStatic
+    fun partial(): String = partialJson
+
+    @JvmStatic
+    fun clearPartial() { partialJson = "" }
+
     /** The playlists of the person's library, read from the web player's page: [{"id", "name"}]. */
     @JvmStatic
     fun playlists(timeoutMs: Long): String {
         if (appContext == null || !connected()) return "[]"
         synchronized(lock) {
+            partialJson = ""
             load("$web/")
             val end = System.currentTimeMillis() + timeoutMs
             var last = "[]"
@@ -291,7 +301,7 @@ object SpotifyBot {
                 Thread.sleep(1000)
                 val r = js(JS_LIBRARY)
                 val n = try { org.json.JSONArray(r).length() } catch (e: Exception) { 0 }
-                if (n > 0) last = r
+                if (n > 0) { last = r; partialJson = r }
                 if (n > 0 && n == lastCount) { if (++same >= 3) break } else same = 0
                 lastCount = n
             }
@@ -307,6 +317,7 @@ object SpotifyBot {
         if (appContext == null) return "{}"
         if (!url.startsWith(web)) return "{}"
         synchronized(lock) {
+            partialJson = ""
             load(url)
             Thread.sleep(2000)
             js(JS_SCRAPE)
@@ -317,6 +328,7 @@ object SpotifyBot {
                 val r = js("JSON.stringify(window.__mfpScrape || null)")
                 if (r.isEmpty() || r == "null") { js(JS_SCRAPE); continue }
                 out = r
+                partialJson = r
                 try { if (JSONObject(r).optBoolean("done")) break } catch (e: Exception) { }
             }
             idleLater()
