@@ -27,7 +27,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.1.1.1"
+VERSION = "1.1.1.2"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -111,7 +111,8 @@ def api_mf(sub):
     """Online search, links, artists… answered by MusicFlow's code in this process (no second page)."""
     if not _is_local_request() or not mf_bridge.allowed(sub):
         return jsonify({"error": "Not available."}), 403
-    code, data = mf_bridge.call(sub, request.get_json(silent=True) or {}, request.method)
+    payload = request.get_json(silent=True) or {}
+    code, data = mf_bridge.search(payload) if sub == "search" and request.method == "POST" else mf_bridge.call(sub, payload, request.method)
     return jsonify(data), code
 
 

@@ -293,6 +293,20 @@ time.sleep(2)
 out = js("api('import/state').then(s => s.spotify)") or {}
 results["spotify sign-out"] = "ok" if out.get("connected") is False else f"FAILED {out}"
 
+# Search while typing (online): one search once typing stops, not one per letter, and the page never stalls.
+js("location.hash = ''; window.__srch = 0; { const s0 = MF.search; MF.search = q => { __srch++; return s0(q); }; }"
+   " window.__lag = 0; { let t = performance.now(); window.__lagT = setInterval(() => { const n = performance.now(); __lag = Math.max(__lag, n - t - 100); t = n; }, 100); }"
+   " SRCH.scope = 'online'; true")
+for i in range(1, len("Internet") + 1):
+    js(f"$('#q').value = 'Internet'.slice(0, {i}); $('#q').dispatchEvent(new Event('input')); true")
+    time.sleep(0.15)
+done = wait_for("the online search did not finish", 120,
+                lambda: js("SRCH.online.q === 'Internet' && !SRCH.online.loading ? {n: __srch, lag: Math.round(__lag), found: (SRCH.online.results || []).length, err: SRCH.online.error || ''} : null"), every=2)
+screenshot("search-online")
+print("search while typing:", done)
+results["search while typing"] = "ok" if done["n"] <= 2 and done["lag"] < 1500 else f"FAILED {done}"
+js("clearInterval(__lagT); $('#q').value = ''; $('#q').dispatchEvent(new Event('input')); SRCH.scope = 'all'; true")
+
 # Update: the app downloads the latest release by itself, with progress; a second tap does not start it again.
 # The release is older than this test build, so after the whole download the app must refuse it ("not newer").
 js("window.__upd = []; { const p0 = window.MFP_updateProgress, e0 = window.MFP_updateError;"
