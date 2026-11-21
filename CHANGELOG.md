@@ -9,6 +9,13 @@
 - **Faster online search:** Deezer's catalogue answers first (about a second); the slower search (Spotify page,
   YouTube) only runs when it finds nothing.
 - **Downloads:** two songs at once by default (Import › Root folder and format › At once).
+- **Synced lyrics suggested:** the app checks, in the background, the songs that have no synced lyrics. When it finds
+  some, a card on Home says how many; "See" lists them (with a preview) to pick, "Add all" adds them. Songs where
+  nothing is found are not shown. Nothing is written before you say yes.
+- **Downloads get both lyrics:** each new song gets its synced lyrics (.lrc) and the plain text, when found.
+- **Themes fixed:** Light glass and Sakura kept the dark background and panels with dark text (unreadable header,
+  player and menu). They now have light backgrounds, panels and menus. Automatic follows the phone with the glass look
+  (Light glass by day, Glass at night).
 
 - **Search no longer stalls the app.** With "Online" (or "Everywhere"), every pause while typing started an online
   search, and they ran one after the other (each opens a web page and runs yt-dlp), so the app froze for seconds.
