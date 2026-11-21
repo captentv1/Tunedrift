@@ -251,9 +251,12 @@
   .tab.on{background:rgba(255,255,255,.12);color:var(--ink)}
   #np .pane{flex:1;overflow:auto;min-height:0;border-radius:16px;overscroll-behavior:contain}
   #lyr{padding:14px 6px 45vh;font-size:24px;font-weight:800;line-height:1.45;letter-spacing:-.01em}
-  #lyr .l{color:rgba(232,246,248,.35);padding:5px 8px;border-radius:10px;cursor:pointer;transition:color .25s,transform .25s;transform-origin:left center}
-  #lyr .l:hover{background:rgba(255,255,255,.05)}
-  #lyr .l.past{color:rgba(232,246,248,.6)}
+  /* Lines before and after the one sung: faded ink of the theme (light on dark themes, dark on light ones). */
+  :root{--ly-next:rgba(232,246,248,.35);--ly-past:rgba(232,246,248,.6)}
+  html[data-theme="white"], html[data-theme="glass-light"], html[data-theme="glass-sakura"]{--ly-next:rgba(28,23,51,.38);--ly-past:rgba(28,23,51,.62)}
+  #lyr .l{color:var(--ly-next);padding:5px 8px;border-radius:10px;cursor:pointer;transition:color .25s,transform .25s;transform-origin:left center}
+  #lyr .l:hover{background:var(--t1,rgba(255,255,255,.05))}
+  #lyr .l.past{color:var(--ly-past)}
   #lyr .l.cur{color:var(--ink);transform:scale(1.03)}
   #lyr.plain{font-size:17px;font-weight:500;white-space:pre-wrap;color:var(--ink);padding-bottom:40px}
   #lyr .note{font-size:14px;font-weight:500;color:var(--muted);text-align:center;padding:40px 10px}
