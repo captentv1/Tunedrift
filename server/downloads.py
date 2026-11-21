@@ -93,9 +93,16 @@ class Library:
                     return t
         return None
 
+    on_add = None  # called (track) for each new song file (e.g. to fetch its synced lyrics)
+
     def add(self, file_path) -> dict | None:
         t = self.index.add_file(file_path)
         self._count = -1
+        if t and self.on_add:
+            try:
+                self.on_add(t)
+            except Exception:
+                pass
         return t
 
 

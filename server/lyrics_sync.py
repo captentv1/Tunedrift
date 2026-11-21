@@ -102,3 +102,66 @@ def start(tracks: list[dict], save, on_end=None) -> bool:
 
 def stop() -> None:
     _stop.set()
+
+
+# ---------------------------------------------------------------- suggestions
+# The app looks by itself, in the background, for synced lyrics of the songs that have none. What it finds is not
+# written: it is suggested (Home), and the person chooses which songs get them (synced and plain, both).
+
+SUGGEST = {"running": False, "total": 0, "done": 0, "last": 0.0}
+_RECHECK_S = 14 * 24 * 3600
+
+
+def has_synced(t: dict, cache: dict) -> bool:
+    if t.get("lrc") or (cache.get(t["id"]) or {}).get("synced"):
+        return True
+    if not t.get("lyrics"):
+        return False
+    try:
+        from library_index import file_lyrics
+        return bool(file_lyrics(t["path"])["synced"])
+    except Exception:
+        return False
+
+
+def suggest_scan(tracks: list[dict], store, cache: dict, force: bool = False) -> bool:
+    """store: JsonStore {"found": {id: {...}}, "checked": {id: time}, "dismissed": [id]}. Runs in the background."""
+    import time
+    with _lock:
+        if SUGGEST["running"] or STATUS["running"]:
+            return False
+        if not force and time.time() - SUGGEST["last"] < 6 * 3600:
+            return False
+        SUGGEST.update(running=True, total=0, done=0, last=time.time())
+    data = store.data
+    found, checked, dismissed = data.setdefault("found", {}), data.setdefault("checked", {}), set(data.setdefault("dismissed", []))
+    now = time.time()
+    todo = [t for t in tracks if t.get("id") not in dismissed and t.get("id") not in found
+            and now - float(checked.get(t.get("id"), 0)) > _RECHECK_S and t.get("title") and t.get("length_s")
+            and not has_synced(t, cache)]
+    SUGGEST["total"] = len(todo)
+
+    def one(t):
+        try:
+            got = find(t.get("title") or "", (t.get("artists") or [t.get("artist") or ""])[0], t.get("length_s") or 0)
+        except Exception:
+            return
+        with store.lock:
+            checked[t["id"]] = time.time()
+            if got:
+                found[t["id"]] = {"title": t.get("title") or "", "artist": t.get("artist") or "", **got}
+            SUGGEST["done"] += 1
+            if SUGGEST["done"] % 20 == 0:
+                store.save()
+
+    def run():
+        try:
+            with ThreadPoolExecutor(2) as pool:
+                list(pool.map(one, todo))
+        finally:
+            with store.lock:
+                store.save()
+            SUGGEST["running"] = False
+
+    threading.Thread(target=run, daemon=True).start()
+    return True

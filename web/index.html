@@ -431,9 +431,27 @@
     --b1:rgba(202,138,4,.45);--b2:rgba(120,53,15,.55);--b3:rgba(234,179,8,.30);--b4:rgba(68,64,60,.60);
     --g1:#eab308;--g2:#ca8a04;--g3:#a16207;--gshadow:rgba(202,138,4,.40);--t-a:#fde68a;--t-b:#fcd34d}
 
+  /* The two light glass themes: every colour of the dark glass themes is redefined (background, panels, menus,
+     blobs, accents), else the text turned dark on the dark glass background and could not be read. */
   html[data-theme="glass-light"], html[data-theme="glass-sakura"]{
-    --ink:#1c1733;--muted:rgba(28,23,51,.62);--border:rgba(28,23,51,.12);--line:rgba(28,23,51,.25);
-    --glass:rgba(255,255,255,.55);--glass-strong:rgba(255,255,255,.72);--panel:rgba(255,255,255,.55);--panel2:rgba(255,255,255,.70)}
+    --bg:#eef2ff;--ink:#1c1733;--muted:rgba(28,23,51,.62);--border:rgba(28,23,51,.12);--line:rgba(28,23,51,.25);
+    --glass:rgba(255,255,255,.55);--glass-strong:rgba(255,255,255,.72);--panel:rgba(255,255,255,.55);--panel2:rgba(255,255,255,.70);
+    --accent:#6d28d9;--ok:#0f8a52;--err:#c62839;--gold:#b26a00;
+    --t1:rgba(109,40,217,.07);--t2:rgba(109,40,217,.13);--t3:rgba(109,40,217,.20);--glow:0 0 14px rgba(109,40,217,.18);
+    --backdrop:#eef2ff;--option-bg:#ffffff;
+    --b1:rgba(165,180,252,.70);--b2:rgba(249,168,212,.55);--b3:rgba(196,181,253,.55);--b4:rgba(147,197,253,.45);
+    --g1:#8b5cf6;--g2:#6366f1;--g3:#3b82f6;--gshadow:rgba(99,102,241,.25);--t-a:#6d28d9;--t-b:#2563eb}
+  html[data-theme="glass-sakura"]{--bg:#fff1f5;--backdrop:#fff1f5;--option-bg:#fffafc;--accent:#be185d;
+    --t1:rgba(190,24,93,.07);--t2:rgba(190,24,93,.13);--t3:rgba(190,24,93,.20);
+    --b1:rgba(251,207,232,.85);--b2:rgba(221,214,254,.70);--b3:rgba(253,164,175,.45);--b4:rgba(254,215,170,.40);
+    --g1:#ec4899;--g2:#db2777;--g3:#a855f7;--gshadow:rgba(219,39,119,.25);--t-a:#be185d;--t-b:#7c3aed}
+  html[data-theme="glass-light"] .btn:not(.primary), html[data-theme="glass-sakura"] .btn:not(.primary),
+  html[data-theme="glass-light"] .chip:not(.active):not(.on), html[data-theme="glass-sakura"] .chip:not(.active):not(.on),
+  html[data-theme="glass-light"] .iconbtn, html[data-theme="glass-sakura"] .iconbtn{background:rgba(28,23,51,.06)}
+  html[data-theme="glass-light"] .logo .tag, html[data-theme="glass-sakura"] .logo .tag{background:rgba(28,23,51,.08)}
+  html[data-theme="glass-light"] .row:hover, html[data-theme="glass-sakura"] .row:hover,
+  html[data-theme="glass-light"] .nav:hover, html[data-theme="glass-sakura"] .nav:hover{background:rgba(28,23,51,.05)}
+  html[data-theme="glass-light"] select, html[data-theme="glass-sakura"] select{background:rgba(255,255,255,.7);border-color:rgba(28,23,51,.14);color:var(--ink)}
   html[data-theme="oled"]{--bg:#000;--grid:transparent;--panel:#0a0a0a;--panel2:#141414;--ink:#f5f5f5;--muted:#9a9a9a;
     --line:#333;--accent:#1ed760;--ok:#1ed760;--err:#ff5470;--border:#1f1f1f;--t1:rgba(30,215,96,.08);--t2:rgba(30,215,96,.15)}
   html[data-theme="oled"]{background:#000!important}
@@ -481,7 +499,7 @@
 <script>
 if (window.MFPNative) document.documentElement.classList.add('native');
 // Applied before the page is drawn, so it never flashes the default theme.
-try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'white' : '') : th; if (real) document.documentElement.setAttribute('data-theme', real); const z = localStorage.getItem('mfp.textsize'); if (z) document.documentElement.style.zoom = z; } catch (e) {}
+try { const th = localStorage.getItem('mfp.theme') ?? 'glass'; const real = th === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'glass-light' : 'glass') : th; if (real) document.documentElement.setAttribute('data-theme', real); const z = localStorage.getItem('mfp.textsize'); if (z) document.documentElement.style.zoom = z; } catch (e) {}
 try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) === '1') document.documentElement.classList.add('lite'); } catch (e) {}
 </script>
 </head>
@@ -662,7 +680,7 @@ const THEMES = [
 const LIGHT_THEMES = ["white", "glass-light", "glass-sakura"];
 function savedTheme() { try { return localStorage.getItem("mfp.theme") ?? "glass"; } catch { return "glass"; } }
 function applyTheme(id) {
-  const real = id === "auto" ? (matchMedia("(prefers-color-scheme: light)").matches ? "white" : "") : id;
+  const real = id === "auto" ? (matchMedia("(prefers-color-scheme: light)").matches ? "glass-light" : "glass") : id;
   if (real) document.documentElement.setAttribute("data-theme", real); else document.documentElement.removeAttribute("data-theme");
   try { localStorage.setItem("mfp.theme", id); } catch {}
   const bg = getComputedStyle(document.documentElement).getPropertyValue(real.startsWith("glass") ? "--backdrop" : "--bg").trim();
@@ -1245,6 +1263,46 @@ function menu(anchor, items) {
   m.style.left = Math.max(8, x) + "px"; m.style.top = y + "px";
   m.onclick = e => { const mi = e.target.closest(".mi"); if (!mi) return; closeMenu(); items[+mi.dataset.k].run(); };
 }
+// Synced lyrics suggestions: the app looks by itself (in the background) for synced lyrics of the songs without
+// them, and only shows a card here when it found some. Nothing is written before the person says yes.
+const LYS = {
+  timer: 0, items: [],
+  t: 0,
+  async load(now, poll) {
+    if (!now && !poll && Date.now() - this.t < 60000) return;
+    this.t = Date.now(); clearTimeout(this.timer);
+    let d; try { d = await api("lyrics-suggest" + (now ? "?now=1" : "")); } catch { return; }
+    this.items = d.items || [];
+    this.draw();
+    if (d.running) this.timer = setTimeout(() => { if (route().name === "home") this.load(false, true); }, 8000);
+  },
+  draw() {
+    const box = $("#ly-sug"); if (!box) return;
+    const n = this.items.length;
+    box.innerHTML = n ? `<div class="note" style="margin:0 0 16px;align-items:center;flex-wrap:wrap">${ico("note")}<span style="flex:1;min-width:180px">Synced lyrics found for <b>${plural(n, "song")}</b> that had none.</span>
+      <button class="btn" id="lys-see">See</button><button class="btn primary" id="lys-all">Add all</button></div>` : "";
+    if (!n) return;
+    $("#lys-all").onclick = () => this.apply("all", []);
+    $("#lys-see").onclick = () => this.show();
+  },
+  show() {
+    const rows = this.items.map(i => `<label class="chk" style="align-items:flex-start;margin:0 0 12px"><input type="checkbox" data-lys="${esc(i.id)}" checked>
+      <span style="min-width:0"><b>${esc(i.title)}</b> <span class="muted">${esc(i.artist)}</span><br><span class="muted" style="font-size:13px">${esc(i.preview.join(" / "))}</span></span></label>`).join("");
+    dialog("Synced lyrics found", `<p class="muted" style="margin:0 0 10px">Checked songs get the synced lyrics (and the plain text). Unchecked ones are not suggested again.</p>
+      <div style="max-height:55vh;overflow:auto">${rows}</div>`, "Add", d => {
+      const yes = [], no = [];
+      for (const c of $$("[data-lys]", d)) (c.checked ? yes : no).push(c.dataset.lys);
+      this.apply(yes, no);
+    });
+  },
+  async apply(yes, no) {
+    try {
+      const r = await api("lyrics-suggest", {apply: yes, dismiss: no});
+      toast(r.applied ? `Synced lyrics added to ${plural(r.applied, "song")}` : "Done");
+      this.load(false, true);
+    } catch (e) { toast(e.message); }
+  },
+};
 function dialog(title, bodyHtml, okLabel, onOk, danger) {
   const d = document.createElement("div"); d.id = "dialog";
   d.innerHTML = `<div class="box"><h3>${esc(title)}</h3>${bodyHtml}<div class="actions"><button class="btn" data-x>Cancel</button><button class="btn ${danger ? "danger" : "primary"}" data-ok>${esc(okLabel)}</button></div></div>`;
@@ -1950,6 +2008,7 @@ const VIEWS = {
     const cur = Player.current(), fav = L.favorites.filter(id => L.tracks.has(id));
     const artists = [...L.artists.values()].filter(a => a.name !== UNKNOWN_ARTIST).sort((a, b) => b.tracks.length - a.tracks.length).slice(0, 12);
     main.innerHTML = `<div class="hello"><h1>${hello}</h1><div class="sub">${plural(L.list.length, "song")} · ${plural(albums.length, "album")} · ${totalTime(L.list)}</div></div>
+      <div id="ly-sug"></div>
       <div class="tiles">
         <button class="tile big" id="h-shuf"><span class="ic">${ico("shuffle")}</span><span style="min-width:0"><div class="t1">Shuffle everything</div><div class="t2">${plural(L.list.length, "song")}, in a random order</div></span></button>
         ${cur ? `<button class="tile" id="h-cur"><span class="art">${artHtml(cur.cover ? cur.id : null)}</span><span style="min-width:0"><div class="t1">${esc(cur.title)}</div><div class="t2">Continue listening</div></span></button>` : ""}
@@ -1962,6 +2021,8 @@ const VIEWS = {
       ${shelf("Your artists", artists.map(a => ({go: "artist/" + encodeURIComponent(a.key), cover: a.cover, icon: "person", name: a.name, sub: plural(a.tracks.length, "song")})), true)}
       ${shelf("Something different", shuffled(albums).slice(0, 12).map(albumCard))}`;
     $("#h-shuf").onclick = () => Player.playList(L.list.map(t => t.id), 0, true);
+    if (LYS.items.length) LYS.draw();
+    if (!window.__testMode) LYS.load();
     if (cur) $("#h-cur").onclick = () => { if (audio.paused) Player.toggle(); openNow(); };
   },
   folders(main) { VIEWS.folder(main, ""); },
