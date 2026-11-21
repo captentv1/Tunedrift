@@ -224,3 +224,35 @@ def test_synced_lyrics_are_suggested_then_added(client, monkeypatch):
     done = client.post("/api/lyrics-suggest", json={"apply": [tid]}, headers=client.h).get_json()
     assert done == {"applied": 1, "count": 0}
     assert "La la" in Path(t["path"]).with_suffix(".lrc").read_text(encoding="utf-8")
+
+
+def test_spotify_lists_and_songs_kept_and_read_ahead(client, monkeypatch):
+    """Opening the app reads the playlists and their songs in the background; the tab then shows them at once."""
+    import importer
+    calls = []
+
+    class Bot(_FakeBot):
+        def partial(self):
+            return ""
+
+        def clearPartial(self):
+            pass
+
+        def tracks(self, url, timeout):
+            calls.append(url)
+            return super().tracks(url, timeout)
+
+    monkeypatch.setattr(importer, "spotify_bot", lambda: Bot())
+    importer.CTX["spcache"].data.update(playlists=[], at=0, tracks={})
+    importer.SPC.update(want="", prefetch=False, list_try=0, error="", tried={}, errors={})
+    get = lambda q: client.get("/api/import/spotify" + q, headers=client.h).get_json()
+    get("?warm=1")
+    deadline = time.time() + 10
+    while (importer.SPC["worker"] is not None or "abc123" not in importer.CTX["spcache"].data["tracks"]) and time.time() < deadline:
+        time.sleep(0.05)
+    d = get("")
+    assert [p["id"] for p in d["playlists"]] == ["liked", "abc123"] and d["running"] is False
+    n = len(calls)
+    d = get("?pid=abc123")  # read ahead: no new reading, the songs are there at once
+    assert d["complete"] is True and [t["title"] for t in d["tracks"]] == ["One More Time"] and d["name"] == "Road trip"
+    assert len(calls) == n
