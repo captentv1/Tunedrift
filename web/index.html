@@ -1558,6 +1558,7 @@ function trackMenu(anchor, id, ctx) {
     "-",
   ];
   (t.artists.length ? t.artists : [UNKNOWN_ARTIST]).slice(0, 3).forEach(n => items.push({label: "Go to " + n, icon: "person", run: () => { closeNowAndGo("artist/" + encodeURIComponent(norm(n))); }}));
+  if (mfUrl) items.push({label: "Song radio (Spotify mix)", icon: "shuffle", run: () => openRadio([t.title, t.artists[0] || ""].filter(Boolean).join(" "), "track")});
   items.push({label: "Delete from device", icon: "trash", run: () => { closeMenu(); deleteSongs([t.id]); }});
   const fk = folderOf(t); if (fk) items.push({label: "Go to folder", icon: "folder", run: () => { closeNowAndGo("folder/" + encodeURIComponent(fk)); }});
   if (t.album) items.push({label: "Go to album", icon: "album", run: () => { closeNowAndGo("album/" + encodeURIComponent(albumKey(t))); }});
@@ -1701,6 +1702,11 @@ const MF = {
   async search(q) { return (await api("mf/search", {title: q, limit: 15})).results || []; },
   download(item) { return DL.add([item]).catch(e => toast(e.message)); },
 };
+function openRadio(q, kind) {
+  closeMenu();
+  IMP.src = "radio"; store.set("impsrc", "radio"); IMP.wantRadio = {q, kind};
+  if (route().name === "download" && $("#src-box")) IMP.drawSource(); else closeNowAndGo("download");
+}
 function rescanSoon(delay) { clearTimeout(mfRescan); mfRescan = setTimeout(() => window.MFP_rescan(), delay); }
 function openUrl(url) { if (NATIVE && NATIVE.openUrl) native("openUrl", url); else window.open(url, "_blank", "noopener"); }
 
@@ -1735,7 +1741,7 @@ const DL = {
   async set(conf) { try { this.snap = await api("dl/settings", conf); IMP.drawRoot(); } catch (e) { toast(e.message); } },
 };
 
-const SOURCES = [["link", "Link"], ["spotify", "Spotify"], ["youtube", "YouTube"], ["server", "Computer (local server)"], ["file", "File or list"]];
+const SOURCES = [["link", "Link"], ["spotify", "Spotify"], ["radio", "Radio"], ["youtube", "YouTube"], ["server", "Computer (local server)"], ["file", "File or list"]];
 const FORMATS = [["mp3-320", "MP3 320 kbps"], ["mp3-192", "MP3 192 kbps"], ["mp3-128", "MP3 128 kbps"], ["flac", "FLAC (lossless)"], ["opus", "Opus"], ["aac", "AAC (m4a)"]];
 const IMP = {
   src: store.get("impsrc", "link"), st: null, lists: {}, preview: null,
@@ -1791,7 +1797,7 @@ const IMP = {
     const box = $("#src-box"); if (!box) return;
     for (const b of $$("[data-src]")) b.classList.toggle("active", b.dataset.src === this.src);
     const k = this.src, st = this.st || {};
-    if (!mfUrl && ["link", "spotify", "youtube", "file"].includes(k)) {
+    if (!mfUrl && ["link", "spotify", "radio", "youtube", "file"].includes(k)) {
       box.innerHTML = `<div class="note">${ico("close")}<span>Search and download are not available here${st.musicflow && st.musicflow.error ? ": " + esc(st.musicflow.error) : ""}.</span></div>`; return;
     }
     if (k === "link") {
@@ -1815,6 +1821,16 @@ const IMP = {
         $("#sp-refresh").onclick = () => this.spLists("?refresh=1");
         this.spLists();
       }
+    } else if (k === "radio") {
+      box.innerHTML = `<p>Spotify radio: a mix of about 50 songs around a song or an artist (its name or its Spotify link). It shows up below like a playlist, to download.</p>
+        <div class="addrow" style="flex-wrap:wrap"><input class="text" id="rd-q" placeholder="Blinding Lights The Weeknd · Stromae" style="flex:1 1 200px">
+          <select id="rd-kind" style="flex:0 0 auto"><option value="track">Song radio</option><option value="artist">Artist radio</option></select>
+          <button class="btn primary" id="rd-go">Find the radio</button></div><div id="pv"></div>`;
+      $("#rd-q").oninput = e => { const m = e.target.value.match(/open\.spotify\.com\/(?:intl-[\w-]+\/)?(track|artist)\//); if (m) $("#rd-kind").value = m[1]; };
+      $("#rd-go").onclick = () => { const q = $("#rd-q").value.trim(); if (q) this.radio(q, $("#rd-kind").value); else $("#rd-q").focus(); };
+      $("#rd-q").onkeydown = e => { if (e.key === "Enter") $("#rd-go").click(); };
+      const w = this.wantRadio; this.wantRadio = null;
+      if (w) { $("#rd-q").value = w.q; $("#rd-kind").value = w.kind; this.radio(w.q, w.kind); }
     } else if (k === "youtube") {
       const ch = (st.youtube || {}).channel || "";
       box.innerHTML = `<p>Your YouTube channel link or @name: its public playlists appear (no sign-in, no key). For one playlist (or a private one shared by link), use <b>Link</b>.</p>
@@ -1900,6 +1916,17 @@ const IMP = {
     const sig = [tracks.length, d.have, d.complete, d.tracks_running].join("|");
     if (tracks.length && sig !== this.pvSig) { this.pvSig = sig; this.renderPreview({kind: "spotify", id}, "", d, !d.complete); }
     if (d.tracks_running) this.pvT = setTimeout(() => this.spPreview(id), 1500);
+  },
+  async radio(q, kind) {
+    const box = $("#pv"); if (!box) return;
+    const btn = $("#rd-go"); if (btn) btn.disabled = true;
+    box.innerHTML = `<div class="muted" style="margin-top:12px">Looking for the radio on Spotify (10 to 25 seconds)…</div><div class="progress-line"><div></div></div>`;
+    try {
+      const d = await api("mf/spotify-radio", {query: q, kind});
+      if (!d.url) throw new Error(d.error || "No radio found.");
+      await this.showPreview({kind: "link", url: d.url}, (kind === "artist" ? "Artist radio · " : "Radio · ") + q.replace(/^https?:\/\/\S+$/, "Spotify"));
+    } catch (e) { if ($("#pv") === box) box.innerHTML = `<div class="note" style="margin-top:12px">${ico("close")}<span>${esc(e.message || "No radio found.")}</span></div>`; }
+    if ($("#rd-go")) $("#rd-go").disabled = false;
   },
   async showPreview(source, name) {
     const box = $("#pv"); if (!box) return;
@@ -2141,8 +2168,9 @@ const VIEWS = {
       <div class="actions"><button class="btn primary" id="a-play">${ico("play")} Play</button><button class="btn" id="a-shuf">${ico("shuffle")} Shuffle</button><button class="btn" id="a-more">${ico("more")}</button></div>
       ${albums.length ? `<h2 class="sec">Albums</h2>` + cardsHtml(albums.map(al => ({go: "album/" + encodeURIComponent(al.key), cover: al.cover, icon: "album", name: al.name, sub: [al.year, plural(al.tracks.length, "song")].filter(Boolean).join(" · ")}))) : ""}
       <h2 class="sec">Songs</h2><div id="list"></div><div id="onl" class="mf-only"><h2 class="sec">Online</h2>
-      <div class="actions" style="margin:0"><button class="btn primary" id="o-songs">${ico("note")} All songs of ${esc(a.name)}</button></div></div>`;
+      <div class="actions" style="margin:0;flex-wrap:wrap"><button class="btn primary" id="o-songs">${ico("note")} All songs of ${esc(a.name)}</button><button class="btn" id="o-radio">${ico("shuffle")} Artist radio</button></div></div>`;
     $("#o-songs").onclick = () => artistOnline($("#onl"), a.name);
+    $("#o-radio").onclick = () => openRadio(a.name, "artist");
     const ids = songs.map(t => t.id);
     $("#a-play").onclick = () => Player.playList(ids, 0, false);
     $("#a-shuf").onclick = () => Player.playList(ids, 0, true);
