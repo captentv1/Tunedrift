@@ -40,7 +40,6 @@ class MainActivity : AppCompatActivity() {
         const val PAGE_URL = "http://127.0.0.1:5091/"
         const val EXTRA_ROUTE = "route"
         @Volatile private var serverStarted = false
-        @Volatile var updateFollowedByPage = false
         @Volatile var localPage = true
         private const val ALLOWED_UPDATE_URL = "https://github.com/captentv1/musicflow-play/releases/download/"
 
@@ -113,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         if (BuildConfig.WEB_DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         try { com.musicflow.app.SpotifySearch.init(this) } catch (e: Exception) { }
         SpotifyBot.init(this)
+        Thread { try { UpdateManager.forgetOldDownload(applicationContext) } catch (e: Exception) { } }.start()
         if (BuildConfig.WEB_DEBUG) intent?.getStringExtra("test_spotify_base")?.let { SpotifyBot.useTestSite(it) }
 
         PlaybackService.commandSink = { command, value ->
@@ -300,42 +300,26 @@ class MainActivity : AppCompatActivity() {
     private var pendingApk: File? = null
     @Volatile var inForeground = false
 
-    fun followUpdate() {
-        if (updateFollowedByPage) return
-        updateFollowedByPage = true
+    /** Downloads the update (or, while one is under way, only shows its progress again), then installs it. */
+    fun downloadUpdate(url: String) {
         val ctx = applicationContext
+        UpdateManager.progress?.let { p -> callPage("window.MFP_updateProgress && MFP_updateProgress($p)"); return }
         Thread {
             try {
-                var last = -2
-                while (true) {
-                    val state = UpdateManager.state(ctx) ?: throw Exception("download cancelled")
-                    when (state.first) {
-                        android.app.DownloadManager.STATUS_SUCCESSFUL -> {
-                            UpdateManager.finished(ctx)
-                            val apk = UpdateManager.file(ctx)
-                            UpdateManager.verify(ctx, apk)
-                            callPage("window.MFP_updateProgress && MFP_updateProgress(100)")
-                            val act = WebHost.activity
-                            if (act == null || !act.inForeground) {
-                                UpdateManager.notifyReady(ctx, ctx.packageManager.getPackageArchiveInfo(apk.path, 0)?.versionName ?: "")
-                                return@Thread
-                            }
-                            act.pendingApk = apk
-                            act.runOnUiThread { act.installApk() }
-                            return@Thread
-                        }
-                        android.app.DownloadManager.STATUS_FAILED -> { UpdateManager.finished(ctx); throw Exception("download failed") }
-                        else -> if (state.second != last) {
-                            last = state.second
-                            callPage("window.MFP_updateProgress && MFP_updateProgress(${minOf(state.second, 99)})")
-                        }
-                    }
-                    Thread.sleep(500)
+                callPage("window.MFP_updateProgress && MFP_updateProgress(-1)")
+                val started = UpdateManager.download(ctx, url) { p -> callPage("window.MFP_updateProgress && MFP_updateProgress($p)") }
+                if (!started) return@Thread
+                val apk = UpdateManager.file(ctx)
+                UpdateManager.verify(ctx, apk)
+                callPage("window.MFP_updateProgress && MFP_updateProgress(100)")
+                val act = WebHost.activity
+                if (act == null || !act.inForeground) {
+                    UpdateManager.notifyReady(ctx, ctx.packageManager.getPackageArchiveInfo(apk.path, 0)?.versionName ?: "")
+                    return@Thread
                 }
+                act.runOnUiThread { act.pendingApk = apk; act.installApk() }
             } catch (e: Exception) {
                 callPage("window.MFP_updateError && MFP_updateError(${org.json.JSONObject.quote(e.message ?: e.toString())})")
-            } finally {
-                updateFollowedByPage = false
             }
         }.start()
     }
@@ -379,8 +363,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         inForeground = true
-        val upd = UpdateManager.state(this)
-        if (upd != null && upd.first != android.app.DownloadManager.STATUS_FAILED) followUpdate()
         if (pendingApk != null) {
             if (packageManager.canRequestPackageInstalls()) installApk()
             else { pendingApk = null; callPage("window.MFP_updateError && MFP_updateError('permission to install apps refused')") }
@@ -483,8 +465,9 @@ class PageBridge(private val app: Context) {
         if (!apkUrl.startsWith("https://github.com/captentv1/musicflow-play/releases/download/") || !apkUrl.endsWith(".apk")) {
             MainActivity.callPage("window.MFP_updateError && MFP_updateError('download address refused')"); return
         }
-        UpdateManager.startDownload(app, apkUrl)
-        WebHost.activity?.followUpdate()
+        val a = WebHost.activity
+        if (a == null) { MainActivity.callPage("window.MFP_updateError && MFP_updateError('open the app and try again')"); return }
+        a.downloadUpdate(apkUrl)
     }
 
     @JavascriptInterface
