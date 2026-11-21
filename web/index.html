@@ -1704,7 +1704,7 @@ const IMP = {
       <div class="actions" style="margin:10px 0 0;flex-wrap:wrap"><button class="btn primary" id="root-pick">${ico("folder")} Choose the root folder</button></div>
       ${noAccess ? `<div class="note" style="margin-top:12px">${ico("folder")}<span style="flex:1;min-width:200px">To save songs in a folder of your choice (e.g. Music/MusicFlow) and find the songs you already have, allow access to all files.</span><button class="btn" id="root-all">Allow</button></div>` : ""}
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px"><span>Format</span><select id="dl-fmt">${FORMATS.map(([v, n]) => `<option value="${v}"${(conf.format || "mp3-320") === v ? " selected" : ""}>${n}</option>`).join("")}</select>
-        <span>At once</span><select id="dl-par">${[1, 2, 3].map(n => `<option${(conf.parallel || 1) === n ? " selected" : ""}>${n}</option>`).join("")}</select></div>
+        <span>At once</span><select id="dl-par">${[1, 2, 3].map(n => `<option${(conf.parallel || 2) === n ? " selected" : ""}>${n}</option>`).join("")}</select></div>
       <label class="chk"><input type="checkbox" id="dl-sub"${conf.subfolders !== false ? " checked" : ""}> One folder per playlist</label>
       <label class="chk"><input type="checkbox" id="dl-m3u"${conf.m3u !== false ? " checked" : ""}> Also write the playlist as a .m3u8 file (other players, like Samsung Music, see it)</label>
       <label class="chk"><input type="checkbox" id="dl-lyr"${conf.lyrics !== false ? " checked" : ""}> Lyrics in the files</label>`;
@@ -1778,10 +1778,13 @@ const IMP = {
     try { d = await api("import/playlists", req); } catch (e) { box.innerHTML = `<div class="note">${ico("close")}<span>${esc(e.message)}</span></div>`; return; }
     const base = d.base || "";
     if (k === "server" && base) { this.st = await api("import/state").catch(() => this.st); }
-    box.innerHTML = `<div style="margin-top:8px">${(d.playlists || []).map(p => `<div class="imp-pl"><div class="art" style="width:44px;height:44px;border-radius:10px;overflow:hidden;flex:none;display:grid;place-items:center;background:var(--option-bg)">${p.image ? `<img loading="lazy" src="${esc(p.image)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ico("list")}</div>
+    box.innerHTML = `<div style="margin-top:8px">${(d.playlists || []).map(p => `<div class="imp-pl" data-plview="${esc(p.id)}" style="cursor:pointer" title="See the songs"><div class="art" style="width:44px;height:44px;border-radius:10px;overflow:hidden;flex:none;display:grid;place-items:center;background:var(--option-bg)">${p.image ? `<img loading="lazy" src="${esc(p.image)}" alt="" style="width:100%;height:100%;object-fit:cover">` : ico("list")}</div>
       <div class="grow"><div class="t1">${esc(p.name)}</div><div class="t2 muted" style="font-size:13px">${p.count == null ? "" : plural(p.count, "song")}</div></div>
       <button class="btn" data-pl="${esc(p.id)}">${ico("download")} Import</button></div>`).join("") || `<p class="muted">No playlist.</p>`}</div>`;
-    for (const b of $$("[data-pl]", box)) b.onclick = () => this.showPreview(k === "server" ? {kind: "server", base, id: b.dataset.pl} : {kind: k, id: b.dataset.pl});
+    const src = id => k === "server" ? {kind: "server", base, id} : {kind: k, id};
+    for (const b of $$("[data-pl]", box)) b.onclick = e => { e.stopPropagation(); this.showPreview(src(b.dataset.pl)); };
+    // Tapping a playlist shows its songs (with their covers) before importing it.
+    for (const r of $$("[data-plview]", box)) r.onclick = () => this.showPreview(src(r.dataset.plview));
   },
   async showPreview(source, name) {
     const box = $("#pv"); if (!box) return;
@@ -1795,7 +1798,7 @@ const IMP = {
       <p style="margin:0 0 10px">${plural(tracks.length, "song")} · <b>${d.have}</b> already on this device (linked, not downloaded) · <b>${miss}</b> to ${source.kind === "server" ? "copy" : "download"}
         <br><span class="muted">Into: ${esc(root ? root + (conf.subfolders !== false ? "/" + (name || d.name) : "") : "choose the root folder above")}</span></p>
       <button class="btn primary" id="pv-go"${tracks.length ? "" : " disabled"}>${ico("download")} ${miss ? `${source.kind === "server" ? "Copy" : "Download"} ${miss} and make the playlist` : "Make the playlist"}</button>
-      <div class="rows" style="margin-top:10px;max-height:40vh;overflow:auto">${tracks.slice(0, 300).map(t => `<div class="row" style="min-height:44px;cursor:default"><div class="txt" style="min-width:0;flex:1"><div class="t1">${esc(t.title)}</div><div class="t2">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</div></div>
+      <div class="rows" style="margin-top:10px;max-height:50vh;overflow:auto">${tracks.slice(0, 300).map(t => `<div class="row" style="min-height:44px;cursor:default"><div class="art" style="width:40px;height:40px;flex:none;border-radius:8px;overflow:hidden;display:grid;place-items:center;background:var(--option-bg)">${t.cover ? `<img loading="lazy" src="${esc(t.cover)}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">` : ico("note")}</div><div class="txt" style="min-width:0;flex:1"><div class="t1">${esc(t.title)}</div><div class="t2">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</div></div>
         <span class="st ${t.have ? "ok" : "muted"}" style="font-size:12px">${t.have ? "On the device" : ""}</span></div>`).join("")}${tracks.length > 300 ? `<p class="muted">… ${tracks.length - 300} more</p>` : ""}</div></div>`;
     $("#pv-go").onclick = async () => {
       if (!root) { toast("Choose the root folder first"); $("#root-box").scrollIntoView({behavior: "smooth"}); return; }

@@ -128,7 +128,11 @@ def search(payload: dict) -> tuple[int, dict]:
         hit = _SEARCH["cache"].get(key)
         if hit and time.time() - hit[0] < 600:
             return 200, hit[1]
-        code, data = call("search", payload)
+        code, data = 200, {}
+        if not payload.get("source"):  # Deezer's catalogue answers in about a second; the slower chain only if empty
+            code, data = call("search", dict(payload, source="deezer"))
+        if code != 200 or not data.get("results"):
+            code, data = call("search", payload)
     if code == 200 and data.get("results") is not None:
         cache = _SEARCH["cache"]
         cache[key] = (time.time(), data)
