@@ -18,7 +18,7 @@ STATE = {"state": "off", "error": ""}  # off, starting, ready, error
 _MF = {"module": None, "dest": ""}
 _LOCK = threading.Lock()
 _ALLOWED = ("search", "resolve-link", "resolve-track", "candidates", "artist/search", "artist/albums", "discover/",
-            "artist/", "track-covers", "covers-by-name", "connection")
+            "artist/", "track-covers", "covers-by-name", "connection", "spotify-radio")
 
 
 def _android() -> bool:

@@ -256,3 +256,17 @@ def test_spotify_lists_and_songs_kept_and_read_ahead(client, monkeypatch):
     d = get("?pid=abc123")  # read ahead: no new reading, the songs are there at once
     assert d["complete"] is True and [t["title"] for t in d["tracks"]] == ["One More Time"] and d["name"] == "Road trip"
     assert len(calls) == n
+
+
+def test_spotify_radio_goes_to_musicflow(client, monkeypatch):
+    """The Radio source asks MusicFlow for the Spotify radio of a song or an artist (its link is then read)."""
+    import mf_bridge
+    seen = []
+
+    def fake(path, payload=None, method="POST"):
+        seen.append((path, payload))
+        return 200, {"url": "https://open.spotify.com/playlist/37i9dQZF1E8radio"}
+    monkeypatch.setattr(mf_bridge, "call", fake)
+    r = client.post("/api/mf/spotify-radio", json={"query": "Stromae", "kind": "artist"}, headers=client.h)
+    assert r.status_code == 200 and r.get_json()["url"].endswith("radio")
+    assert seen == [("spotify-radio", {"query": "Stromae", "kind": "artist"})]
