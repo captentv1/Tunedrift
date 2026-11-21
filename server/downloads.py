@@ -123,7 +123,7 @@ class Queue:
 
     # ---- settings ----
     def conf(self) -> dict:
-        d = {"format": "mp3-320", "parallel": 1, "root": "", "subfolders": True, "m3u": True, "lyrics": True}
+        d = {"format": "mp3-320", "parallel": 2, "root": "", "subfolders": True, "m3u": True, "lyrics": True}
         d.update(self.settings.data.get("dl") or {})
         return d
 

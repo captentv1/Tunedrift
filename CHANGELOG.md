@@ -1,6 +1,14 @@
 # Changelog
 
-## 1.1.1.2 — 2026-11-21 (Android and PC)
+## 1.1.2.0 — 2026-11-21 (Android and PC)
+
+- **Spotify sign-in page visible:** with the keyboard open, the page was squeezed to one line (the keyboard's room was
+  counted twice). It now keeps its full height.
+- **Spotify playlists with their covers and real names**, and tapping a playlist shows its songs (with covers) before
+  importing it.
+- **Faster online search:** Deezer's catalogue answers first (about a second); the slower search (Spotify page,
+  YouTube) only runs when it finds nothing.
+- **Downloads:** two songs at once by default (Import › Root folder and format › At once).
 
 - **Search no longer stalls the app.** With "Online" (or "Everywhere"), every pause while typing started an online
   search, and they ran one after the other (each opens a web page and runs yt-dlp), so the app froze for seconds.
