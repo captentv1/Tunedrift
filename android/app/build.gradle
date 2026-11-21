@@ -75,7 +75,7 @@ android {
         minSdk 26
         targetSdk 35
         versionCode Integer.parseInt((project.findProperty('ciVersionCode') ?: '2').toString())
-        versionName((project.findProperty('ciVersionName') ?: '1.1.0.0').toString())
+        versionName((project.findProperty('ciVersionName') ?: '1.1.1.0').toString())
 
         ndk {
             abiFilters "arm64-v8a"
@@ -84,6 +84,9 @@ android {
         // Only the emulator test build turns this on (-PciWebDebug=true), so the test can drive the page.
         buildConfigField "String", "MF_VERSION", "\"${mfVersion}\""
         buildConfigField "boolean", "WEB_DEBUG", (project.findProperty('ciWebDebug') ?: 'false').toString()
+        // Emulator test build only: also reaches the test computer (10.0.2.2) over http, for its fake Spotify.
+        manifestPlaceholders = [netConfig: (project.findProperty('ciWebDebug') ?: 'false').toString() == 'true'
+            ? '@xml/network_security_config_test' : '@xml/network_security_config']
 
         python {
             version "3.13"

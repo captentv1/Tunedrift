@@ -84,7 +84,8 @@ adb("shell", "content", "call", "--method", "scan_volume", "--uri", "content://m
 adb("logcat", "-c", check=False)
 time.sleep(5)
 close_system_dialogs()
-adb("shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity")
+# The test build talks to a fake Spotify on the test computer (ci/pc_server.py) instead of Spotify.
+adb("shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity", "--es", "test_spotify_base", "http://10.0.2.2:5091/fake-spotify")
 
 
 def devtools_socket():
@@ -263,6 +264,34 @@ else:
     print("playlists here:", pl)
     if not any(n == "PC Party" and k == 4 for n, k in pl or []):
         results["imported playlist"] = f"FAILED {pl}"
+
+# Spotify with the person's own account, no key: sign in on Spotify's page in the app, then a hidden web player
+# gives the playlists (Web API with the session's token, or read from the page when the API refuses).
+js("location.hash = 'download'; IMP.src = 'spotify'; IMP.drawSource()")
+time.sleep(2)
+sp = js("api('import/state').then(s => s.spotify)") or {}
+print("spotify before:", sp)
+js("native('spotifyLogin')")
+time.sleep(1)
+screenshot("spotify-login")
+sp = wait_for("Spotify sign-in did not finish", 60, lambda: (js("api('import/state').then(s => s.spotify)") or {}).get("connected") and True, every=2)
+results["spotify sign-in"] = "ok" if sp else "FAILED"
+sp_lists = js("api('import/playlists', {kind: 'spotify'}).catch(e => ({error: e.message}))") or {}
+print("spotify playlists:", sp_lists)
+names = [p.get("name") for p in sp_lists.get("playlists") or []]
+results["spotify playlists"] = "ok" if names == ["Liked Songs", "Fake Mix", "Page Only"] else f"FAILED {sp_lists}"
+for pid, label in (("mix1", "spotify songs (api)"), ("page2", "spotify songs (page)")):
+    pv = js(f"api('import/preview', {{source: {{kind: 'spotify', id: '{pid}'}}}}).catch(e => ({{error: e.message}}))") or {}
+    print(label, pv.get("name"), len(pv.get("tracks") or []), "on the device:", pv.get("have"), pv.get("error", ""))
+    good = len(pv.get("tracks") or []) == 5 and pv.get("have", 0) >= 4 and any(t.get("title") == "Fake Unknown Song" for t in pv["tracks"])
+    results[label] = "ok" if good else f"FAILED {str(pv)[:400]}"
+js("IMP.drawSource()")
+time.sleep(4)
+screenshot("spotify-connected")
+js("native('spotifyLogout')")
+time.sleep(2)
+out = js("api('import/state').then(s => s.spotify)") or {}
+results["spotify sign-out"] = "ok" if out.get("connected") is False else f"FAILED {out}"
 
 # Swiped away from the recent apps while playing: the music goes on (as in Samsung Music).
 js("Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false)")

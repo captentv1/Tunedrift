@@ -1,19 +1,16 @@
-"""Import: playlists from a link, a Spotify or YouTube account (their official APIs), another MusicFlow Play on the
+"""Import: playlists from a link, the person's Spotify account (signed in on Spotify's own page, no developer key),
+a YouTube channel's public playlists, another MusicFlow Play on the
 same Wi-Fi (local server), or a playlist file / a list of titles. An imported playlist becomes a playlist of the
 player, its songs go into the download queue (into the root folder chosen once), and the songs already on the
 device are only linked, never downloaded again. A .m3u8 file is written next to the songs, so other players
 (Samsung Music…) see the playlist too."""
 from __future__ import annotations
 
-import base64
 import csv
-import hashlib
 import io
 import json
 import os
 import re
-import secrets
-import threading
 import time
 import urllib.error
 import urllib.parse
@@ -28,29 +25,14 @@ from collections_store import JsonStore
 from downloads import safe_name, seconds, song_key
 
 bp = Blueprint("importer", __name__)
-CTX: dict = {}  # set by init(): queue, collections, settings, data_dir, port, local check
-_STATES: dict[str, tuple[float, str, str]] = {}  # OAuth state -> (time, provider, PKCE verifier)
-_LOCK = threading.Lock()
-
-SPOTIFY_AUTH = "https://accounts.spotify.com/authorize"
-SPOTIFY_TOKEN = "https://accounts.spotify.com/api/token"
-SPOTIFY_API = "https://api.spotify.com/v1"
-SPOTIFY_SCOPES = "playlist-read-private playlist-read-collaborative user-library-read"
-GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
-GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
-YOUTUBE_API = "https://www.googleapis.com/youtube/v3"
-YOUTUBE_SCOPES = "https://www.googleapis.com/auth/youtube.readonly"
+CTX: dict = {}  # set by init(): queue, collections, settings, data_dir, port, accounts, imports
 
 
 def init(queue, collections, settings, data_dir: Path, port: int):
     CTX.update(queue=queue, collections=collections, settings=settings, port=port,
-               accounts=JsonStore(data_dir / "accounts.json", {"spotify": {}, "youtube": {}, "servers": []}),
+               accounts=JsonStore(data_dir / "accounts.json", {"youtube": {}, "servers": []}),
                imports=JsonStore(data_dir / "imports.json", {"imports": []}))
     queue.on_song = on_song
-
-
-def redirect_uri(provider: str) -> str:
-    return f"http://127.0.0.1:{CTX['port']}/import/callback/{provider}"
 
 
 # ---------------------------------------------------------------- HTTP helpers
@@ -82,14 +64,6 @@ class ImportError_(Exception):
         self.code = code
 
 
-def _pkce() -> tuple[str, str]:
-    verifier = secrets.token_urlsafe(64)[:96]
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
-    return verifier, challenge
-
-
-# ---------------------------------------------------------------- accounts (official APIs, OAuth with PKCE)
-
 def _acc(provider: str) -> dict:
     return CTX["accounts"].data.setdefault(provider, {})
 
@@ -99,82 +73,56 @@ def _save_acc():
         CTX["accounts"].save()
 
 
-def login_url(provider: str) -> str:
-    a = _acc(provider)
-    if not a.get("client_id"):
-        raise ImportError_("Enter the Client ID first.")
-    verifier, challenge = _pkce()
-    state = secrets.token_urlsafe(24)
-    with _LOCK:
-        for k in [k for k, v in _STATES.items() if time.time() - v[0] > 900]:
-            _STATES.pop(k, None)
-        _STATES[state] = (time.time(), provider, verifier)
-    if provider == "spotify":
-        q = {"client_id": a["client_id"], "response_type": "code", "redirect_uri": redirect_uri("spotify"),
-             "code_challenge_method": "S256", "code_challenge": challenge, "scope": SPOTIFY_SCOPES, "state": state}
-        return SPOTIFY_AUTH + "?" + urllib.parse.urlencode(q)
-    q = {"client_id": a["client_id"], "response_type": "code", "redirect_uri": redirect_uri("youtube"),
-         "code_challenge_method": "S256", "code_challenge": challenge, "scope": YOUTUBE_SCOPES, "state": state,
-         "access_type": "offline", "prompt": "consent"}
-    return GOOGLE_AUTH + "?" + urllib.parse.urlencode(q)
+# ---------------------------------------------------------------- Spotify: the person's own account, no key
+# The phone app signs in on Spotify's own page and keeps a hidden page of Spotify's web player (SpotifyBot.kt).
+# Its access token lets this code read the playlists with Spotify's Web API; if Spotify refuses, the hidden page
+# reads the same lists from the web player itself.
+
+SPOTIFY_ON_PC = "Spotify sign-in is in the phone app. On the computer, paste a Spotify playlist link (Link)."
 
 
-def finish_login(provider: str, state: str, code: str) -> None:
-    with _LOCK:
-        found = _STATES.pop(state, None)
-    if not found or found[1] != provider or time.time() - found[0] > 900:
-        raise ImportError_("This sign-in link expired. Start again from the app.")
-    a = _acc(provider)
-    form = {"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri(provider),
-            "client_id": a.get("client_id", ""), "code_verifier": found[2]}
-    if provider == "youtube" and a.get("client_secret"):
-        form["client_secret"] = a["client_secret"]
-    tok = _http("POST", SPOTIFY_TOKEN if provider == "spotify" else GOOGLE_TOKEN, form=form)
-    _store_token(provider, tok)
+def spotify_bot():
+    """SpotifyBot of the Android app, or None (computer)."""
     try:
-        if provider == "spotify":
-            me = _http("GET", SPOTIFY_API + "/me", {"Authorization": "Bearer " + a["access"]})
-            a["user"] = me.get("display_name") or me.get("id") or ""
-        else:
-            me = _http("GET", YOUTUBE_API + "/channels?part=snippet&mine=true", {"Authorization": "Bearer " + a["access"]})
-            a["user"] = ((me.get("items") or [{}])[0].get("snippet") or {}).get("title", "")
+        from java import jclass  # Chaquopy (Android only)
+        return jclass("com.musicflow.play.SpotifyBot")
     except Exception:
-        pass
-    _save_acc()
+        return None
 
 
-def _store_token(provider: str, tok: dict):
-    a = _acc(provider)
-    a["access"] = tok.get("access_token", "")
-    if tok.get("refresh_token"):
-        a["refresh"] = tok["refresh_token"]
-    a["expires"] = time.time() + int(tok.get("expires_in") or 3600) - 60
-    _save_acc()
+def spotify_state() -> dict:
+    bot = spotify_bot()
+    if bot is None:
+        return {"available": False, "connected": False}
+    try:
+        return {"available": True, "connected": bool(bot.connected())}
+    except Exception:
+        return {"available": True, "connected": False}
 
 
-def _bearer(provider: str) -> dict:
-    a = _acc(provider)
-    if not a.get("access") and not a.get("refresh"):
-        raise ImportError_("Not connected.")
-    if time.time() > a.get("expires", 0) and a.get("refresh"):
-        form = {"grant_type": "refresh_token", "refresh_token": a["refresh"], "client_id": a.get("client_id", "")}
-        if provider == "youtube" and a.get("client_secret"):
-            form["client_secret"] = a["client_secret"]
-        _store_token(provider, _http("POST", SPOTIFY_TOKEN if provider == "spotify" else GOOGLE_TOKEN, form=form))
-    return {"Authorization": "Bearer " + a["access"]}
+def _sp_bot_connected():
+    bot = spotify_bot()
+    if bot is None:
+        raise ImportError_(SPOTIFY_ON_PC)
+    if not bot.connected():
+        raise ImportError_("Connect your Spotify account first.")
+    return bot
 
 
-def _paged(url: str, provider: str, key="items", limit_pages=60):
-    out, pages = [], 0
+def _sp_api(bot, path: str) -> dict:
+    token = str(bot.token(45000) or "")
+    if not token:
+        raise ImportError_("Spotify did not open your session. Connect again.", 401)
+    return _http("GET", path if path.startswith("http") else str(bot.apiBase()) + path, {"Authorization": "Bearer " + token})
+
+
+def _sp_paged(bot, path: str, limit_pages=80) -> list:
+    out, url, pages = [], path, 0
     while url and pages < limit_pages:
-        d = _http("GET", url, _bearer(provider))
-        out += d.get(key) or []
+        d = _sp_api(bot, url)
+        out += d.get("items") or []
+        url = d.get("next")
         pages += 1
-        if provider == "spotify":
-            url = d.get("next")
-        else:
-            tok = d.get("nextPageToken")
-            url = (re.sub(r"&pageToken=[^&]*", "", url) + "&pageToken=" + tok) if tok else None
     return out
 
 
@@ -187,32 +135,66 @@ def _sp_track(t: dict) -> dict | None:
             "cover": images[0]["url"] if images else "", "url": ""}
 
 
+LIKED = {"id": "liked", "name": "Liked Songs", "count": None, "image": ""}
+
+
 def spotify_playlists() -> list[dict]:
-    items = _paged(SPOTIFY_API + "/me/playlists?limit=50", "spotify")
-    out = [{"id": "liked", "name": "Liked Songs", "count": None, "image": ""}]
-    for p in items:
-        if not p:
-            continue
-        total = (p.get("tracks") or p.get("items") or {}).get("total")
-        out.append({"id": p["id"], "name": p.get("name") or "Playlist", "count": total,
-                    "image": ((p.get("images") or [{}])[0] or {}).get("url", "")})
+    bot = _sp_bot_connected()
+    try:
+        items = _sp_paged(bot, "/me/playlists?limit=50", limit_pages=20)
+        out = [dict(LIKED)]
+        for p in items:
+            if not p:
+                continue
+            total = (p.get("tracks") or p.get("items") or {}).get("total")
+            out.append({"id": p["id"], "name": p.get("name") or "Playlist", "count": total,
+                        "image": ((p.get("images") or [{}])[0] or {}).get("url", "")})
+        return out
+    except ImportError_ as exc:
+        print(f"Spotify API refused the list ({exc}); reading the web player", flush=True)
+    out, seen = [dict(LIKED)], set()
+    for r in json.loads(str(bot.playlists(45000)) or "[]"):
+        pid = re.sub(r"[^A-Za-z0-9]", "", r.get("id") or "")
+        if pid and pid not in seen:
+            seen.add(pid)
+            out.append({"id": pid, "name": r.get("name") or "Playlist", "count": None, "image": ""})
     return out
 
 
-def spotify_tracks(pid: str) -> tuple[str, list[dict]]:
-    if pid == "liked":
-        rows = _paged(SPOTIFY_API + "/me/tracks?limit=50", "spotify")
-        return "Liked Songs", [x for x in (_sp_track(r.get("track")) for r in rows) if x]
-    pid = re.sub(r"[^A-Za-z0-9]", "", pid)
-    info = _http("GET", f"{SPOTIFY_API}/playlists/{pid}?fields=name", _bearer("spotify"))
-    try:
-        rows = _paged(f"{SPOTIFY_API}/playlists/{pid}/tracks?limit=100", "spotify")
-    except ImportError_ as exc:  # newer API name of the same list
-        if exc.code not in (403, 404):
-            raise
-        rows = _paged(f"{SPOTIFY_API}/playlists/{pid}/items?limit=100", "spotify")
-    return info.get("name") or "Playlist", [x for x in (_sp_track(r.get("track") or r.get("item")) for r in rows) if x]
+def _sp_scrape(bot, pid: str) -> tuple[str, list[dict]]:
+    url = str(bot.webBase()) + ("/collection/tracks" if pid == "liked" else "/playlist/" + pid)
+    d = json.loads(str(bot.tracks(url, 15 * 60 * 1000)) or "{}")
+    items = [{"title": x.get("title", ""), "artist": x.get("artist", ""), "album": x.get("album", ""),
+              "duration": seconds(x.get("duration")), "cover": x.get("cover", ""), "url": ""}
+             for x in d.get("items") or [] if x.get("title")]
+    if not items:
+        raise ImportError_("Spotify showed no songs for this playlist. " + (d.get("diag") or ""))
+    return ("Liked Songs" if pid == "liked" else d.get("name") or "Playlist"), items
 
+
+def spotify_tracks(pid: str) -> tuple[str, list[dict]]:
+    bot = _sp_bot_connected()
+    pid = "liked" if pid == "liked" else re.sub(r"[^A-Za-z0-9]", "", pid)
+    try:
+        if pid == "liked":
+            rows = _sp_paged(bot, "/me/tracks?limit=50")
+            return "Liked Songs", [x for x in (_sp_track(r.get("track")) for r in rows) if x]
+        info = _sp_api(bot, f"/playlists/{pid}?fields=name")
+        try:
+            rows = _sp_paged(bot, f"/playlists/{pid}/tracks?limit=100")
+        except ImportError_ as exc:  # newer API name of the same list
+            if exc.code not in (403, 404):
+                raise
+            rows = _sp_paged(bot, f"/playlists/{pid}/items?limit=100")
+        tracks = [x for x in (_sp_track(r.get("track") or r.get("item")) for r in rows) if x]
+        if tracks:
+            return info.get("name") or "Playlist", tracks
+    except ImportError_ as exc:
+        print(f"Spotify API refused the songs ({exc}); reading the web player", flush=True)
+    return _sp_scrape(bot, pid)
+
+
+# ---------------------------------------------------------------- YouTube: a channel's public playlists, no key
 
 _YT_NOISE = re.compile(r"\s*[\(\[](official|lyrics?|audio|video|clip|music video|hd|hq|4k|visualizer|paroles)[^\)\]]*[\)\]]", re.I)
 
@@ -227,45 +209,67 @@ def youtube_song(title_text: str, channel: str) -> tuple[str, str]:
     return t, channel
 
 
-def _iso_seconds(d: str) -> int:
-    m = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", d or "")
-    return (int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + int(m.group(3) or 0)) if m else 0
+def youtube_channel(text: str) -> str:
+    """@name, a channel link or a YouTube Music channel link -> https://www.youtube.com/<channel>."""
+    t = (text or "").strip()
+    if not t:
+        raise ImportError_("Paste your YouTube channel link or @name.")
+    if "://" not in t and not t.startswith(("www.", "youtube.com", "m.youtube.com", "music.youtube.com")):
+        return "https://www.youtube.com/@" + urllib.parse.quote(t.lstrip("@"))
+    u = urllib.parse.urlsplit(t if "://" in t else "https://" + t)
+    if not (u.hostname or "").endswith("youtube.com"):
+        raise ImportError_("This is not a YouTube channel link.")
+    m = re.match(r"/(@[^/]+|channel/[\w-]+|c/[^/]+|user/[^/]+)", u.path)
+    if not m:
+        raise ImportError_("Paste a channel link (youtube.com/@name). For one playlist, use Link.")
+    return "https://www.youtube.com/" + m.group(1)
 
 
-def youtube_playlists() -> list[dict]:
-    rows = _paged(YOUTUBE_API + "/playlists?part=snippet,contentDetails&mine=true&maxResults=50", "youtube")
-    out = [{"id": "liked", "name": "Liked videos", "count": None, "image": ""}]
-    for p in rows:
-        sn = p.get("snippet") or {}
-        out.append({"id": p["id"], "name": sn.get("title") or "Playlist", "count": (p.get("contentDetails") or {}).get("itemCount"),
-                    "image": ((sn.get("thumbnails") or {}).get("medium") or {}).get("url", "")})
-    return out
+def _ydl(url: str) -> dict:
+    try:
+        import yt_dlp
+    except Exception as exc:
+        raise ImportError_(f"yt-dlp is missing ({exc}).") from exc
+    opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist", "skip_download": True,
+            "playlistend": 5000, "noprogress": True}
+    try:
+        with yt_dlp.YoutubeDL(opts) as y:
+            return y.extract_info(url, download=False) or {}
+    except Exception as exc:
+        raise ImportError_(f"YouTube: {str(exc).replace('ERROR: ', '')[:200]}", 502) from exc
+
+
+def _thumb(e: dict) -> str:
+    th = e.get("thumbnails") or []
+    return (th[-1] or {}).get("url", "") if th else (e.get("thumbnail") or "")
+
+
+def youtube_playlists(channel_text: str) -> tuple[str, list[dict]]:
+    channel = youtube_channel(channel_text)
+    info = _ydl(channel + "/playlists")
+    out = []
+    for e in info.get("entries") or []:
+        pid = e.get("id") or ""
+        if not pid or e.get("ie_key") not in (None, "YoutubeTab") or not re.fullmatch(r"[\w-]{10,}", pid):
+            continue
+        out.append({"id": pid, "name": e.get("title") or "Playlist", "count": e.get("playlist_count"), "image": _thumb(e)})
+    if not out:
+        raise ImportError_("This channel has no public playlist.")
+    return channel, out
 
 
 def youtube_tracks(pid: str) -> tuple[str, list[dict]]:
-    out = []
-    if pid == "liked":
-        rows = _paged(YOUTUBE_API + "/videos?part=snippet,contentDetails&myRating=like&maxResults=50", "youtube", limit_pages=20)
-        name = "Liked videos"
-        for v in rows:
-            sn = v.get("snippet") or {}
-            song, art = youtube_song(sn.get("title"), sn.get("channelTitle"))
-            out.append({"title": song, "artist": art, "duration": _iso_seconds((v.get("contentDetails") or {}).get("duration")),
-                        "cover": ((sn.get("thumbnails") or {}).get("high") or {}).get("url", ""),
-                        "url": f"https://www.youtube.com/watch?v={v['id']}"})
-        return name, out
     pid = re.sub(r"[^A-Za-z0-9_-]", "", pid)
-    info = _http("GET", f"{YOUTUBE_API}/playlists?part=snippet&id={pid}", _bearer("youtube"))
-    name = (((info.get("items") or [{}])[0]).get("snippet") or {}).get("title") or "Playlist"
-    for it in _paged(f"{YOUTUBE_API}/playlistItems?part=snippet&playlistId={pid}&maxResults=50", "youtube"):
-        sn = it.get("snippet") or {}
-        vid = (sn.get("resourceId") or {}).get("videoId")
-        if not vid or sn.get("title") in ("Private video", "Deleted video"):
+    info = _ydl("https://www.youtube.com/playlist?list=" + pid)
+    out = []
+    for e in info.get("entries") or []:
+        vid = e.get("id")
+        if not vid or e.get("title") in ("[Private video]", "[Deleted video]", "Private video", "Deleted video"):
             continue
-        song, art = youtube_song(sn.get("title"), sn.get("videoOwnerChannelTitle"))
-        out.append({"title": song, "artist": art, "cover": ((sn.get("thumbnails") or {}).get("high") or {}).get("url", ""),
+        song, art = youtube_song(e.get("title"), e.get("channel") or e.get("uploader"))
+        out.append({"title": song, "artist": art, "duration": seconds(e.get("duration")), "cover": _thumb(e),
                     "url": f"https://www.youtube.com/watch?v={vid}"})
-    return name, out
+    return info.get("title") or "Playlist", out
 
 
 # ---------------------------------------------------------------- other MusicFlow Play (local server)
@@ -487,14 +491,11 @@ def _err(exc, code=400):
 @bp.route("/api/import/state")
 def api_state():
     acc = CTX["accounts"].data
-    out = {"redirect": {p: redirect_uri(p) for p in ("spotify", "youtube")}, "servers": acc.get("servers", []),
+    out = {"servers": acc.get("servers", []), "spotify": spotify_state(),
+           "youtube": {"channel": (acc.get("youtube") or {}).get("channel", "")},
            "imports": [{k: i.get(k) for k in ("id", "name", "source", "folder", "playlist", "count", "last")} | {"have": len(i.get("tracks") or {})}
                        for i in reversed(_imports())],
            "musicflow": mf_bridge.STATE, "default_root": mf_bridge.default_dest()}
-    for p in ("spotify", "youtube"):
-        a = acc.get(p) or {}
-        out[p] = {"client_id": a.get("client_id", ""), "has_secret": bool(a.get("client_secret")),
-                  "connected": bool(a.get("refresh") or a.get("access")), "user": a.get("user", "")}
     for i in out["imports"]:
         if (i.get("source") or {}).get("token"):
             i["source"] = {k: v for k, v in i["source"].items() if k != "token"}
@@ -503,47 +504,13 @@ def api_state():
 
 @bp.route("/api/import/account", methods=["POST"])
 def api_account():
+    """Forgets the YouTube channel (Spotify's session is in the phone app: MFPNative.spotifyLogout())."""
     d = request.get_json(silent=True) or {}
-    p = d.get("provider")
-    if p not in ("spotify", "youtube"):
+    if d.get("provider") != "youtube":
         return _err("Unknown service.", 404)
-    a = _acc(p)
-    if d.get("logout"):
-        for k in ("access", "refresh", "expires", "user"):
-            a.pop(k, None)
-    else:
-        cid = str(d.get("client_id") or "").strip()
-        if not re.fullmatch(r"[\w.\-]{8,200}", cid):
-            return _err("This Client ID does not look right.")
-        a["client_id"] = cid
-        if d.get("client_secret") is not None:
-            a["client_secret"] = str(d.get("client_secret") or "").strip()
+    _acc("youtube").pop("channel", None)
     _save_acc()
     return jsonify({"ok": True})
-
-
-@bp.route("/api/import/login/<provider>")
-def api_login(provider):
-    if provider not in ("spotify", "youtube"):
-        return _err("Unknown service.", 404)
-    try:
-        return jsonify({"url": login_url(provider)})
-    except ImportError_ as exc:
-        return _err(exc)
-
-
-@bp.route("/import/callback/<provider>")
-def callback(provider):
-    """The browser comes back here after signing in (no token: the one-time state is the key)."""
-    page = ("<!doctype html><meta name=viewport content='width=device-width'><body style='font:16px sans-serif;"
-            "background:#111;color:#eee;padding:24px'><h2>{}</h2><p>{}</p>")
-    if request.args.get("error"):
-        return page.format("Sign-in cancelled", "Go back to MusicFlow Play."), 400
-    try:
-        finish_login(provider, request.args.get("state", ""), request.args.get("code", ""))
-    except Exception as exc:
-        return page.format("Sign-in failed", str(exc).replace("<", "&lt;")), 400
-    return page.format("Connected", "You can close this page and go back to MusicFlow Play.")
 
 
 @bp.route("/api/import/playlists", methods=["POST"])
@@ -554,7 +521,10 @@ def api_playlists():
         if kind == "spotify":
             return jsonify({"playlists": spotify_playlists()})
         if kind == "youtube":
-            return jsonify({"playlists": youtube_playlists()})
+            channel, lists = youtube_playlists(d.get("address") or _acc("youtube").get("channel", ""))
+            _acc("youtube")["channel"] = channel
+            _save_acc()
+            return jsonify({"playlists": lists, "channel": channel})
         if kind == "server":
             base, token = parse_server(d.get("address", ""))
             lists = server_playlists(base, token)

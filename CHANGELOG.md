@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1.0 — 2026-11-21 (Android and PC)
+
+- **Spotify without a key**: Import › Spotify › Connect Spotify signs in with your usual account on Spotify's own
+  page, inside the app. A hidden page of Spotify's web player then reads your playlists and Liked Songs (with
+  Spotify's own list if it allows it, otherwise read from the page, scrolled to the end). No developer app, no
+  Client ID. Disconnect removes the session from the phone.
+- **YouTube without a key**: paste your channel link or @name to list its public playlists (read with yt-dlp).
+- The developer-key steps and the sign-in in the browser are gone.
+
 ## 1.1.0.0 — 2026-11-21 (Android and PC)
 
 - **Import** (new tab, replaces the Download tab): your playlists, downloaded into one **root folder** you choose
