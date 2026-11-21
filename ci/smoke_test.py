@@ -285,6 +285,12 @@ for pid, label in (("mix1", "spotify songs (api)"), ("page2", "spotify songs (pa
     print(label, pv.get("name"), len(pv.get("tracks") or []), "on the device:", pv.get("have"), pv.get("error", ""))
     good = len(pv.get("tracks") or []) == 5 and pv.get("have", 0) >= 4 and any(t.get("title") == "Fake Unknown Song" for t in pv["tracks"])
     results[label] = "ok" if good else f"FAILED {str(pv)[:400]}"
+# The songs read once are kept: opening the playlist again is instant (the Spotify tab).
+t0 = time.time()
+kept = js("api('import/spotify?pid=page2').catch(e => ({error: e.message}))") or {}
+took = time.time() - t0
+print("spotify kept songs:", len(kept.get("tracks") or []), kept.get("complete"), f"{took:.1f} s")
+results["spotify songs kept"] = "ok" if kept.get("complete") and len(kept.get("tracks") or []) == 5 and took < 3 else f"FAILED {str(kept)[:300]}"
 js("IMP.drawSource()")
 time.sleep(4)
 screenshot("spotify-connected")

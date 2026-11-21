@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.2.1 — 2026-11-21 (Android)
+
+- **Spotify playlists at once:** the playlists and their songs are kept on the phone, so the Spotify tab and a
+  playlist open instantly. Opening the app reads them again in the background (and the songs of every playlist not
+  read yet), and the playlists and songs appear one by one as they are found while it reads. The refresh button
+  reads everything again.
+- When Spotify's Web API fails (no access, or refused), the app stops trying it for 6 hours instead of waiting for it
+  (up to 45 seconds) before each reading.
+
 ## 1.1.2.0 — 2026-11-21 (Android and PC)
 
 - **Spotify sign-in page visible:** with the keyboard open, the page was squeezed to one line (the keyboard's room was

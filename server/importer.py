@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -31,7 +32,8 @@ CTX: dict = {}  # set by init(): queue, collections, settings, data_dir, port, a
 def init(queue, collections, settings, data_dir: Path, port: int):
     CTX.update(queue=queue, collections=collections, settings=settings, port=port,
                accounts=JsonStore(data_dir / "accounts.json", {"youtube": {}, "servers": []}),
-               imports=JsonStore(data_dir / "imports.json", {"imports": []}))
+               imports=JsonStore(data_dir / "imports.json", {"imports": []}),
+               spcache=JsonStore(data_dir / "spotify-cache.json", {"playlists": [], "at": 0, "tracks": {}, "api_off": 0}))
     queue.on_song = on_song
 
 
@@ -109,8 +111,22 @@ def _sp_bot_connected():
     return bot
 
 
+API_OFF_S = 6 * 3600
+
+
+def _api_usable() -> bool:
+    c = CTX.get("spcache")
+    return not c or time.time() >= float(c.data.get("api_off") or 0)
+
+
+def _api_failed():
+    c = CTX.get("spcache")
+    if c:
+        c.data["api_off"] = time.time() + API_OFF_S
+
+
 def _sp_api(bot, path: str) -> dict:
-    token = str(bot.token(45000) or "")
+    token = str(bot.token(20000) or "")
     if not token:
         raise ImportError_("Spotify did not open your session. Connect again.", 401)
     return _http("GET", path if path.startswith("http") else str(bot.apiBase()) + path, {"Authorization": "Bearer " + token})
@@ -138,9 +154,30 @@ def _sp_track(t: dict) -> dict | None:
 LIKED = {"id": "liked", "name": "Liked Songs", "count": None, "image": ""}
 
 
+def _sp_rows(rows) -> list[dict]:
+    """Rows read from the web player's library -> the playlists (Liked Songs first)."""
+    out, seen = [dict(LIKED)], set()
+    for r in rows or []:
+        pid = re.sub(r"[^A-Za-z0-9]", "", (r or {}).get("id") or "")
+        if pid and pid not in seen:
+            seen.add(pid)
+            image = str(r.get("image") or "")
+            out.append({"id": pid, "name": r.get("name") or "Playlist", "count": None,
+                        "image": image if image.startswith("https://") else ""})
+    return out
+
+
+def _sp_items(d: dict) -> list[dict]:
+    return [{"title": x.get("title", ""), "artist": x.get("artist", ""), "album": x.get("album", ""),
+             "duration": seconds(x.get("duration")), "cover": x.get("cover", ""), "url": ""}
+            for x in (d or {}).get("items") or [] if x.get("title")]
+
+
 def spotify_playlists() -> list[dict]:
     bot = _sp_bot_connected()
     try:
+        if not _api_usable():
+            raise ImportError_("the Web API failed a moment ago")
         items = _sp_paged(bot, "/me/playlists?limit=50", limit_pages=20)
         out = [dict(LIKED)]
         for p in items:
@@ -151,33 +188,37 @@ def spotify_playlists() -> list[dict]:
                         "image": ((p.get("images") or [{}])[0] or {}).get("url", "")})
         return out
     except ImportError_ as exc:
+        if _api_usable():
+            _api_failed()
         print(f"Spotify API refused the list ({exc}); reading the web player", flush=True)
-    out, seen = [dict(LIKED)], set()
-    for r in json.loads(str(bot.playlists(45000)) or "[]"):
-        pid = re.sub(r"[^A-Za-z0-9]", "", r.get("id") or "")
-        if pid and pid not in seen:
-            seen.add(pid)
-            image = str(r.get("image") or "")
-            out.append({"id": pid, "name": r.get("name") or "Playlist", "count": None,
-                        "image": image if image.startswith("https://") else ""})
-    return out
+    return _sp_rows(json.loads(str(bot.playlists(45000)) or "[]"))
 
 
 def _sp_scrape(bot, pid: str) -> tuple[str, list[dict]]:
     url = str(bot.webBase()) + ("/collection/tracks" if pid == "liked" else "/playlist/" + pid)
     d = json.loads(str(bot.tracks(url, 15 * 60 * 1000)) or "{}")
-    items = [{"title": x.get("title", ""), "artist": x.get("artist", ""), "album": x.get("album", ""),
-              "duration": seconds(x.get("duration")), "cover": x.get("cover", ""), "url": ""}
-             for x in d.get("items") or [] if x.get("title")]
+    items = _sp_items(d)
     if not items:
         raise ImportError_("Spotify showed no songs for this playlist. " + (d.get("diag") or ""))
     return ("Liked Songs" if pid == "liked" else d.get("name") or "Playlist"), items
 
 
 def spotify_tracks(pid: str) -> tuple[str, list[dict]]:
-    bot = _sp_bot_connected()
     pid = "liked" if pid == "liked" else re.sub(r"[^A-Za-z0-9]", "", pid)
+    name, tracks = _spotify_tracks(pid)
+    c = CTX.get("spcache")
+    if c is not None:  # kept, so the playlist opens at once next time
+        with SPC["cv"]:
+            c.data.setdefault("tracks", {})[pid] = {"name": name, "tracks": tracks, "at": time.time()}
+        _spc_save()
+    return name, tracks
+
+
+def _spotify_tracks(pid: str) -> tuple[str, list[dict]]:
+    bot = _sp_bot_connected()
     try:
+        if not _api_usable():
+            raise ImportError_("the Web API failed a moment ago")
         if pid == "liked":
             rows = _sp_paged(bot, "/me/tracks?limit=50")
             return "Liked Songs", [x for x in (_sp_track(r.get("track")) for r in rows) if x]
@@ -192,8 +233,161 @@ def spotify_tracks(pid: str) -> tuple[str, list[dict]]:
         if tracks:
             return info.get("name") or "Playlist", tracks
     except ImportError_ as exc:
+        if exc.code == 401 or "session" in str(exc):
+            _api_failed()
         print(f"Spotify API refused the songs ({exc}); reading the web player", flush=True)
     return _sp_scrape(bot, pid)
+
+
+# ---------------------------------------------------------------- Spotify without waiting
+# The playlists and their songs are kept on the device: the Spotify tab shows them at once, while one background
+# worker reads them again (the list at most every 10 minutes, a playlist when it is opened and older than 30
+# minutes). Opening the app starts it, and it then reads the songs of every playlist not read yet, one after the
+# other, so opening one is instant. What a reading has found so far is shown while it runs.
+
+LIST_FRESH_S = 10 * 60
+TRACKS_FRESH_S = 30 * 60
+SPC = {"cv": threading.Condition(), "task": "", "want": "", "prefetch": False, "worker": None,
+       "list_try": 0.0, "error": "", "tried": {}, "errors": {}}
+
+
+def _spc() -> dict:
+    return CTX["spcache"].data
+
+
+def _spc_save():
+    c = CTX.get("spcache")
+    if c is None:
+        return
+    with c.lock:
+        try:
+            tmp = c.file_path.with_suffix(".tmp")
+            with SPC["cv"]:
+                text = json.dumps(c.data, ensure_ascii=False, separators=(",", ":"))
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(c.file_path)
+        except OSError:
+            pass
+
+
+def _sp_next() -> str:
+    """The next reading for the worker ("" = nothing to do). Called with SPC["cv"] held."""
+    if not spotify_state().get("connected"):
+        return ""
+    c, now = _spc(), time.time()
+    tracks, tried = c.setdefault("tracks", {}), SPC["tried"]
+    w = SPC["want"]
+    if w:
+        if (w not in tracks or now - float(tracks[w].get("at") or 0) > TRACKS_FRESH_S) and now - tried.get(w, 0) > 60:
+            return w
+        SPC["want"] = ""
+    if now - float(c.get("at") or 0) > LIST_FRESH_S and now - SPC["list_try"] > 60:
+        return ":list"
+    if SPC["prefetch"]:
+        for p in c.get("playlists") or []:
+            if p["id"] not in tracks and now - tried.get(p["id"], 0) > 3600:
+                return p["id"]
+    return ""
+
+
+def _sp_worker():
+    while True:
+        with SPC["cv"]:
+            task = _sp_next()
+            SPC["task"] = task
+            if not task:
+                SPC["worker"] = None
+                return
+        bot = spotify_bot()
+        try:
+            if bot is not None:
+                bot.clearPartial()
+        except Exception:
+            pass
+        try:
+            if task == ":list":
+                SPC["list_try"] = time.time()
+                lists = spotify_playlists()
+                with SPC["cv"]:
+                    _spc()["playlists"], _spc()["at"], SPC["error"] = lists, time.time(), ""
+                _spc_save()
+            else:
+                SPC["tried"][task] = time.time()
+                spotify_tracks(task)
+                SPC["errors"].pop(task, None)
+        except Exception as exc:
+            msg = str(exc) if isinstance(exc, ImportError_) else f"{type(exc).__name__}: {exc}"
+            if task == ":list":
+                SPC["error"] = msg
+            else:
+                SPC["errors"][task] = msg
+            print(f"Spotify reading {task} failed: {msg}", flush=True)
+        finally:
+            with SPC["cv"]:
+                SPC["task"] = ""
+                if SPC["want"] == task:
+                    SPC["want"] = ""
+
+
+def _sp_kick():
+    with SPC["cv"]:
+        if SPC["worker"] is None:
+            SPC["worker"] = threading.Thread(target=_sp_worker, name="spotify-reader", daemon=True)
+            SPC["worker"].start()
+
+
+def _sp_partial():
+    try:
+        bot = spotify_bot()
+        return json.loads(str(bot.partial()) or "null") if bot is not None else None
+    except Exception:
+        return None
+
+
+def spotify_view(pid: str = "", warm=False, refresh=False) -> dict:
+    """The Spotify tab at once: the kept playlists (and the songs of `pid`), and whether a reading is running."""
+    st = spotify_state()
+    if not st.get("connected"):
+        return dict(st, playlists=[], running=False)
+    pid = "liked" if pid == "liked" else re.sub(r"[^A-Za-z0-9]", "", pid or "")
+    with SPC["cv"]:
+        if warm:
+            SPC["prefetch"] = True
+        if refresh:
+            _spc()["at"], SPC["list_try"] = 0, 0
+        if pid:
+            SPC["want"] = pid
+            if refresh:
+                SPC["tried"].pop(pid, None)
+                t = _spc().get("tracks", {}).get(pid)
+                if t:
+                    t["at"] = 0
+    _sp_kick()
+    with SPC["cv"]:
+        c, task, alive = _spc(), SPC["task"], SPC["worker"] is not None
+        lists = list(c.get("playlists") or [])
+        kept = (c.get("tracks") or {}).get(pid) if pid else None
+        kept = dict(kept, tracks=[dict(x) for x in kept["tracks"]]) if kept else None
+        want = SPC["want"]
+    out = dict(st, playlists=lists, running=task == ":list" or (not lists and alive and not SPC["error"]),
+               error="" if lists else SPC["error"])
+    if task == ":list" and not lists:
+        rows = _sp_partial()
+        if isinstance(rows, list):
+            out["playlists"] = _sp_rows(rows)
+    if pid:
+        reading = task == pid or (want == pid and alive)
+        if kept:
+            name, tracks, complete = kept.get("name") or "Playlist", kept["tracks"], True
+        else:
+            d = _sp_partial() if task == pid else None
+            d = d if isinstance(d, dict) else {}
+            name = d.get("name") or next((p["name"] for p in lists if p["id"] == pid), "Playlist")
+            tracks, complete = _sp_items(d), False
+        tracks = _with_local(tracks)
+        out.update(pid=pid, name=name, tracks=tracks, have=sum(1 for t in tracks if t["have"]), complete=complete,
+                   tracks_running=reading, tracks_error="" if (tracks or reading) else SPC["errors"].get(pid, ""))
+    return out
 
 
 # ---------------------------------------------------------------- YouTube: a channel's public playlists, no key
@@ -502,6 +696,12 @@ def api_state():
         if (i.get("source") or {}).get("token"):
             i["source"] = {k: v for k, v in i["source"].items() if k != "token"}
     return jsonify(out)
+
+
+@bp.route("/api/import/spotify")
+def api_spotify():
+    a = request.args
+    return jsonify(spotify_view(a.get("pid", ""), warm=bool(a.get("warm")), refresh=bool(a.get("refresh"))))
 
 
 @bp.route("/api/import/account", methods=["POST"])
