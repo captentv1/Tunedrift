@@ -112,6 +112,10 @@ def test_local_server_copies_files_once(client, tmp_path):
         # Updating the import: the song is already there, nothing is copied again.
         assert client.post(f"/api/import/{imp['id']}", json={}, headers=h).status_code == 200
         _wait(lambda: q.items[-1]["state"] != "queued" and q.items[-1]["state"] != "working")
+        # Importing the same playlist again updates the same import and playlist.
+        r2 = client.post("/api/import/start", json={"source": src}, headers=h).get_json()
+        assert r2["import"]["id"] == imp["id"]
+        assert [p["name"] for p in client.mod.collections.snapshot()["playlists"]].count("Party") == 1
         st = client.get("/api/import/state", headers=h).get_json()
         assert "token" not in str(st["imports"])  # the key of the other device is not shown
     finally:
