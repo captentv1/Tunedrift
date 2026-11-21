@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1.2 — 2026-11-21 (Android and PC)
+
+- **Search no longer stalls the app.** With "Online" (or "Everywhere"), every pause while typing started an online
+  search, and they ran one after the other (each opens a web page and runs yt-dlp), so the app froze for seconds.
+  Now one search starts once typing stops; a newer one replaces the one waiting; answers are kept 10 minutes, so
+  going back to a search is instant.
+- **Search page without fixed blocks:** no more "Online / Searching online…" block or "Search online" button. A thin
+  bar shows the search, and the online results appear by themselves under your music when they are there.
+
 ## 1.1.1.1 — 2026-11-21 (Android)
 
 - **Fix: "Update" downloaded nothing.** The update went through Android's download manager, whose download could

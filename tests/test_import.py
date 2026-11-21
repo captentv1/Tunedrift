@@ -177,3 +177,28 @@ def test_spotify_without_key(client, monkeypatch):
     name, tracks = importer.fetch({"kind": "spotify", "id": "abc123"})
     assert name == "Road trip" and tracks == [{"title": "One More Time", "artist": "Daft Punk", "album": "Discovery",
                                                "duration": 320, "cover": "", "url": ""}]
+
+
+def test_online_search_only_latest_and_cached(monkeypatch):
+    """Typing asks for many searches: the ones waiting behind a newer one return at once, answers are kept."""
+    import mf_bridge
+    calls = []
+
+    def slow(path, payload=None, method="POST"):
+        calls.append(payload["title"])
+        time.sleep(0.4)
+        return 200, {"results": [{"title": payload["title"]}]}
+    monkeypatch.setattr(mf_bridge, "call", slow)
+    mf_bridge._SEARCH["cache"].clear()
+    out = {}
+    threads = [threading.Thread(target=lambda q=q: out.__setitem__(q, mf_bridge.search({"title": q, "limit": 15})))
+               for q in ("I", "In", "Int", "Internet")]
+    for t in threads:
+        t.start()
+        time.sleep(0.05)
+    for t in threads:
+        t.join()
+    assert out["Internet"] == (200, {"results": [{"title": "Internet"}]})
+    assert [q for q, (code, _) in out.items() if code == 409] == ["In", "Int"]  # "I" was already running
+    assert calls == ["I", "Internet"]
+    assert mf_bridge.search({"title": "Internet", "limit": 15})[0] == 200 and calls == ["I", "Internet"]  # from the cache
