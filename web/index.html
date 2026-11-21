@@ -1715,19 +1715,6 @@ const IMP = {
     $("#dl-m3u").onchange = e => DL.set({m3u: e.target.checked});
     $("#dl-lyr").onchange = e => DL.set({lyrics: e.target.checked});
   },
-  steps(kind) {
-    const red = esc(((this.st || {}).redirect || {})[kind] || "");
-    const copy = `<button class="btn" data-copy="${red}">Copy</button>`;
-    if (kind === "spotify") return `<p>Spotify gives access to your playlists through its official API. Once, on a computer or this phone:</p>
-      <ol class="muted" style="margin:0 0 12px;padding-left:20px;line-height:1.6"><li>Open <a href="#" style="color:var(--accent)" data-ext="https://developer.spotify.com/dashboard">developer.spotify.com/dashboard</a>, sign in, then <b>Create app</b> (any name).</li>
-      <li>Redirect URI: <code style="word-break:break-all;white-space:normal">${red}</code> ${copy} · API: <b>Web API</b>.</li><li>Copy the app's <b>Client ID</b> here.</li></ol>
-      <div class="addrow"><input class="text" id="acc-id" placeholder="Client ID"><button class="btn primary" id="acc-save">Save</button></div>`;
-    return `<p>YouTube gives access to your playlists through its official API (YouTube Data API v3). Once:</p>
-      <ol class="muted" style="margin:0 0 12px;padding-left:20px;line-height:1.6"><li>Open <a href="#" style="color:var(--accent)" data-ext="https://console.cloud.google.com/apis/library/youtube.googleapis.com">console.cloud.google.com</a>, create a project and enable <b>YouTube Data API v3</b>.</li>
-      <li><b>OAuth consent screen</b>: External, and add your Google account as a test user.</li>
-      <li><b>Credentials › Create credentials › OAuth client ID</b>, type <b>Desktop app</b>. (Redirect used: <code style="word-break:break-all;white-space:normal">${red}</code>)</li><li>Copy the <b>Client ID</b> and the <b>Client secret</b> here.</li></ol>
-      <div class="addrow"><input class="text" id="acc-id" placeholder="Client ID"></div><div class="addrow" style="margin-top:8px"><input class="text" id="acc-secret" placeholder="Client secret"><button class="btn primary" id="acc-save">Save</button></div>`;
-  },
   async drawSource() {
     const box = $("#src-box"); if (!box) return;
     for (const b of $$("[data-src]")) b.classList.toggle("active", b.dataset.src === this.src);
@@ -1740,26 +1727,30 @@ const IMP = {
         <div class="addrow"><input class="text" id="src-url" placeholder="https://open.spotify.com/playlist/…" inputmode="url"><button class="btn primary" id="src-go">Read</button></div><div id="pv"></div>`;
       $("#src-go").onclick = () => { const url = $("#src-url").value.trim(); if (url) this.showPreview({kind: "link", url}); };
       $("#src-url").onkeydown = e => { if (e.key === "Enter") $("#src-go").click(); };
-    } else if (k === "spotify" || k === "youtube") {
-      const a = st[k] || {}, label = k === "spotify" ? "Spotify" : "YouTube";
-      if (!a.client_id || (k === "youtube" && !a.has_secret)) {
-        box.innerHTML = this.steps(k);
-        $("#acc-save").onclick = async () => {
-          try { await api("import/account", {provider: k, client_id: $("#acc-id").value.trim(), client_secret: $("#acc-secret") ? $("#acc-secret").value.trim() : undefined}); this.st = await api("import/state"); this.drawSource(); }
-          catch (e) { toast(e.message); }
-        };
+    } else if (k === "spotify") {
+      const a = st.spotify || {};
+      if (!a.available) {
+        box.innerHTML = `<p>Connecting your Spotify account is done in the phone app. On the computer, paste a Spotify playlist link in <b>Link</b>.</p>`;
       } else if (!a.connected) {
-        box.innerHTML = `<p>Sign in to ${label} in the browser that opens, then come back here: your playlists appear.</p>
-          <div class="actions" style="margin:0;flex-wrap:wrap"><button class="btn primary" id="acc-login">Connect ${label}</button><button class="btn" id="acc-again">${ico("refresh")} I signed in</button><button class="btn" id="acc-edit">Change the Client ID</button></div>`;
-        $("#acc-login").onclick = async () => { try { openUrl((await api("import/login/" + k)).url); } catch (e) { toast(e.message); } };
-        $("#acc-again").onclick = async () => { this.st = await api("import/state").catch(() => this.st); this.drawSource(); };
-        $("#acc-edit").onclick = async () => { this.st[k].client_id = ""; this.st[k].has_secret = false; this.drawSource(); };
+        box.innerHTML = `<p>Sign in with your usual Spotify account, on Spotify's own page. No key or developer account: the app then reads your playlists and your Liked Songs by itself.</p>
+          <div class="actions" style="margin:0;flex-wrap:wrap"><button class="btn primary" id="sp-login">Connect Spotify</button></div>
+          <p class="muted" style="font-size:13px;margin:10px 0 0">Sign in with your e-mail (password or code by e-mail). “Continue with Google” is refused by Google inside apps.</p>`;
+        $("#sp-login").onclick = () => native("spotifyLogin");
       } else {
-        box.innerHTML = `<div class="actions" style="margin:0 0 8px;flex-wrap:wrap"><span style="align-self:center">Connected${a.user ? " as <b>" + esc(a.user) + "</b>" : ""}</span>
-          <button class="btn" id="acc-out">Disconnect</button></div><div id="pl-list"><div class="progress-line"><div></div></div></div><div id="pv"></div>`;
-        $("#acc-out").onclick = async () => { await api("import/account", {provider: k, logout: true}).catch(() => {}); this.st = await api("import/state"); this.lists[k] = null; this.drawSource(); };
-        this.drawLists(k, {kind: k});
+        box.innerHTML = `<div class="actions" style="margin:0 0 8px;flex-wrap:wrap"><span style="align-self:center">Spotify connected</span>
+          <button class="btn" id="acc-out">Disconnect</button></div><p class="muted" style="font-size:13px;margin:0">Reading your library can take a little while the first time.</p><div id="pl-list"></div><div id="pv"></div>`;
+        $("#acc-out").onclick = async () => { native("spotifyLogout"); this.st = await api("import/state").catch(() => this.st); this.st.spotify = {available: true, connected: false}; this.drawSource(); };
+        this.drawLists("spotify", {kind: "spotify"});
       }
+    } else if (k === "youtube") {
+      const ch = (st.youtube || {}).channel || "";
+      box.innerHTML = `<p>Your YouTube channel link or @name: its public playlists appear (no sign-in, no key). For one playlist (or a private one shared by link), use <b>Link</b>.</p>
+        <div class="addrow"><input class="text" id="yt-ch" placeholder="https://www.youtube.com/@yourname" inputmode="url" value="${esc(ch)}"><button class="btn primary" id="yt-go">Show</button></div>
+        ${ch ? `<div class="actions" style="margin:8px 0 0"><button class="btn" id="yt-forget">Forget this channel</button></div>` : ""}<div id="pl-list"></div><div id="pv"></div>`;
+      $("#yt-go").onclick = () => { const v = $("#yt-ch").value.trim(); if (v) this.drawLists("youtube", {kind: "youtube", address: v}); };
+      $("#yt-ch").onkeydown = e => { if (e.key === "Enter") $("#yt-go").click(); };
+      if ($("#yt-forget")) $("#yt-forget").onclick = async () => { await api("import/account", {provider: "youtube"}).catch(() => {}); this.st = await api("import/state").catch(() => this.st); this.drawSource(); };
+      if (ch) this.drawLists("youtube", {kind: "youtube", address: ch});
     } else if (k === "server") {
       const servers = st.servers || [];
       box.innerHTML = `<p>Copy the playlists of MusicFlow Play on your computer to this device, over Wi-Fi: the files are copied as they are (nothing is searched or downloaded again).
@@ -1849,12 +1840,13 @@ document.addEventListener("click", async e => {
   else if (t.dataset.iopen) { if (L.playlists.some(p => p.id === t.dataset.iopen)) go("playlist/" + t.dataset.iopen); else { await loadLibrary(true); go("playlist/" + t.dataset.iopen); } }
   else if (t.dataset.idel) { dialog("Forget this import?", `<p class="muted">The songs and the playlist stay; the import can no longer be updated.</p>`, "Forget", async () => { await api("import/" + t.dataset.idel, null, "DELETE").catch(err => toast(err.message)); IMP.st = await api("import/state").catch(() => IMP.st); IMP.drawImports(); }); }
 });
-// Back from the browser after signing in to Spotify or YouTube: the Import tab shows the playlists.
-document.addEventListener("visibilitychange", async () => {
-  if (document.hidden || route().name !== "download" || !IMP.st) return;
-  const k = IMP.src; if (k !== "spotify" && k !== "youtube" || (IMP.st[k] || {}).connected) return;
-  IMP.st = await api("import/state").catch(() => IMP.st); if ((IMP.st[k] || {}).connected) IMP.drawSource();
-});
+// Spotify's sign-in page (phone app) closed: signed in or not.
+window.MFP_spotifyDone = async ok => {
+  if (!IMP.st) return;
+  IMP.st = await api("import/state").catch(() => IMP.st);
+  if (ok) toast("Spotify connected");
+  if (route().name === "download" && IMP.src === "spotify") IMP.drawSource();
+};
 function foldSections(root) {
   let open = {}; try { open = JSON.parse(localStorage.getItem("mfp.open") || "{}"); } catch {}
   for (const d of $$("div.set", root)) {

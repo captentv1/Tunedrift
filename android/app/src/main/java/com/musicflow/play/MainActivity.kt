@@ -112,6 +112,8 @@ class MainActivity : AppCompatActivity() {
         loadingView = findViewById(R.id.loading)
         if (BuildConfig.WEB_DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         try { com.musicflow.app.SpotifySearch.init(this) } catch (e: Exception) { }
+        SpotifyBot.init(this)
+        if (BuildConfig.WEB_DEBUG) intent?.getStringExtra("test_spotify_base")?.let { SpotifyBot.useTestSite(it) }
 
         PlaybackService.commandSink = { command, value ->
             if (command.matches(Regex("[a-z]+"))) callPage("window.MFP_cmd && MFP_cmd('$command', $value)")
@@ -392,6 +394,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (SpotifyBot.closeLogin()) {
+                callPage("window.MFP_spotifyDone && MFP_spotifyDone(false)")
+                return true
+            }
             if (webView.canGoBack()) webView.goBack() else moveTaskToBack(true)
             return true
         }
@@ -402,6 +408,8 @@ class MainActivity : AppCompatActivity() {
         // The window closes (e.g. swiped away from the recent apps): while a song plays, the page stays alive in
         // WebHost with the playback service, so the music goes on. Otherwise the page is freed.
         val playing = PlaybackService.playing && PlaybackService.running
+        SpotifyBot.closeLogin()
+        SpotifyBot.detach()
         WebHost.detach(this, keep = playing || isChangingConfigurations)
         if (isFinishing && !playing && PlaybackService.running) {
             try { startService(Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP)) } catch (e: Exception) { }
@@ -547,6 +555,18 @@ class PageBridge(private val app: Context) {
         if (!allowed()) return
         val a = WebHost.activity ?: return
         a.runOnUiThread { a.openExternal(url) }
+    }
+
+    @JavascriptInterface
+    fun spotifyLogin() {
+        if (!allowed()) return
+        val a = WebHost.activity ?: return
+        a.runOnUiThread { SpotifyBot.login(a) }
+    }
+
+    @JavascriptInterface
+    fun spotifyLogout() {
+        if (allowed()) SpotifyBot.logout()
     }
 
     @JavascriptInterface
