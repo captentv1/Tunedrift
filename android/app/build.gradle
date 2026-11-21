@@ -6,8 +6,8 @@ def keyProperties = new Properties()
 def keyFile = rootProject.file("keystore.properties")
 if (keyFile.exists()) { keyFile.withInputStream { keyProperties.load(it) } }
 
-// MusicFlow (search and download, Download tab) comes from the musicflow submodule, as it is:
-// its Android server (Python), its page, and the two Kotlin helpers its Python code uses.
+// MusicFlow (search and download) comes from the musicflow submodule, as it is: its Android server code (Python),
+// used inside the player's own server, and the Kotlin helper its online search uses. Its page is not used.
 def mfDir = file('../../musicflow')
 def mfGenerated = file("$buildDir/generated/musicflow")
 def mfVersion = '0'
@@ -22,11 +22,7 @@ tasks.register('copyMusicFlowCode') {
         javaOut.mkdirs()
         def src = file("$mfDir/android/app/src/main/java/com/musicflow/app")
         file("$javaOut/SpotifySearch.kt").text = file("$src/SpotifySearch.kt").text
-        file("$javaOut/DownloadForegroundService.kt").text = file("$src/DownloadForegroundService.kt").text
-            .replace('Intent(this, MainActivity::class.java)', 'Intent(this, com.musicflow.play.MainActivity::class.java)')
-        def js = (file("$src/MainActivity.kt").text =~ /(?s)SPOTIFY_SCRAPE_JS = (""".*?""")/)[0][1]
-        file("$javaOut/SpotifyScrape.kt").text = "package com.musicflow.app\n\nobject SpotifyScrape {\n    const val JS = $js\n}\n"
-        // The player's page goes in web/ (MusicFlow's page is index.html at the top, where its server reads it).
+        // The player's page goes in web/.
         copy { from '../../web'; into "$mfGenerated/python/web" }
     }
 }
@@ -61,9 +57,10 @@ android {
 
     sourceSets {
         main {
-            // MusicFlow's own server and page (the Download tab) are not in the app: they come as a module
-            // the person installs from the Download tab (MusicFlowModule-android.zip in the release).
-            python.srcDirs = ['src/main/python', '../../server', '../../musicflow/core', "$buildDir/generated/musicflow/python"]
+            // MusicFlow's code is part of the app (nothing to install): its Android server module (mobile_app.py,
+            // secrets_store.py) and core/ run inside the player's server.
+            python.srcDirs = ['src/main/python', '../../server', '../../musicflow/core',
+                              '../../musicflow/android/app/src/main/python', "$buildDir/generated/musicflow/python"]
             java.srcDirs += ["$buildDir/generated/musicflow/java"]
         }
     }
@@ -78,7 +75,7 @@ android {
         minSdk 26
         targetSdk 35
         versionCode Integer.parseInt((project.findProperty('ciVersionCode') ?: '2').toString())
-        versionName((project.findProperty('ciVersionName') ?: '1.0.1.0').toString())
+        versionName((project.findProperty('ciVersionName') ?: '1.1.0.0').toString())
 
         ndk {
             abiFilters "arm64-v8a"
@@ -94,6 +91,7 @@ android {
                 buildPython project.property('buildPython').toString()
             }
             pip {
+                install "yt-dlp"
                 install "flask"
                 install "mutagen"
                 install "certifi"

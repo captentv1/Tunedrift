@@ -140,6 +140,19 @@ class LibraryIndex:
         self._save()
         return fresh
 
+    def add_file(self, file_path) -> dict | None:
+        """Adds (or reads again) one file, e.g. a song just downloaded, without reading the folders again."""
+        f = Path(file_path)
+        try:
+            fresh = read_track(f)
+        except Exception:
+            return None
+        with self.lock:
+            self._cache[str(f)] = fresh
+            self.tracks[fresh["id"]] = fresh
+        self._save()
+        return fresh
+
     def remove(self, tid: str) -> None:
         with self.lock:
             t = self.tracks.pop(tid, None)

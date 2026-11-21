@@ -163,8 +163,8 @@ def cover(url: str) -> tuple[bytes, str] | None:
     if not (url.startswith("https://") and (host.endswith(".dzcdn.net") or host.endswith(".deezer.com"))):
         return None
     try:
-        import musicflow_embed
-        ctx = musicflow_embed._ssl_context()
+        import mf_bridge
+        ctx = mf_bridge.ssl_context()
     except Exception:
         ctx = None
     req = urllib.request.Request(url, headers={"User-Agent": "MusicFlowPlay"})
