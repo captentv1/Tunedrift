@@ -177,3 +177,50 @@ def test_spotify_without_key(client, monkeypatch):
     name, tracks = importer.fetch({"kind": "spotify", "id": "abc123"})
     assert name == "Road trip" and tracks == [{"title": "One More Time", "artist": "Daft Punk", "album": "Discovery",
                                                "duration": 320, "cover": "", "url": ""}]
+
+
+def test_online_search_only_latest_and_cached(monkeypatch):
+    """Typing asks for many searches: the ones waiting behind a newer one return at once, answers are kept."""
+    import mf_bridge
+    calls = []
+
+    def slow(path, payload=None, method="POST"):
+        calls.append(payload["title"])
+        time.sleep(0.4)
+        return 200, {"results": [{"title": payload["title"]}]}
+    monkeypatch.setattr(mf_bridge, "call", slow)
+    mf_bridge._SEARCH["cache"].clear()
+    out = {}
+    threads = [threading.Thread(target=lambda q=q: out.__setitem__(q, mf_bridge.search({"title": q, "limit": 15})))
+               for q in ("I", "In", "Int", "Internet")]
+    for t in threads:
+        t.start()
+        time.sleep(0.05)
+    for t in threads:
+        t.join()
+    assert out["Internet"] == (200, {"results": [{"title": "Internet"}]})
+    assert [q for q, (code, _) in out.items() if code == 409] == ["In", "Int"]  # "I" was already running
+    assert calls == ["I", "Internet"]
+    assert mf_bridge.search({"title": "Internet", "limit": 15})[0] == 200 and calls == ["I", "Internet"]  # from the cache
+
+
+def test_synced_lyrics_are_suggested_then_added(client, monkeypatch):
+    """Songs without synced lyrics are looked up in the background; nothing is written before the person agrees."""
+    import lyrics_sync
+    looked = []
+
+    def fake_find(title, artist, length_s):
+        looked.append(title)
+        return {"synced": "[00:00.20]La la\n[00:01.00]Lo lo", "plain": "La la\nLo lo"}
+    monkeypatch.setattr(lyrics_sync, "find", fake_find)
+    r = client.get("/api/lyrics-suggest?now=1", headers=client.h).get_json()
+    _wait(lambda: not lyrics_sync.SUGGEST["running"])
+    d = client.get("/api/lyrics-suggest", headers=client.h).get_json()
+    assert "First Song" not in looked  # it already has its .lrc
+    assert [i["preview"] for i in d["items"]] == [["La la", "Lo lo"]] and r is not None
+    tid = d["items"][0]["id"]
+    t = client.mod.index.get(tid)
+    assert not Path(t["path"]).with_suffix(".lrc").exists()  # only suggested
+    done = client.post("/api/lyrics-suggest", json={"apply": [tid]}, headers=client.h).get_json()
+    assert done == {"applied": 1, "count": 0}
+    assert "La la" in Path(t["path"]).with_suffix(".lrc").read_text(encoding="utf-8")

@@ -32,7 +32,7 @@ SP_LISTS = {"mix1": "Fake Mix", "page2": "Page Only"}
 def _sp_page(body):
     return ("<!doctype html><meta name=viewport content='width=device-width'><title>Spotify</title>"
             "<div id='Desktop_LeftSidebar_Id'>" + "".join(
-                f"<div role='row' aria-labelledby='listrow-title-spotify:playlist:{k}'><span id='listrow-title-spotify:playlist:{k}'>{v}</span></div>"
+                f"<div role='row' aria-labelledby='listrow-title-spotify:playlist:{k}'><img src='https://i.scdn.co/image/{k}' alt=''><p>Playlist • Me</p><span id='listrow-title-spotify:playlist:{k}'>{v}</span></div>"
                 for k, v in SP_LISTS.items()) + "</div><main>" + body + "</main>"
             f"<script>fetch('{SP}/pathfinder', {{headers: {{authorization: 'Bearer {SP_TOKEN}'}}}});</script>")
 
