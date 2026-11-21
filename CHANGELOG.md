@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.3.0 — 2026-11-21 (Android and PC)
+
+- **Spotify radios are back:** Import › **Radio**: type a song or an artist (or paste its Spotify link), and Spotify
+  builds a mix of about 50 songs around it. It shows up like a playlist, with the songs already on the device marked,
+  ready to download. Also from an artist's page (Online › Artist radio) and from a song's menu (Song radio).
+
 ## 1.1.2.2 — 2026-11-21 (Android)
 
 - **Safety exit:** if the app does not finish starting twice in a row, the next start goes back to the Glass theme
