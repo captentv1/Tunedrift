@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.4.1 — 2026-11-21 (Android and PC)
+
+- **Lyrics readable in the light themes** (Light glass, Sakura, White): the lines before and after the one sung were
+  light grey on the light background, nearly invisible. They are now a faded dark ink.
+
 ## 1.1.4.0 — 2026-11-21 (Android and PC)
 
 - **Search artists online:** in Search › Online, choose **Songs** or **Artists**. Artists shows the artists found
