@@ -207,6 +207,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun routeFrom(i: Intent?) {
+        // Emulator test build only: removes the task as swiping it away from the recent apps does.
+        if (BuildConfig.WEB_DEBUG && i?.getBooleanExtra("test_remove_task", false) == true) {
+            i.removeExtra("test_remove_task")
+            window.decorView.postDelayed({ finishAndRemoveTask() }, 500)
+            return
+        }
         val r = i?.getStringExtra(EXTRA_ROUTE) ?: return
         i.removeExtra(EXTRA_ROUTE)
         if (r.matches(Regex("[a-z]+"))) callPage("location.hash = '$r'")

@@ -269,16 +269,31 @@ js("Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false)")
 time.sleep(3)
 size = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size", check=False))
 w, h = (int(size.group(1)), int(size.group(2))) if size else (1080, 1920)
+def has_task():
+    return f"{PACKAGE}/.MainActivity" in adb("shell", "dumpsys", "activity", "recents", check=False)
+
+
 adb("shell", "input", "keyevent", "KEYCODE_APP_SWITCH", check=False)
-time.sleep(3)
+time.sleep(4)
 screenshot("recents")
-adb("shell", "input", "swipe", str(w // 2), str(h // 2), str(w // 2), str(h // 12), "250", check=False)
+# Swipe the app's card up (its bounds from the screen's layout, else the middle of the screen).
+adb("shell", "uiautomator", "dump", "/sdcard/ui.xml", check=False)
+ui = adb("shell", "cat", "/sdcard/ui.xml", check=False)
+card = re.search(r'resource-id="[^"]*(snapshot|task_thumbnail|thumbnail)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', ui)
+x, y = ((int(card.group(2)) + int(card.group(4))) // 2, (int(card.group(3)) + int(card.group(5))) // 2) if card else (w // 2, h // 2)
+adb("shell", "input", "swipe", str(x), str(y), str(x), str(h // 20), "400", check=False)
 time.sleep(3)
+how = "recent-apps swipe"
+if has_task():
+    # Some emulator launchers ignore the swipe: the test build removes its task the same way.
+    how = "task removed by the test build"
+    adb("shell", "am", "start", "-n", f"{PACKAGE}/.MainActivity", "--ez", "test_remove_task", "true", check=False)
+    time.sleep(4)
 adb("shell", "input", "keyevent", "KEYCODE_HOME", check=False)
 time.sleep(6)
 screenshot("after-swipe")
-tasks = adb("shell", "dumpsys", "activity", "activities", check=False)
-still_task = f"{PACKAGE}/.MainActivity" in tasks
+still_task = has_task()
+print("task removed by:", how)
 pid_now = adb("shell", "pidof", PACKAGE, check=False).strip()
 t1 = js(STATE) if pid_now else {}
 time.sleep(4)
@@ -287,7 +302,7 @@ print("after swipe: task", still_task, "pid", pid_now, t1, t2)
 if not pid_now or not t2 or t2.get("paused") or not t2.get("t", 0) > (t1 or {}).get("t", 0):
     results["music after swiping the app away"] = f"FAILED pid={pid_now} task={still_task} {t1} {t2}"
 if still_task:
-    print("note: the recent-apps swipe did not remove the task on this emulator; the check above is then only partial")
+    results["task removed"] = "FAILED the app's task is still in the recent apps"
 
 bad = {k: v for k, v in results.items() if v != "ok"}
 finish(f"failed: {bad}" if bad else None)

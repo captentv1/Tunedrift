@@ -421,6 +421,10 @@ def start_import(source: dict, name: str, tracks: list[dict], root: str, import_
     if not root:
         raise ImportError_("Choose the root folder first.")
     imp = next((i for i in _imports() if i["id"] == import_id), None) if import_id else None
+    if imp is None and source.get("kind") != "text":
+        # The same playlist imported again: the same import is updated (no second playlist).
+        same = lambda s: all(str(s.get(k) or "") == str(source.get(k) or "") for k in ("kind", "id", "url", "base"))
+        imp = next((i for i in _imports() if same(i.get("source") or {})), None)
     if imp is None:
         folder = str(Path(root) / safe_name(name)) if conf.get("subfolders", True) else root
         pl = CTX["collections"].create(name, [])
