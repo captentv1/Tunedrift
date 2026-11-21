@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.2.2 — 2026-11-21 (Android)
+
+- **Safety exit:** if the app does not finish starting twice in a row, the next start goes back to the Glass theme
+  (battery saver on, normal text size) and says so, so the settings can always be reached.
+- Coming back to the app with music playing: the theme is applied again to the new window (status bar icons).
+- The synced lyrics check no longer reads every file while the Home page waits for it (it is done in the background).
+- Spotify's read-ahead starts a few seconds later, once the app has settled.
+- Emulator test: Light glass theme, then leave and re-enter (after a swipe, after Home, after a cold start); each
+  time the page must answer and a real tap must open the settings.
+
 ## 1.1.2.1 — 2026-11-21 (Android)
 
 - **Spotify playlists at once:** the playlists and their songs are kept on the phone, so the Spotify tab and a
