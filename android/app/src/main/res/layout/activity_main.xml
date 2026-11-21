@@ -4,8 +4,9 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <WebView
-        android:id="@+id/webview"
+    <!-- The page is put here by MainActivity (it is kept in WebHost so that music goes on without the window). -->
+    <FrameLayout
+        android:id="@+id/page_holder"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 

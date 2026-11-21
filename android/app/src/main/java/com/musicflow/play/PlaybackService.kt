@@ -32,7 +32,11 @@ class PlaybackService : Service() {
         const val ACTION_UPDATE = "com.musicflow.play.UPDATE"
         const val ACTION_COMMAND = "com.musicflow.play.COMMAND"
         const val ACTION_STOP = "com.musicflow.play.STOP"
+        /** The notification's ✕, or the notification swiped away while paused (as in Samsung Music). */
+        const val ACTION_CLOSE = "com.musicflow.play.CLOSE"
         const val EXTRA_COMMAND = "command"
+        /** Set when the service is started with startForegroundService: Android then wants startForeground soon. */
+        const val EXTRA_FOREGROUND = "foreground"
         private const val CHANNEL_ID = "musicflow_play_playback"
         private const val NOTIF_ID = 2001
 
@@ -62,6 +66,8 @@ class PlaybackService : Service() {
     private var sentNotif = ""
     private var sentWidget = ""
     private var widgetCover: Bitmap? = null
+    private var inForeground = false
+    private var mustStartForeground = false
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -104,17 +110,29 @@ class PlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Every startForegroundService() must be followed by startForeground(), even when the service already runs
+        // (otherwise Android stops the whole app a few seconds later: one of the crashes while downloading).
+        if (intent?.getBooleanExtra(EXTRA_FOREGROUND, false) == true || intent?.action == ACTION_COMMAND) {
+            mustStartForeground = true
+            sentNotif = ""
+        }
         when (intent?.action) {
             ACTION_STOP -> {
+                if (mustStartForeground) refresh()
                 stopForegroundCompat()
                 stopSelf()
                 return START_NOT_STICKY
             }
-            ACTION_COMMAND -> {
-                // Started as a foreground service (widget buttons): Android wants startForeground again.
-                sentNotif = ""
-                send(intent.getStringExtra(EXTRA_COMMAND) ?: "", 0)
+            ACTION_CLOSE -> {
+                if (mustStartForeground) refresh()
+                playing = false
+                send("pause", 0)
+                stopForegroundCompat()
+                try { getSystemService(NotificationManager::class.java).cancel(NOTIF_ID) } catch (e: Exception) { }
+                stopSelf()
+                return START_NOT_STICKY
             }
+            ACTION_COMMAND -> send(intent.getStringExtra(EXTRA_COMMAND) ?: "", 0)
         }
         refresh()
         return START_NOT_STICKY
@@ -122,9 +140,13 @@ class PlaybackService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // Swiped away from the recent apps: the music goes on (the page lives on without its window, see WebHost),
+    // as in Samsung Music. Paused, the app closes with its notification.
     override fun onTaskRemoved(rootIntent: Intent?) {
-        stopForegroundCompat()
-        stopSelf()
+        if (!playing) {
+            stopForegroundCompat()
+            stopSelf()
+        }
         super.onTaskRemoved(rootIntent)
     }
 
@@ -138,6 +160,7 @@ class PlaybackService : Service() {
     }
 
     private fun stopForegroundCompat() {
+        inForeground = false
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } catch (e: Exception) { }
@@ -189,18 +212,31 @@ class PlaybackService : Service() {
             else wakeLock?.takeIf { it.isHeld }?.release()
         } catch (e: Exception) { }
         val notifKey = "$title|$artist|$album|$playing|$shuffle|$repeat|$coverId"
-        if (notifKey == sentNotif) return
+        if (notifKey == sentNotif && !mustStartForeground) return
         val notification = buildNotification()
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-            } else {
-                startForeground(NOTIF_ID, notification)
+        val nm = getSystemService(NotificationManager::class.java)
+        if (playing || mustStartForeground) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+                } else {
+                    startForeground(NOTIF_ID, notification)
+                }
+                inForeground = true
+            } catch (e: Exception) {
+                try { nm.notify(NOTIF_ID, notification) } catch (e2: Exception) { }
             }
-            sentNotif = notifKey
-        } catch (e: Exception) {
-            try { getSystemService(NotificationManager::class.java).notify(NOTIF_ID, notification) } catch (e2: Exception) { }
+            mustStartForeground = false
         }
+        if (!playing) {
+            // Paused: the notification stays, but can be swiped away (which closes the player), as in Samsung Music.
+            if (inForeground) {
+                inForeground = false
+                try { stopForeground(STOP_FOREGROUND_DETACH) } catch (e: Exception) { }
+            }
+            try { nm.notify(NOTIF_ID, notification) } catch (e: Exception) { }
+        }
+        sentNotif = notifKey
     }
 
     private fun loadCoverIfNeeded() {
@@ -262,6 +298,11 @@ class PlaybackService : Service() {
         return PendingIntent.getService(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
+    private fun closeIntent(): PendingIntent {
+        val intent = Intent(this, PlaybackService::class.java).setAction(ACTION_CLOSE)
+        return PendingIntent.getService(this, 6, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
     private fun buildNotification(): Notification {
         val openApp = PendingIntent.getActivity(
             this, 0,
@@ -285,11 +326,15 @@ class PlaybackService : Service() {
                 if (playing) "Pause" else "Play", commandIntent(if (playing) "pause" else "play", 2)
             )
             .addAction(android.R.drawable.ic_media_next, "Next", commandIntent("next", 3))
-            .addAction(repeatIcon(), repeatLabel(), commandIntent("repeat", 5))
+            // Up to Android 12 a media notification shows 5 buttons: repeat stays on the lock screen and in the app.
+            .addAction(R.drawable.ic_close, "Close", closeIntent())
+            .setDeleteIntent(closeIntent())
             .setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
                     .setMediaSession(session.sessionToken)
                     .setShowActionsInCompactView(1, 2, 3)
+                    .setShowCancelButton(true)
+                    .setCancelButtonIntent(closeIntent())
             )
         if (album.isNotEmpty()) builder.setSubText(album)
         cover?.let { builder.setLargeIcon(it) }

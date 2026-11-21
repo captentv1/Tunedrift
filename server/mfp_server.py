@@ -18,13 +18,16 @@ paths.use_core()
 
 from flask import Flask, jsonify, request, send_file
 
+import downloads
+import importer
 import lyrics
+import mf_bridge
 from collections_store import Collections, JsonStore
 from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_synced
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.0.1.0"
+VERSION = "1.1.0.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -36,6 +39,9 @@ settings = JsonStore(DATA_DIR / "settings.json", {"folders": list(DEFAULT_FOLDER
 index = LibraryIndex(DATA_DIR / "library-index.json")
 collections = Collections(DATA_DIR / "collections.json")
 lyrics_cache = JsonStore(DATA_DIR / "lyrics-online.json", {})
+queue = downloads.Queue(DATA_DIR / "downloads.json", index, settings)
+importer.init(queue, collections, settings, DATA_DIR, PORT)
+app.register_blueprint(importer.bp)
 
 CONFIG = {"lan": False, "token": secrets.token_urlsafe(32), "token_in_page": True}
 _LOCAL_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
@@ -95,27 +101,70 @@ def _scan_async():
 def api_state():
     return jsonify({"version": VERSION, "folders": settings.data["folders"], "scan": index.status,
                     "count": len(index.tracks), "lan": CONFIG["lan"], "local": _is_local_request(),
-                    "musicflow": CONFIG.get("musicflow") if _is_local_request() else None,
-                    "module": _module_state() if _is_local_request() else None})
+                    "musicflow": dict(mf_bridge.STATE) if _is_local_request() else None})
 
 
-def _module_state():
-    import musicflow_embed
-    return dict(musicflow_embed.MODULE)
+# ---- MusicFlow inside the player: its searches, and the download queue (see downloads.py and importer.py) ----
 
-
-@app.route("/api/musicflow/install", methods=["POST"])
-def api_musicflow_install():
-    """Installs the Download tab (MusicFlow) from this version's GitHub release."""
-    import musicflow_embed
-    if not _is_local_request() or musicflow_embed.MODULE["state"] in ("bundled", "installed"):
+@app.route("/api/mf/<path:sub>", methods=["GET", "POST"])
+def api_mf(sub):
+    """Online search, links, artists… answered by MusicFlow's code in this process (no second page)."""
+    if not _is_local_request() or not mf_bridge.allowed(sub):
         return jsonify({"error": "Not available."}), 403
-    url = musicflow_embed.module_url(RELEASES, VERSION)
-    custom = str((request.get_json(silent=True) or {}).get("url") or "")
-    if custom and CONFIG.get("module_url_any"):  # test builds only
-        url = custom
-    musicflow_embed.install(url)
-    return jsonify(_module_state())
+    code, data = mf_bridge.call(sub, request.get_json(silent=True) or {}, request.method)
+    return jsonify(data), code
+
+
+@app.route("/api/dl")
+def api_dl():
+    return jsonify(queue.snapshot())
+
+
+@app.route("/api/dl/add", methods=["POST"])
+def api_dl_add():
+    data = request.get_json(silent=True) or {}
+    songs = [s for s in data.get("songs") or [] if isinstance(s, dict)][:5000]
+    if not songs:
+        return jsonify({"error": "Nothing to download."}), 400
+    added = queue.add(songs, str(data.get("folder") or ""))
+    return jsonify({"added": len(added), "skipped": len(songs) - len(added)})
+
+
+@app.route("/api/dl/control", methods=["POST"])
+def api_dl_control():
+    data = request.get_json(silent=True) or {}
+    action = str(data.get("action") or "")
+    if action not in ("pause", "resume", "retry", "stop", "clear", "remove"):
+        return jsonify({"error": "Unknown action."}), 400
+    queue.control(action, str(data.get("id") or ""))
+    return jsonify(queue.snapshot())
+
+
+@app.route("/api/dl/settings", methods=["POST"])
+def api_dl_settings():
+    data = request.get_json(silent=True) or {}
+    conf = dict(settings.data.get("dl") or {})
+    if "root" in data:
+        root = str(data.get("root") or "").strip()
+        if root:
+            try:
+                Path(root).mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                return jsonify({"error": f"This folder can't be used: {exc.strerror or exc}"}), 400
+            # The songs downloaded there appear in the library.
+            if not any(_inside(Path(root), Path(f)) for f in settings.data["folders"]):
+                settings.data["folders"] = settings.data["folders"] + [root]
+        conf["root"] = root
+    if data.get("format") in ("mp3-320", "mp3-192", "mp3-128", "flac", "opus", "aac", "wav"):
+        conf["format"] = data["format"]
+    if "parallel" in data:
+        conf["parallel"] = max(1, min(4, int(data.get("parallel") or 1)))
+    for k in ("subfolders", "m3u", "lyrics"):
+        if k in data:
+            conf[k] = bool(data[k])
+    settings.data["dl"] = conf
+    settings.save()
+    return jsonify(queue.snapshot())
 
 
 @app.route("/api/latest-version")
@@ -131,8 +180,8 @@ def api_latest_version():
     location = ""
     try:
         req = urllib.request.Request(RELEASES + "/latest", headers={"User-Agent": "MusicFlowPlay"})
-        import musicflow_embed  # its SSL context has the certificates (Android's Python has none of its own)
-        urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=musicflow_embed._ssl_context())).open(req, timeout=15).close()
+        # Android's Python has no certificates of its own.
+        urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=mf_bridge.ssl_context())).open(req, timeout=15).close()
     except urllib.error.HTTPError as exc:
         location = exc.headers.get("Location", "") if exc.code in (301, 302, 303, 307, 308) else ""
     except Exception as exc:
@@ -559,20 +608,22 @@ def _lan_address() -> str:
         return socket.gethostbyname(socket.gethostname())
 
 
-def start_musicflow():
-    """Starts MusicFlow next to the player; the songs it downloads go to a folder the player reads."""
-    import musicflow_embed
+def start_musicflow(dest: str = "", config_path: str = "") -> None:
+    """Loads MusicFlow's code (search and download) in the background, then starts the download queue: what was
+    not finished last time goes on."""
+    mf_bridge.start(dest, config_path)
 
-    def run():
-        mf = musicflow_embed.start()
-        if mf:
-            use_musicflow(getattr(mf, "DEFAULT_DEST", "") or "", musicflow_embed.URL)
-    musicflow_embed.prepare(run, VERSION, RELEASES)
+    def later():
+        if mf_bridge.wait(120):
+            d = mf_bridge.default_dest()
+            if d and not (settings.data.get("dl") or {}).get("root"):
+                use_folder(d)
+        queue.start()
+    threading.Thread(target=later, daemon=True).start()
 
 
-def use_musicflow(dest, url: str) -> None:
-    """MusicFlow runs: show its Download tab and read the folder where it downloads."""
-    CONFIG["musicflow"] = url
+def use_folder(dest) -> None:
+    """The default download folder is read by the library too."""
     dest = Path(dest)
     if dest.is_dir() and not any(_inside(dest, Path(f)) for f in settings.data["folders"]):
         settings.data["folders"] = settings.data["folders"] + [str(dest)]

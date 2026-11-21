@@ -39,21 +39,12 @@ jobs:
       - name: Server tests
         run: |
           sudo apt-get install -y -qq ffmpeg > /dev/null
-          python -m pip install -q -r requirements.txt pytest
+          python -m pip install -q -r requirements.txt pytest yt-dlp certifi Pillow
           python -m pytest -q tests
 
       - name: Read the version
         id: version
         run: echo "version=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' server/mfp_server.py)" >> "$GITHUB_OUTPUT"
-
-      # The Download tab is a module the app downloads from the release when the person installs it.
-      - name: Make the Download tab's module (Android)
-        run: python ci/make_module.py android "${{ steps.version.outputs.version }}" MusicFlowModule-android.zip
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MusicFlowModule-android
-          path: MusicFlowModule-android.zip
 
       # Without a release keystore the APK is signed with a test key. Keeping that key in the cache lets a
       # new build install over the previous one instead of asking to uninstall first.
@@ -147,36 +138,46 @@ jobs:
           name: test-songs
           path: songs
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: MusicFlowModule-android
-          path: module
-
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Start the app on an emulator and play a song in every format
+      # A computer's MusicFlow Play on the same network (the emulator reaches it at 10.0.2.2): the phone imports one
+      # of its playlists while a song plays (the "it crashes when I download and play" case).
+      - name: Start a MusicFlow Play "computer" with a playlist
+        run: |
+          sudo apt-get install -y -qq ffmpeg > /dev/null
+          python -m pip install -q flask mutagen
+          git submodule update --init musicflow
+          mkdir -p pc/Music
+          for n in 1 2 3 4; do ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=$((300 + n * 60)):duration=120" -c:a libmp3lame -b:a 192k "pc/Music/PC Song $n - PC Artist.mp3"; done
+          MFP_DATA_DIR=$PWD/pc/data python ci/pc_server.py pc/Music > pc/server.log 2>&1 &
+          for i in $(seq 1 30); do [ -f pc/link.txt ] && break; sleep 1; done
+          cat pc/link.txt
+
+      - name: Start the app on an emulator (Android 12), play every format, import while playing, swipe it away
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          # Android 14 x86_64 image: it runs ARM64-only apps through its built-in translation.
-          api-level: 34
+          # Android 12 (API 31) x86_64 image: it runs ARM64-only apps through its built-in translation.
+          api-level: 31
           arch: x86_64
           target: google_apis
           ram-size: 4096M
           disk-size: 6G
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: MODULE_DIR=module python3 ci/smoke_test.py MusicFlowPlay-test.apk out songs
+          script: PC_LINK="$(cat pc/link.txt)" python3 ci/smoke_test.py MusicFlowPlay-test.apk out songs
 
       - name: Upload screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: emulator-results
-          path: out/
+          path: |
+            out/
+            pc/server.log
 
   windows:
     runs-on: windows-latest
@@ -190,48 +191,43 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Build MusicFlowPlay.exe and the Download tab's module
+      - name: Build MusicFlowPlay.exe (MusicFlow's search and download inside)
         run: |
-          python -m pip install -q -r requirements.txt truststore pyinstaller
-          $version = (Select-String -Path server/mfp_server.py -Pattern '^VERSION = "(.*)"').Matches[0].Groups[1].Value
-          python ci/make_module.py windows $version MusicFlowModule-windows.zip
-          # MusicFlow (the Download tab) is not in the exe: it is the module above, installed from the Download tab.
-          # The exe has Python's whole standard library, so the module can use any part of it.
+          python -m pip install -q -r requirements.txt -r musicflow/desktop/requirements.txt truststore certifi pyinstaller
+          # MusicFlow's code (desktop/app.py, core/, yt-dlp, ffmpeg) is in the exe: nothing to install, no second page.
           $std = python ci/stdlib_args.py
           python -m PyInstaller --noconfirm --onefile --name MusicFlowPlay --icon NONE --distpath dist --workpath build --specpath build `
-            --paths server --paths musicflow/core --add-data "$PWD\web\*;web" `
-            --exclude-module app --exclude-module yt_dlp --exclude-module imageio_ffmpeg --exclude-module selenium `
+            --paths server --paths musicflow/core --paths musicflow/desktop --add-data "$PWD\web\*;web" `
             --collect-submodules mutagen --collect-submodules flask --collect-submodules werkzeug --collect-submodules certifi `
-            --hidden-import truststore --hidden-import library @std server/mfp_server.py
+            --collect-all yt_dlp --collect-all yt_dlp_ejs --collect-all imageio_ffmpeg --collect-submodules selenium `
+            --hidden-import truststore --hidden-import library --hidden-import app --hidden-import spotify_scan `
+            --hidden-import downloads --hidden-import importer --hidden-import mf_bridge @std server/mfp_server.py
 
       - name: Start the exe and load the page
         shell: pwsh
         run: |
           $env:MFP_DATA_DIR = "$PWD\exe-data"
-          $env:MFP_MODULE_URL = ([System.Uri]"$PWD\MusicFlowModule-windows.zip").AbsoluteUri
           $p = Start-Process dist\MusicFlowPlay.exe -ArgumentList "--no-browser" -PassThru
-          $ok = $false
+          $ok = $false; $tok = ""
           for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
             Start-Sleep 2
-            try { $r = Invoke-WebRequest http://127.0.0.1:5091/ -UseBasicParsing -TimeoutSec 5; $ok = $r.Content -match "MusicFlow Play" } catch {}
+            try { $r = Invoke-WebRequest http://127.0.0.1:5091/ -UseBasicParsing -TimeoutSec 5; $ok = $r.Content -match "MusicFlow Play"
+                  if ($r.Content -match "MFP_TOKEN='([^']+)'") { $tok = $Matches[1] } } catch {}
           }
-          $mf = $false
-          for ($i = 0; $i -lt 90 -and $ok -and -not $mf; $i++) {
-            try { $r = Invoke-WebRequest "http://127.0.0.1:5090/?embed=1" -UseBasicParsing -TimeoutSec 5; $mf = $r.Content -match "mfp-embed" } catch { Start-Sleep 2 }
+          $mf = ""
+          for ($i = 0; $i -lt 60 -and $ok -and $mf -ne "ready" -and $mf -ne "error"; $i++) {
+            Start-Sleep 2
+            try { $s = Invoke-RestMethod http://127.0.0.1:5091/api/state -Headers @{"X-MFP-Token" = $tok} -TimeoutSec 5; $mf = $s.musicflow.state
+                  if ($mf -eq "error") { Write-Host $s.musicflow.error } } catch {}
           }
           Stop-Process $p -Force
           if (-not $ok) { throw "the exe did not serve the player page" }
-          if (-not $mf) { throw "the exe did not start MusicFlow (search and download)" }
+          if ($mf -ne "ready") { throw "MusicFlow's search and download did not load in the exe ($mf)" }
 
       - uses: actions/upload-artifact@v4
         with:
           name: MusicFlowPlay-exe
           path: dist/MusicFlowPlay.exe
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MusicFlowModule-windows
-          path: MusicFlowModule-windows.zip
 
   release:
     needs: [build, windows]
@@ -248,22 +244,14 @@ jobs:
         with:
           name: MusicFlowPlay-exe
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: MusicFlowModule-android
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: MusicFlowModule-windows
-
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.build.outputs.version }}
         run: |
           # A test build (four-part version, e.g. 0.7.2.1) is published for Android only.
-          FILES="MusicFlowPlay.apk MusicFlowModule-android.zip"
-          if [ "$(echo "${TAG#v}" | tr -cd . | wc -c)" -lt 3 ]; then FILES="$FILES MusicFlowPlay.exe MusicFlowModule-windows.zip"; fi
+          FILES="MusicFlowPlay.apk"
+          if [ "$(echo "${TAG#v}" | tr -cd . | wc -c)" -lt 3 ]; then FILES="$FILES MusicFlowPlay.exe"; fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" $FILES --clobber --repo "$GITHUB_REPOSITORY"
           else
