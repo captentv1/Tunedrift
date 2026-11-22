@@ -856,7 +856,7 @@ async function loadLibrary(quiet) {
     mfState(st);
     L.roots = st.folders || L.roots || [];
     if (st.version && !Upd.version) {
-      Upd.version = st.version; if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000);
+      Upd.version = st.version; checkWhatsNew(st.version); if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000);
       if (!window.__testMode) setTimeout(() => api("import/spotify?warm=1").catch(() => {}), 8000);
     }
     L.tracks = new Map(d.tracks.map(t => [t.id, t]));
@@ -1575,7 +1575,7 @@ function dialog(title, bodyHtml, okLabel, onOk, danger) {
   setTimeout(() => (d.querySelector("input") || d.querySelector("[data-ok]")).focus(), 30);
 }
 // Deleting songs: the files are removed from the device (with their .lrc), after a confirmation.
-const fmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.round((b || 0) / 1024) + " KB";
+const fmtSize = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + " GB" : b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.round((b || 0) / 1024) + " KB";
 const shortPath = p => String(p || "").replace(/\\/g, "/").split("/").slice(-3, -1).join("/");
 async function removeFiles(ids) {
   let done = 0;
@@ -1977,6 +1977,100 @@ async function statsView(main, period) {
     <h2 class="sec">History</h2><div class="rows">${recent.map(([t, at], k) => `<div class="row" data-id="${t.id}" data-hist="${k}"><div class="art">${t.cover ? artHtml(t.id) : ico("note")}</div><div class="txt"><div class="t1">${esc(t.title)}</div><div class="t2">${esc(t.artist || UNKNOWN_ARTIST)}</div></div><span class="dur">${esc(when(at))}</span></div>`).join("")}</div>`;
   const top = topSongs.map(([t]) => t.id), hist = recent.map(([t]) => t.id);
   $("#st-box").onclick = e => { const r = e.target.closest("[data-st],[data-hist]"); if (!r) return; if (r.dataset.st) Player.playList(top, +r.dataset.st, false); else Player.playList(hist, +r.dataset.hist, false); };
+}
+
+// What's new: after an update, the changes since the version used before -----------------------------------------
+function mdLite(t) {
+  const inline = x => esc(x).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`(.+?)`/g, "<code>$1</code>");
+  const out = []; let li = null;
+  for (const line of String(t).split("\n")) {
+    if (/^\s*- /.test(line)) { if (li !== null) out.push(`<li>${inline(li)}</li>`); li = line.replace(/^\s*- /, ""); }
+    else if (/^\s+\S/.test(line) && li !== null) li += " " + line.trim();
+    else { if (li !== null) { out.push(`<li>${inline(li)}</li>`); li = null; } if (line.trim()) out.push(`<p style="margin:6px 0">${inline(line.trim())}</p>`); }
+  }
+  if (li !== null) out.push(`<li>${inline(li)}</li>`);
+  return out.join("").replace(/(<li>.*?<\/li>)+/gs, m => `<ul style="margin:6px 0;padding-left:20px">${m}</ul>`);
+}
+async function whatsNew(since, auto) {
+  let d; try { d = await api("changelog" + (since ? "?since=" + encodeURIComponent(since) : "")); } catch { return; }
+  const vs = (d.versions || []).slice(0, auto ? 4 : 6);
+  if (!vs.length) { if (!auto) toast("No notes for this version"); return; }
+  dialog(auto ? "What's new" : "Latest changes", `<div style="max-height:60vh;overflow:auto">${vs.map(v => `<h4 style="margin:12px 0 4px">${esc(v.v)}</h4>${mdLite(v.body)}`).join("")}</div>`, "OK", () => {});
+  const x = $("#dialog [data-x]"); if (x) x.remove();
+}
+function checkWhatsNew(version) {
+  const seen = store.get("seenVersion", "");
+  store.set("seenVersion", version);
+  if (seen && seen !== version && !window.__testMode) setTimeout(() => whatsNew(seen, true), 1500);
+}
+
+// New songs on the phone are added by themselves ---------------------------------------------------------------
+let newFilesTimer = 0, lastAutoScan = Date.now();
+window.MFP_newFiles = () => { clearTimeout(newFilesTimer); newFilesTimer = setTimeout(autoScan, Math.max(4000, 30000 - (Date.now() - lastAutoScan))); };
+async function autoScan() {
+  if (L.scan.running) return;
+  lastAutoScan = Date.now();
+  const before = new Set(L.tracks.keys());
+  try { await api("scan", {}); } catch { return; }
+  for (let k = 0; k < 40; k++) {
+    await new Promise(r => setTimeout(r, 1500));
+    let st; try { st = await api("state"); } catch { return; }
+    if (!(st.scan || {}).running) break;
+  }
+  await loadLibrary(true);
+  const added = [...L.tracks.keys()].filter(id => !before.has(id));
+  if (added.length) toast(added.length === 1 ? `New song added: ${L.tracks.get(added[0]).title}` : `${added.length} new songs added to your library`);
+}
+
+// Storage ---------------------------------------------------------------------------------------------------------
+async function storageView(box) {
+  const total = L.list.reduce((a, t) => a + (t.size_bytes || 0), 0);
+  const byFmt = new Map(); for (const t of L.list) { const f = String(t.format || "?").toUpperCase(); const x = byFmt.get(f) || [0, 0]; byFmt.set(f, [x[0] + 1, x[1] + (t.size_bytes || 0)]); }
+  const big = L.list.slice().sort((a, b) => (b.size_bytes || 0) - (a.size_bytes || 0)).slice(0, 15);
+  const old = nowS() - 60 * DAY, unplayed = L.list.filter(t => !plays(t.id) && (t.mtime || 0) < old && !isFav(t.id));
+  let disks = []; try { disks = (await api("storage")).disks || []; } catch {}
+  const disk = disks[0];
+  box.innerHTML = `<p>Your music uses <b>${fmtSize(total)}</b> (${plural(L.list.length, "song")}).${disk ? ` Free space on the phone: <b>${fmtSize(disk.free)}</b> of ${fmtSize(disk.total)}.` : ""}</p>
+    ${disk ? `<div class="progress-line" style="margin:0 0 12px"><div style="animation:none;width:${Math.round((1 - disk.free / disk.total) * 100)}%"></div></div>` : ""}
+    <div class="chips" style="margin-bottom:12px">${[...byFmt].sort((a, b) => b[1][1] - a[1][1]).map(([f, [n, sz]]) => `<span class="chip">${esc(f)} · ${n} · ${fmtSize(sz)}</span>`).join("")}</div>
+    <details><summary style="cursor:pointer;font-weight:650">Biggest songs</summary><div class="rows" style="margin-top:6px">${big.map(t => `<div class="row" data-id="${t.id}"><div class="txt"><div class="t1">${esc(t.title)}</div><div class="t2">${esc(t.artist || "")} · ${esc(String(t.format || "").toUpperCase())}</div></div><span class="dur">${fmtSize(t.size_bytes)}</span></div>`).join("")}</div></details>
+    <h3 style="margin-top:16px">Never played</h3>
+    ${unplayed.length ? `<p>${plural(unplayed.length, "song")} added more than 2 months ago were never played (${fmtSize(unplayed.reduce((a, t) => a + (t.size_bytes || 0), 0))}). Favorites are left out.</p>
+      <button class="btn" id="st-unp">${ico("trash")} Choose songs to delete…</button>` : `<p>Every song added more than 2 months ago was played at least once.</p>`}
+    <p style="margin-top:14px">The quality of the songs you download (MP3 320, 192, 128, FLAC…) is set in the Import tab.</p>
+    <button class="btn" data-r="download">${ico("download")} Download quality</button>`;
+  const b = $("#st-unp");
+  if (b) b.onclick = () => {
+    dialog("Delete songs never played", `<p class="muted" style="margin:0 0 8px">Checked songs are deleted from your device.</p>
+      <label class="chk"><input type="checkbox" id="unp-all"> All</label><div style="max-height:50vh;overflow:auto">${unplayed.map(t => `<label class="chk"><input type="checkbox" data-unp="${t.id}"> <span>${esc(t.title)} <span class="muted">· ${esc(t.artist || "")} · ${fmtSize(t.size_bytes)}</span></span></label>`).join("")}</div>`,
+      "Delete", async d => { const ids = $$("[data-unp]:checked", d).map(c => c.dataset.unp); if (!ids.length) return false; await removeFiles(ids); storageView(box); }, true);
+    $("#unp-all").onchange = e => { for (const c of $$("[data-unp]")) c.checked = e.target.checked; };
+  };
+}
+
+// Backup and restore ---------------------------------------------------------------------------------------------
+const PREF_KEYS = ["theme", "lite", "textsize", "fx", "sort", "albShort", "albCover", "updatesOff", "impsrc"];
+function prefsOut() { const o = {}; for (const k of PREF_KEYS) { try { const v = localStorage.getItem("mfp." + k); if (v != null) o[k] = v; } catch {} } return o; }
+function prefsIn(o) { for (const k of PREF_KEYS) if (typeof (o || {})[k] === "string") try { localStorage.setItem("mfp." + k, o[k]); } catch {} }
+async function backupView(box) {
+  let d = {files: [], dir: ""}; try { d = await api("backup"); } catch {}
+  const when = at => new Date(at * 1000).toLocaleString(undefined, {day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"});
+  box.innerHTML = `<p>Saves your favorites, playlists, ratings, listening history and settings in a file, in <code>${esc(d.dir)}</code>. Restoring adds them back (on this phone or another one with the same songs); nothing is lost.</p>
+    <div class="actions" style="margin:0 0 10px;flex-wrap:wrap"><button class="btn primary" id="bk-save">${ico("download")} Save a backup now</button>
+      <label class="btn" style="cursor:pointer">${ico("up")} Restore from a file<input type="file" id="bk-file" accept=".json,application/json" hidden></label></div>
+    ${d.files.length ? `<div class="rows">${d.files.map(f => `<div class="row"><div class="txt"><div class="t1">${esc(when(f.at))}</div><div class="t2">${esc(f.name)} · ${fmtSize(f.size)}</div></div><button class="btn" data-bk="${esc(f.name)}">Restore</button></div>`).join("")}</div>` : `<p class="muted">No backup yet.</p>`}`;
+  const done = r => {
+    prefsIn(r.prefs); applyTheme(savedTheme()); FX.s = Object.assign(FX.s, store.get("fx", {})); FX.applyRate();
+    const n = r.restored || {};
+    toast(`Restored: ${plural(n.playlists || 0, "playlist")}, ${plural(n.favorites || 0, "favorite")}, ${plural(n.ratings || 0, "rating")}, ${plural(n.plays || 0, "play")}${n.missing ? ` (${n.missing} songs not found here)` : ""}`);
+    loadLibrary(true);
+  };
+  $("#bk-save").onclick = async () => { try { const r = await api("backup", {save: true, prefs: prefsOut()}); toast("Backup saved"); backupView(box); } catch (e) { toast(e.message); } };
+  for (const b of $$("[data-bk]", box)) b.onclick = () => dialog("Restore this backup?", `<p class="muted" style="margin:0">Its playlists, favorites, ratings, history and settings are added to what is here.</p>`, "Restore", async () => { try { done(await api("backup", {name: b.dataset.bk})); } catch (e) { toast(e.message); } });
+  $("#bk-file").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const data = JSON.parse(await f.text()); done(await api("backup", {data})); } catch (err) { toast(err instanceof SyntaxError ? "This file is not a MusicFlow Play backup." : err.message); }
+  };
 }
 
 /* ---------- Views ---------- */
@@ -2422,7 +2516,7 @@ function foldSections(root) {
   for (const d of $$("div.set", root)) {
     const h = d.querySelector("h3"); if (!h) continue;
     const id = h.textContent, det = document.createElement("details"), sum = document.createElement("summary");
-    det.className = "set"; det.open = id in open ? open[id] : !/^(Theme|Updates|Downloads|Albums|Duplicates|Gestures|Keyboard)/.test(id);
+    det.className = "set"; det.open = id in open ? open[id] : !/^(Theme|Updates|Downloads|Albums|Duplicates|Gestures|Keyboard|Storage|Backup)/.test(id);
     sum.append(h); det.append(sum, ...d.childNodes); d.replaceWith(det);
     det.ontoggle = () => { open[id] = det.open; try { localStorage.setItem("mfp.open", JSON.stringify(open)); } catch {} };
   }
@@ -2699,7 +2793,7 @@ const VIEWS = {
         <label class="chk"><input type="checkbox" id="f-lite"${document.documentElement.classList.contains("lite") ? " checked" : ""}> Battery saver: no blur or moving effects (less heat and battery)</label>
         <div style="display:flex;align-items:center;gap:10px;margin-top:14px"><span>Text size</span><select id="f-zoom">${[["0.9", "Small"], ["1", "Normal"], ["1.12", "Large"], ["1.25", "Very large"]].map(([v, n]) => `<option value="${v}"${(localStorage.getItem("mfp.textsize") || "1") === v ? " selected" : ""}>${n}</option>`).join("")}</select></div></div>
       ${Upd.usable() ? `<div class="set"><h3>Updates</h3><p id="u-state">MusicFlow Play ${esc(st.version)}</p>
-        <button class="btn" id="u-btn">Check for updates</button>
+        <button class="btn" id="u-btn">Check for updates</button> <button class="btn" id="u-new">What's new</button>
         <label class="chk"><input type="checkbox" id="u-auto"${Upd.on() ? " checked" : ""}> Check for new versions and offer them automatically</label></div>` : ""}
       <div class="set"><h3>Downloads</h3><p>Search online from the search box (press Enter) and download with one tap. The root folder,
         the format, your Spotify and YouTube accounts and the playlists to import are in the Import tab.</p>
@@ -2711,6 +2805,8 @@ const VIEWS = {
         <label class="check" style="display:flex;gap:8px;align-items:center;margin:0 0 12px"><input type="checkbox" id="f-alb-cover"${store.get("albCover", true) ? " checked" : ""}> Add the album cover to songs without one</label>
         <button class="btn primary" id="f-alb">${ico("refresh")} Fix albums</button><button class="btn hidden" id="f-alb-stop" style="margin-left:8px">Stop</button>
         <p id="f-alb-state" style="margin:10px 0 0"></p><div class="progress-line hidden" id="f-alb-bar"><div style="animation:none;width:0"></div></div></div>
+      <div class="set"><h3>Storage</h3><div id="st-box"><p>Reading…</p></div></div>
+      <div class="set"><h3>Backup</h3><div id="bk-box"><p>Reading…</p></div></div>
       <div class="set"><h3>Duplicates</h3><div id="dup-box"><p>Find songs saved more than once (same title and main artist, also with “(feat. …)”, and same length) and delete the extra copies.</p>
         <button class="btn" id="dup-find">${ico("search")} Find duplicates</button></div></div>
       <div class="set"><h3>Gestures (phone)</h3><p style="margin:0">Mini player: swipe up to open, left/right for next/previous · Cover: swipe left/right for next/previous, swipe up or double tap for lyrics, one tap for the next song, swipe down to close</p></div>
@@ -2727,6 +2823,8 @@ const VIEWS = {
       <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`}`;
     foldSections(main);
     $("#dup-find").onclick = () => duplicatesView($("#dup-box"));
+    storageView($("#st-box")); backupView($("#bk-box"));
+    const wn = $("#u-new"); if (wn) wn.onclick = () => whatsNew("", false);
     const albShow = st => {
       if (!$("#f-alb")) return;
       const pct = st.total ? Math.round(st.done * 100 / st.total) : 0;
@@ -2947,7 +3045,7 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) store
 window.addEventListener("pagehide", () => store.set("position", audio.currentTime || 0));
 
 applyTheme(savedTheme()); syncModeButtons(); syncMute(); render();
-window.MFP_resume = () => { try { applyTheme(savedTheme()); render(); } catch (e) { console.log("resume", e); } };
+window.MFP_resume = () => { try { applyTheme(savedTheme()); render(); } catch (e) { console.log("resume", e); } if (L.loaded && Date.now() - lastAutoScan > 600000) autoScan(); };
 if (TOKEN) loadLibrary();
 </script>
 </body>
