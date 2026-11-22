@@ -209,6 +209,18 @@ moved = fx1.get("t", 0) - fx0.get("t", 0)
 results["equalizer and speed"] = "ok" if fx.get("ctx") == "running" and fx.get("rate") == 1.25 and moved > 3 and not fx1.get("paused") else f"FAILED {fx} {fx0} {fx1}"
 js("FX.s.eq = false; FX.s.level = false; FX.s.speed = 1; FX.save(); FX.applyRate(); FX.applyAudio(); true")
 
+# Home screen widgets: the five kinds are offered, and a shortcut (shuffle everything) plays.
+providers = adb("shell", "dumpsys", "appwidget", check=False)
+kinds = sorted(set(re.findall(PACKAGE.replace(".", r"\.") + r"/\.?[\w.]*(PlayerWidget|WidgetMini|WidgetCard|WidgetBig|WidgetShortcuts)", providers)))
+print("widgets:", kinds)
+results["widgets offered"] = "ok" if len(kinds) == 5 else f"FAILED {kinds}"
+js("audio.pause(); MFP_widget('shuffleall'); true")
+time.sleep(3)
+w = js("({shuffle: Player.shuffle, n: Player.queue.length, paused: audio.paused})") or {}
+print("widget shortcut:", w)
+results["widget shortcut"] = "ok" if w.get("shuffle") and w.get("n", 0) >= 3 and not w.get("paused") else f"FAILED {w}"
+js("Player.setShuffle(false); true")
+
 js("Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false)")
 
 

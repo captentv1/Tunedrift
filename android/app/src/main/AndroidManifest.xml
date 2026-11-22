@@ -46,11 +46,35 @@
             android:name=".WorkService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
-        <receiver android:name=".PlayerWidget" android:exported="false">
+        <receiver android:name=".PlayerWidget" android:exported="false" android:label="MusicFlow · Bar">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_player_info" />
+        </receiver>
+        <receiver android:name=".WidgetMini" android:exported="false" android:label="MusicFlow · Square">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_mini_info" />
+        </receiver>
+        <receiver android:name=".WidgetCard" android:exported="false" android:label="MusicFlow · Card">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_card_info" />
+        </receiver>
+        <receiver android:name=".WidgetBig" android:exported="false" android:label="MusicFlow · Large">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_big_info" />
+        </receiver>
+        <receiver android:name=".WidgetShortcuts" android:exported="false" android:label="MusicFlow · Shortcuts">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_shortcuts_info" />
         </receiver>
         <provider
             android:name="androidx.core.content.FileProvider"

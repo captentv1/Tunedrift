@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MusicFlow Play</string>
-    <string name="widget_desc">Now playing, with play, next and previous</string>
+    <string name="widget_desc">Bar: the song playing, with play, next and previous</string>
+    <string name="widget_mini_desc">Square: the cover and play/pause</string>
+    <string name="widget_card_desc">Card: cover, controls, shuffle, repeat and favorite</string>
+    <string name="widget_big_desc">Large: the song playing, controls, up next and shortcuts</string>
+    <string name="widget_shortcuts_desc">Shortcuts: shuffle everything, favorites, most played, recently added</string>
 </resources>
