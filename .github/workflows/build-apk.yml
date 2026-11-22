@@ -252,6 +252,10 @@ jobs:
         with:
           name: MusicFlowPlay-exe
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: Tunedrift-play-aab
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -259,7 +263,7 @@ jobs:
         run: |
           # A test build (fourth number not 0, e.g. 0.7.2.1) is published for Android only.
           cp MusicFlowPlay.apk Tunedrift.apk
-          FILES="Tunedrift.apk"
+          FILES="Tunedrift.apk Tunedrift-play.aab"
           # x.y.z.0 is a full release; x.y.z.N (N > 0) is a test build.
           if [ "$(echo "${TAG#v}" | tr -cd . | wc -c)" -lt 3 ] || [ "${TAG##*.}" = "0" ]; then cp MusicFlowPlay.exe Tunedrift.exe; FILES="$FILES Tunedrift.exe"; fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
