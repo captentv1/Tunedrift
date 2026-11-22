@@ -2718,7 +2718,7 @@ const Upd = {
       let d = null;
       try { const c = JSON.parse(localStorage.getItem("mfp.updCache") || "null"); if (auto && c && Date.now() - c.t < 6 * 3600e3) d = c.d; } catch {}
       if (!d) {
-        const r = await fetch("https://api.github.com/repos/captentv1/musicflow-play/releases/latest").catch(() => null);
+        const r = await fetch("https://api.github.com/repos/captentv1/tunedrift/releases/latest").catch(() => null);
         if (r && r.ok) { const x = await r.json(); d = {tag_name: x.tag_name, body: x.body, assets: (x.assets || []).map(a => ({name: a.name, url: a.browser_download_url}))}; }
         else d = await api("latest-version");
         try { localStorage.setItem("mfp.updCache", JSON.stringify({t: Date.now(), d})); } catch {}

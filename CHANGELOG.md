@@ -5,6 +5,8 @@
 - **Playwave is now Tunedrift**, a name no other app uses. New name in the app, the widgets, the notifications
   and the downloads (`Tunedrift.apk`, `Tunedrift.exe`). Your music, playlists, favorites, settings and backups stay
   as they are, and installed apps update on their own.
+- **Updates work again** after the move of the project to github.com/captentv1/tunedrift (the app refused
+  downloads from the new address).
 
 ## 1.3.0.0 — 2026-11-22 (Android and PC)
 

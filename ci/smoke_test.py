@@ -344,7 +344,7 @@ js("window.__upd = []; { const p0 = window.MFP_updateProgress, e0 = window.MFP_u
    " window.MFP_updateProgress = p => { __upd.push(p); p0(p); }; window.MFP_updateError = m => { __upd.push('error: ' + m); e0(m); }; } true")
 latest = js("api('latest-version').catch(e => ({error: e.message}))") or {}
 apk_url = next((a["url"] for a in latest.get("assets") or [] if a.get("name") == "MusicFlowPlay.apk"),
-               "https://github.com/captentv1/musicflow-play/releases/download/v1.1.0.0/MusicFlowPlay.apk")
+               "https://github.com/captentv1/tunedrift/releases/latest/download/MusicFlowPlay.apk")
 print("update from:", apk_url)
 js(f"native('installUpdate', {json.dumps(apk_url)})")
 time.sleep(3)

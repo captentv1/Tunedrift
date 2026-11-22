@@ -6,11 +6,11 @@
 Plays the songs in your folders, with cover art, synced lyrics, playlists and favorites.
 Goes with [MusicFlow](https://github.com/captentv1/musicflow) to download music. No account, no ads.
 
-[![Download for Android](https://img.shields.io/github/v/release/captentv1/musicflow-play?label=Download%20APK&style=for-the-badge)](https://github.com/captentv1/musicflow-play/releases/latest/download/Tunedrift.apk)
-[![Download for Windows](https://img.shields.io/badge/Windows-Download%20.exe-0078d4?style=for-the-badge)](https://github.com/captentv1/musicflow-play/releases/latest/download/Tunedrift.exe)
+[![Download for Android](https://img.shields.io/github/v/release/captentv1/tunedrift?label=Download%20APK&style=for-the-badge)](https://github.com/captentv1/tunedrift/releases/latest/download/Tunedrift.apk)
+[![Download for Windows](https://img.shields.io/badge/Windows-Download%20.exe-0078d4?style=for-the-badge)](https://github.com/captentv1/tunedrift/releases/latest/download/Tunedrift.exe)
 [![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 
-[Website](https://captentv1.github.io/musicflow-play/) · [Download](https://github.com/captentv1/musicflow-play/releases/latest) · [Report a bug](https://github.com/captentv1/musicflow-play/issues)
+[Website](https://captentv1.github.io/tunedrift/) · [Download](https://github.com/captentv1/tunedrift/releases/latest) · [Report a bug](https://github.com/captentv1/tunedrift/issues)
 
 <sub>Formerly “MusicFlow Play” and “Playwave”.</sub>
 
@@ -42,14 +42,14 @@ Tunedrift is a **local music player** (MP3, FLAC, M4A, Opus, OGG, WAV) with **sy
 ## Install
 
 **Android (8.0 or newer, 64-bit)**
-1. Download [`Tunedrift.apk`](https://github.com/captentv1/musicflow-play/releases/latest/download/Tunedrift.apk).
+1. Download [`Tunedrift.apk`](https://github.com/captentv1/tunedrift/releases/latest/download/Tunedrift.apk).
 2. Open it and allow installing from this source.
 3. Allow access to music and notifications. Songs in `Music` and `Download` appear; add other folders in **Settings**.
 
 In **Import**, choose the root folder (e.g. `Music/MusicFlow`) and allow access to all files when asked.
 
 **Windows 10/11**
-1. Download [`Tunedrift.exe`](https://github.com/captentv1/musicflow-play/releases/latest/download/Tunedrift.exe).
+1. Download [`Tunedrift.exe`](https://github.com/captentv1/tunedrift/releases/latest/download/Tunedrift.exe).
 2. Double-click it: the player opens in your browser. (If Windows shows “Windows protected your PC”: *More info › Run anyway*.)
 
 Search, download and **Import** come from MusicFlow's code inside the player. From source they need
@@ -60,8 +60,8 @@ Other systems: run from source, below.
 ## Run from source
 
 ```bash
-git clone --recurse-submodules https://github.com/captentv1/musicflow-play.git
-cd musicflow-play
+git clone --recurse-submodules https://github.com/captentv1/tunedrift.git
+cd tunedrift
 python -m pip install -r requirements.txt
 python server/mfp_server.py              # opens http://127.0.0.1:5091
 ```
