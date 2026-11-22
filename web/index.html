@@ -723,8 +723,11 @@ async function api(path, body, method) {
   if (!r.ok) { const e = new Error(data.error || (r.status === 403 ? "Access refused: open the link shown on the computer that runs the player." : "Server error " + r.status)); e.status = r.status; e.data = data; throw e; }
   return data;
 }
-const audioUrl = id => `/api/audio/${id}?t=${encodeURIComponent(TOKEN)}`;
-const coverUrl = id => `/api/cover/${id}?t=${encodeURIComponent(TOKEN)}&v=${(L.tracks.get(id) || {}).mtime || 0}`;
+const isOnl = id => String(id || "").startsWith("o_");
+const audioUrl = id => { const o = isOnl(id) && (L.tracks.get(id) || {}).online;
+  return o ? `/api/online/stream?t=${encodeURIComponent(TOKEN)}&` + new URLSearchParams(/^https?:\/\/(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//.test(o.url || "") ? {url: o.url} : {title: o.title || "", artist: o.uploader || "", duration: o.duration || ""})
+    : `/api/audio/${id}?t=${encodeURIComponent(TOKEN)}`; };
+const coverUrl = id => isOnl(id) ? ((L.tracks.get(id) || {}).online || {}).thumbnail || "" : `/api/cover/${id}?t=${encodeURIComponent(TOKEN)}&v=${(L.tracks.get(id) || {}).mtime || 0}`;
 
 const NATIVE = window.MFPNative || null;
 const THEMES = [
@@ -835,7 +838,7 @@ const L = {tracks: new Map(), list: [], artists: new Map(), albums: new Map(), f
 function albumKey(t) { return norm(t.album || UNKNOWN_ALBUM) + "\u0001" + norm(t.album ? t.album_artist : ""); }
 
 function buildIndexes() {
-  L.list = [...L.tracks.values()];
+  L.list = [...L.tracks.values()].filter(t => !t.online);
   for (const t of L.list) {
     t._q = norm([t.title, t.artist, t.album, t.album_artist].join(" "));
     t._title = norm(t.title);
@@ -911,7 +914,7 @@ async function loadLibrary(quiet) {
       Upd.version = st.version; checkWhatsNew(st.version); if (Upd.on() && !window.__testMode) setTimeout(() => Upd.check(true), 4000);
       if (!window.__testMode) setTimeout(() => api("import/spotify?warm=1").catch(() => {}), 8000);
     }
-    L.tracks = new Map(d.tracks.map(t => [t.id, t]));
+    L.tracks = new Map([...d.tracks.map(t => [t.id, t]), ...[...L.tracks.values()].filter(t => t.online).map(t => [t.id, t])]);
     L.scan = d.scan || {};
     L.favorites = c.favorites || [];
     L.playlists = c.playlists || [];
@@ -989,6 +992,23 @@ const Player = {
     } else { this.original = null; this.queue = ids.slice(); this.i = start; }
     this.save(); syncModeButtons(); this.load(true);
   },
+  // Songs not downloaded play online at once: they join the queue as online songs until the app restarts.
+  playOnline(items, start = 0) {
+    const ids = [];
+    for (const r of items) {
+      if (!r || !(r.title || r.url)) continue;
+      const have = localMatch(r);
+      if (have) { ids.push(have.id); continue; }
+      const id = "o_" + Math.abs([...((r.url || "") + "|" + r.title + "|" + (r.uploader || ""))].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7)).toString(36);
+      const dur = String(r.duration || ""), m = dur.split(":").map(Number);
+      L.tracks.set(id, {id, title: r.title || "", artist: r.uploader || r.artist || "", artists: [r.uploader || r.artist || ""], album: r.album || "",
+        cover: !!r.thumbnail, length_s: m.length > 1 ? m.reduce((a, x) => a * 60 + (x || 0), 0) : +dur || 0, online: r, format: "", mtime: 0});
+      ids.push(id);
+    }
+    const first = items[start] && (localMatch(items[start]) || {}).id;
+    const k = ids.indexOf(first || ids[Math.min(start, ids.length - 1)]);
+    this.playList(ids, Math.max(0, k), false);
+  },
   load(autoplay, at = 0) {
     const t = this.current();
     if (!t) { audio.removeAttribute("src"); audio.load(); updateNow(); return; }
@@ -999,7 +1019,8 @@ const Player = {
     clearTimeout(this.watchdog);
     // Some Android WebViews never start a streamed M4A/FLAC/OGG file: if nothing is playable after a few
     // seconds, read the whole file and play it from memory instead (what MusicFlow does on Android).
-    if (autoplay) { const id = t.id; this.watchdog = setTimeout(() => { if (this.currentId() === id && audio.readyState < 3 && !audio.error) this.playFromMemory(id, "stalled"); }, 5000); }
+    if (autoplay && t.online) toast(`Loading “${t.title}” online…`);
+    if (autoplay && !t.online) { const id = t.id; this.watchdog = setTimeout(() => { if (this.currentId() === id && audio.readyState < 3 && !audio.error) this.playFromMemory(id, "stalled"); }, 5000); }
     if (autoplay) audio.play().catch(err => { if (err.name !== "AbortError") toast("Tap play to start"); });
     if (autoplay) store.set("recent", [t.id, ...store.get("recent", []).filter(x => x !== t.id)].slice(0, 40));
     updateNow(); loadLyrics(t);
@@ -1127,11 +1148,12 @@ function countPlay() {
   heard.done = true;
   const len = Math.round((t && t.length_s) || audio.duration || heard.secs);
   const old = L.plays[id] || [0, 0, 0]; L.plays[id] = [old[0] + 1, Math.floor(Date.now() / 1000), old[2] + len];
-  api("plays", {id, secs: len}).catch(() => {});
+  if (!isOnl(id)) api("plays", {id, secs: len}).catch(() => {});
 }
 audio.addEventListener("error", () => {
   if (!audio.getAttribute("src")) return;
   const t = Player.current();
+  if (t && t.online) { toast(`“${t.title}” can't be played online right now. Download it instead.`); return; }
   if (t && !audio.src.startsWith("blob:") && Player.blobTried !== t.id) {
     console.log("MFP_ERROR", t.format, t.title, audio.error ? audio.error.code + " " + (audio.error.message || "") : "", "→ trying from memory");
     Player.playFromMemory(t.id, "error"); return;
@@ -1435,6 +1457,7 @@ async function loadLyrics(t) {
   Ly.id = t ? t.id : null; Ly.lines = []; Ly.cur = -1; Ly.data = null;
   box.className = ""; box.innerHTML = `<div class="note">Loading lyrics…</div>`;
   if (!t) { box.innerHTML = `<div class="note">Nothing playing</div>`; return; }
+  if (t.online) { box.innerHTML = `<div class="note">Playing online. Download the song to get its lyrics.</div>`; return; }
   try {
     const d = await api("lyrics/" + t.id);
     if (Ly.id !== t.id) return;
@@ -2426,7 +2449,7 @@ const DL = {
   async refreshLib() {
     try {
       const [d, c] = await Promise.all([api("tracks"), api("collections")]);
-      L.tracks = new Map(d.tracks.map(t => [t.id, t])); L.favorites = c.favorites || []; L.playlists = c.playlists || [];
+      L.tracks = new Map([...d.tracks.map(t => [t.id, t]), ...[...L.tracks.values()].filter(t => t.online).map(t => [t.id, t])]); L.favorites = c.favorites || []; L.playlists = c.playlists || [];
       buildIndexes();
       if (route().name !== "download" && !$("#q").value.trim() && !document.hidden) render();
     } catch {}
@@ -3128,7 +3151,7 @@ function onlineBlock(items, withArtist) {
   const mb = miss.reduce((a, i) => a + mbOf(ONL.items[i].duration), 0);
   return (miss.length > 1 ? `<button class="btn" data-onlall="${miss.join(",")}" style="margin:0 0 8px">${ico("download")} Download ${miss.length} missing (≈ ${Math.round(mb)} MB)</button>` : "")
     + `<div class="rows">${items.map((r, i) => { const have = localMatch(r), k = (r.title || "") + "|" + (r.uploader || "");
-    return `<div class="row orow"><div class="art">${r.thumbnail ? `<img loading="lazy" src="${esc(r.thumbnail)}" alt="" onerror="this.remove()">` : ico("note")}</div>
+    return `<div class="row orow" data-ostream="${base + i}" style="cursor:pointer" title="Play"><div class="art">${r.thumbnail ? `<img loading="lazy" src="${esc(r.thumbnail)}" alt="" onerror="this.remove()">` : ico("note")}</div>
       <div class="txt"><div class="t1">${esc(r.title || "")}</div><div class="t2">${esc([withArtist ? r.uploader : "", r.album, r.duration, r.duration ? "≈ " + mbOf(r.duration).toFixed(1) + " MB" : ""].filter(Boolean).join(" · "))}</div></div>
       ${have ? `<button class="btn" data-oplay="${have.id}">${ico("play")}<span class="hide-s">In your music</span></button>`
         : SRCH.added.has(k) ? `<button class="btn" data-r="download">${ico("download")}<span class="hide-s">Added</span></button>`
@@ -3154,7 +3177,12 @@ function onlDownload(i, btn) {
 }
 document.addEventListener("click", async e => {
   const one = e.target.closest("[data-onl]"), all = e.target.closest("[data-onlall]"), alb = e.target.closest("[data-oalb]");
+  const row = e.target.closest("[data-ostream]");
   if (one) { onlDownload(+one.dataset.onl, one); toast("Downloading. It will appear in your music when it is done."); }
+  else if (row && !e.target.closest("button")) {
+    const rows = [...row.parentElement.querySelectorAll("[data-ostream]")];
+    Player.playOnline(rows.map(x => ONL.items[+x.dataset.ostream]), rows.indexOf(row));
+  }
   else if (all) {
     const ids = all.dataset.onlall.split(",").map(Number); all.disabled = true;
     for (const i of ids) onlDownload(i, document.querySelector(`[data-onl="${i}"]`));
@@ -3238,7 +3266,7 @@ function renderSearch(main, q) {
         <div class="art">${a.photo ? `<img loading="lazy" src="${esc(a.photo)}" alt="" onerror="this.style.display='none'">` : ico("person")}</div>
         <div class="t1">${esc(a.name)}</div><div class="t2">${esc([a.fans ? fmtFans(a.fans) : "", a.albums ? plural(a.albums, "album") : ""].filter(Boolean).join(" · "))}</div></div>`).join("")}</div>`;
     else online = `<h2 class="sec">Online</h2><div class="rows">${o.results.map((r, i) => { const have = localMatch(r), key = (r.title || "") + "|" + (r.uploader || "");
-      return `<div class="row orow" data-oi="${i}"><div class="art">${r.thumbnail ? `<img loading="lazy" src="${esc(r.thumbnail)}" alt="" onerror="this.remove()">` : ico("note")}</div>
+      return `<div class="row orow" data-oi="${i}" style="cursor:pointer" title="Play"><div class="art">${r.thumbnail ? `<img loading="lazy" src="${esc(r.thumbnail)}" alt="" onerror="this.remove()">` : ico("note")}</div>
         <div class="txt"><div class="t1">${esc(r.title || "")}</div><div class="t2">${esc([r.uploader, r.album, fmtDur(r.duration)].filter(Boolean).join(" · "))}</div></div>
         ${have ? `<button class="btn" data-oplay="${have.id}">${ico("play")} In your music</button>`
           : SRCH.added.has(key) ? `<button class="btn" data-r="download">${ico("download")} Added</button>`
@@ -3265,6 +3293,7 @@ document.addEventListener("click", e => {
   if (s1) { SRCH.scope = s1.dataset.sscope; store.set("sscope", SRCH.scope); render(); }
   else if (s2) { SRCH.kind = s2.dataset.skind; render(); }
   else if (pl) Player.playList([pl.dataset.oplay], 0, false);
+  else if (!dl && !e.target.closest("button") && e.target.closest("[data-oi]")) Player.playOnline(SRCH.online.results || [], +e.target.closest("[data-oi]").dataset.oi);
   else if (dl) {
     const r = (SRCH.online.results || [])[+dl.dataset.odl]; if (!r) return;
     MF.download(r); SRCH.added.add((r.title || "") + "|" + (r.uploader || ""));
