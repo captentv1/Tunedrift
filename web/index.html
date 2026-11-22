@@ -407,6 +407,10 @@
     #np-tabs{display:none}
   }
   .np-switch{display:none;justify-content:center;gap:6px}
+  @media (min-width:761px){#app{padding-top:var(--sa-t);box-sizing:border-box}}
+  @media (min-width:761px) and (max-width:1100px){#bar{grid-template-columns:minmax(0,.8fr) minmax(0,1.4fr) auto;gap:8px}#bar .right>*{flex:0 0 auto}#vol{display:none}}
+  @media (orientation:landscape) and (max-height:600px){#np .body{grid-template-columns:minmax(220px,42vw) minmax(0,1fr);gap:24px;padding:4px 24px 10px}
+    #np .left{gap:8px}#np .left .art{width:auto;height:max(110px,calc(100dvh - var(--sa-t) - 250px));align-self:center}#lyr{font-size:18px;line-height:1.35}#np.lyrfull #lyr{font-size:clamp(20px,4vw,30px);padding-top:12vh}}
   @media (prefers-reduced-motion:reduce){#np{transition:none}body.is-playing .row.playing .eq{animation:none}}
 
   /* Themes from MusicFlow (same names and colors) */
@@ -728,6 +732,53 @@ const audioUrl = id => { const o = isOnl(id) && (L.tracks.get(id) || {}).online;
   return o ? `/api/online/stream?t=${encodeURIComponent(TOKEN)}&` + new URLSearchParams(/^https?:\/\/(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//.test(o.url || "") ? {url: o.url} : {title: o.title || "", artist: o.uploader || "", duration: o.duration || ""})
     : `/api/audio/${id}?t=${encodeURIComponent(TOKEN)}`; };
 const coverUrl = id => isOnl(id) ? ((L.tracks.get(id) || {}).online || {}).thumbnail || "" : `/api/cover/${id}?t=${encodeURIComponent(TOKEN)}&v=${(L.tracks.get(id) || {}).mtime || 0}`;
+// DJ mixer (Settings): two decks, crossfader, tempo, cue, saved mixes
+const DJ = {
+  d: [0, 1].map(() => ({a: new Audio(), id: "", vol: 1, cue: 0})), xf: 0.5,
+  fmt: s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00",
+  gain() { const x = this.xf * Math.PI / 2; this.d[0].a.volume = this.d[0].vol * Math.cos(x); this.d[1].a.volume = Math.min(1, this.d[1].vol * Math.sin(x)); },
+  load(k, id, pos) { const D = this.d[k]; D.a.pause(); D.id = id; D.cue = 0; D.a.src = id ? audioUrl(id) : ""; if (pos) D.a.addEventListener("loadedmetadata", () => { D.a.currentTime = pos; }, {once: true}); },
+  mixes: () => store.get("djMixes", []),
+  save() { const name = ($("#dj-name") || {}).value || `Mix ${this.mixes().length + 1}`;
+    store.set("djMixes", [...this.mixes(), {name, xf: this.xf, at: Date.now(), d: this.d.map(D => ({id: D.id, pos: D.a.currentTime || 0, rate: D.a.playbackRate, vol: D.vol, cue: D.cue}))}]);
+    toast("Mix saved"); this.mount(this.box); },
+  open(m) { this.xf = m.xf; m.d.forEach((x, k) => { this.load(k, x.id, x.pos); Object.assign(this.d[k], {vol: x.vol, cue: x.cue}); this.d[k].a.playbackRate = x.rate || 1; }); this.gain(); this.mount(this.box); },
+  mount(box) {
+    if (!box) return; this.box = box;
+    const V = "writing-mode:vertical-lr;direction:rtl;height:120px;width:28px";
+    const opts = sel => `<option value="">Choose a song</option>` + L.list.map(t => `<option value="${t.id}"${t.id === sel ? " selected" : ""}>${esc(t.title)} · ${esc(t.artist || "")}</option>`).join("");
+    const deck = k => { const D = this.d[k]; return `<div style="flex:1;min-width:150px;padding:10px;border-radius:12px;background:rgba(127,127,127,.12)">
+      <b>Deck ${"AB"[k]}</b><select data-dj-song="${k}" style="width:100%;margin:6px 0">${opts(D.id)}</select>
+      <input type="range" data-dj-seek="${k}" min="0" max="1000" value="0" style="width:100%"><div class="muted" data-dj-time="${k}">0:00 / 0:00</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0"><button class="btn" data-dj="back10" data-k="${k}">⏪ 10s</button><button class="btn primary" data-dj="play" data-k="${k}">${D.a.paused ? "▶" : "⏸"}</button><button class="btn" data-dj="fwd10" data-k="${k}">10s ⏩</button>
+        <button class="btn" data-dj="setcue" data-k="${k}">Set cue</button><button class="btn" data-dj="cue" data-k="${k}">↩ Cue</button></div>
+      <div style="display:flex;justify-content:space-around;text-align:center"><label>Tempo<br><input type="range" data-dj-rate="${k}" min="0.5" max="1.5" step="0.01" value="${D.a.playbackRate}" style="${V}"><br><span data-dj-rv="${k}">${Math.round(D.a.playbackRate * 100)}%</span></label>
+        <label>Volume<br><input type="range" data-dj-vol="${k}" min="0" max="1" step="0.01" value="${D.vol}" style="${V}"></label></div></div>`; };
+    box.innerHTML = `<p>Two decks to mix your songs: play, rewind, cue, change the tempo and blend them with the crossfader. Save a mix to find it again.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${deck(0)}${deck(1)}</div>
+      <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><b>A</b><input type="range" id="dj-xf" min="0" max="1" step="0.01" value="${this.xf}" style="flex:1"><b>B</b></label>
+      <div class="addrow"><input class="text" id="dj-name" placeholder="Mix name"><button class="btn primary" id="dj-save">Save the mix</button></div>
+      <div class="rows">${this.mixes().map((m, i) => `<div class="row"><div class="txt"><div class="t1">${esc(m.name)}</div><div class="t2">${m.d.map(x => esc((L.tracks.get(x.id) || {}).title || "-")).join(" ✕ ")}</div></div><button class="btn" data-dj-open="${i}">Load</button><button class="btn" data-dj-del="${i}">Delete</button></div>`).join("")}</div>`;
+    const q = s => $$(s, box);
+    q("[data-dj-song]").forEach(e => e.onchange = () => { this.load(+e.dataset.djSong, e.value); this.mount(box); });
+    q("[data-dj]").forEach(b => b.onclick = () => { const D = this.d[+b.dataset.k], a = D.a, c = b.dataset.dj;
+      if (c === "play") { if (!D.id) return toast("Choose a song first"); if (a.paused) { audio.pause(); this.gain(); a.play().catch(e => toast(e.message)); } else a.pause(); b.textContent = a.paused ? "▶" : "⏸"; }
+      else if (c === "back10") a.currentTime = Math.max(0, a.currentTime - 10);
+      else if (c === "fwd10") a.currentTime = Math.min(a.duration || 0, a.currentTime + 10);
+      else if (c === "setcue") { D.cue = a.currentTime; toast(`Cue at ${this.fmt(D.cue)}`); }
+      else if (c === "cue") a.currentTime = D.cue; });
+    q("[data-dj-seek]").forEach(e => e.oninput = () => { const a = this.d[+e.dataset.djSeek].a; if (a.duration) a.currentTime = e.value / 1000 * a.duration; });
+    q("[data-dj-rate]").forEach(e => e.oninput = () => { const k = +e.dataset.djRate; this.d[k].a.playbackRate = +e.value; q(`[data-dj-rv="${k}"]`)[0].textContent = Math.round(e.value * 100) + "%"; });
+    q("[data-dj-vol]").forEach(e => e.oninput = () => { this.d[+e.dataset.djVol].vol = +e.value; this.gain(); });
+    $("#dj-xf").oninput = e => { this.xf = +e.target.value; this.gain(); };
+    $("#dj-save").onclick = () => this.save();
+    q("[data-dj-open]").forEach(b => b.onclick = () => this.open(this.mixes()[+b.dataset.djOpen]));
+    q("[data-dj-del]").forEach(b => b.onclick = () => { const m = this.mixes(); m.splice(+b.dataset.djDel, 1); store.set("djMixes", m); this.mount(box); });
+    clearInterval(this.t); this.t = setInterval(() => { if (!document.body.contains(box)) return clearInterval(this.t);
+      this.d.forEach((D, k) => { const a = D.a, s = q(`[data-dj-seek="${k}"]`)[0], tm = q(`[data-dj-time="${k}"]`)[0];
+        if (s && a.duration && document.activeElement !== s) s.value = a.currentTime / a.duration * 1000; if (tm) tm.textContent = `${this.fmt(a.currentTime)} / ${this.fmt(a.duration)}`; }); }, 500);
+  },
+};
 
 const NATIVE = window.MFPNative || null;
 const THEMES = [
@@ -3028,6 +3079,7 @@ const VIEWS = {
         <button class="btn primary" id="f-alb">${ico("refresh")} Fix albums</button><button class="btn hidden" id="f-alb-stop" style="margin-left:8px">Stop</button><button class="btn" id="f-alb-art" style="margin-left:8px">${ico("refresh")} Original album covers</button>
         <p id="f-alb-state" style="margin:10px 0 0"></p><div class="progress-line hidden" id="f-alb-bar"><div style="animation:none;width:0"></div></div></div>
       <div class="set"><h3>Storage</h3><div id="st-box"><p>Reading…</p></div></div>
+      <div class="set"><h3>DJ mixer</h3><div id="dj-box"></div></div>
       <div class="set"><h3>Backup</h3><div id="bk-box"><p>Reading…</p></div></div>
       <div class="set"><h3>Duplicates</h3><div id="dup-box"><p>Find songs saved more than once (same title and main artist, also with “(feat. …)”, and same length) and delete the extra copies.</p>
         <button class="btn" id="dup-find">${ico("search")} Find duplicates</button></div></div>
@@ -3045,7 +3097,7 @@ const VIEWS = {
       <div class="set"><h3>Keyboard</h3><p style="margin:0">Space: play/pause · ←/→: back/forward 5 s · Shift + ←/→: previous/next · L: lyrics · Q: queue · /: search</p></div>`}`;
     foldSections(main);
     $("#dup-find").onclick = () => duplicatesView($("#dup-box"));
-    storageView($("#st-box")); backupView($("#bk-box"));
+    storageView($("#st-box")); backupView($("#bk-box")); DJ.mount($("#dj-box"));
     const wn = $("#u-new"); if (wn) wn.onclick = () => whatsNew("", false);
     const albShow = st => {
       if (!$("#f-alb")) return;

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.3.0 — 2026-11-22 (Android and PC)
+
+- **DJ mixer** (Settings): two decks side by side with vertical tempo (50 to 150 %) and volume faders, choose a
+  song on each, play/pause, rewind and forward 10 s, seek bar, cue point and a crossfader. Save a mix (songs,
+  positions, tempo, cue, crossfader) and load it again later.
+- **Landscape fixes:** the cover and the lyrics of Now playing fit on the screen, the top of the app is no longer
+  under the phone status bar, and the mini player buttons no longer overlap.
+
 ## 1.4.2.0 — 2026-11-22 (Android and PC)
 
 - **Google Play build:** a second Android build, `Tunedrift-play.aab`, attached to every release, for the Play Store. It is the same app
