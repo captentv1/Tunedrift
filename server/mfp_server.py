@@ -6,11 +6,13 @@ import io
 import json
 import mimetypes
 import os
+import re
 import secrets
 import shutil
 import socket
 import sys
 import threading
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -18,7 +20,7 @@ import paths
 
 paths.use_core()
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, redirect, request, send_file
 
 import backup
 import discovery
@@ -31,7 +33,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/tunedrift/releases"
-VERSION = "1.4.0.0"
+VERSION = "1.4.1.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -477,6 +479,34 @@ def api_online_browse():
             "playlists": discover.popular_playlists(20)}))
     except Exception as exc:
         return jsonify({"error": f"Online search failed: {exc}"}), 502
+
+
+_STREAMS: dict = {}
+
+
+@app.route("/api/online/stream")
+def api_online_stream():
+    """Plays a song that is not downloaded: finds its best version online and sends the player to its audio stream.
+    ?title=&artist=&duration=, or ?url= for a video address."""
+    a = request.args
+    url, title, artist = (a.get("url") or "").strip(), (a.get("title") or "").strip(), (a.get("artist") or "").strip()
+    key = url or f"{title}|{artist}".lower()
+    if not title and not url:
+        return jsonify({"error": "Missing song."}), 400
+    hit = _STREAMS.get(key)
+    if hit and hit[1] > time.time():
+        return redirect(hit[0])
+    if not re.search(r"(^|\.)(youtube\.com|youtu\.be)/", url):
+        code, r = mf_bridge.call("resolve-track", {"query": f"{title} {artist}".strip(), "title": title, "artist": artist,
+                                                   "duration": a.get("duration") or ""})
+        url = (r.get("result") or {}).get("url") or "" if code == 200 else ""
+        if not url:
+            return jsonify({"error": r.get("error") or "Not found online."}), 404
+    code, r = mf_bridge.call("stream-url", {"url": url})
+    if code != 200 or not r.get("stream_url"):
+        return jsonify({"error": r.get("error") or "No audio stream found."}), 502
+    _STREAMS[key] = (r["stream_url"], time.time() + 3 * 3600)
+    return redirect(r["stream_url"])
 
 
 @app.route("/api/online/category")

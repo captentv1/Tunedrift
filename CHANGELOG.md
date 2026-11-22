@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1.0 — 2026-11-22 (Android and PC)
+
+- **Listen before downloading:** tap a song that is not downloaded (artist page, Browse online, search) and it
+  plays online at once, with the next songs of the list after it. The Download button stays as it was.
+
 ## 1.4.0.0 — 2026-11-22 (Android and PC)
 
 - **Browse online** (Home, the side menu, or "Browse categories" in the search): Popular now, every genre
