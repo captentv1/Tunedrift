@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.5.0 — 2026-11-22 (Android and PC)
+
+- **Lyrics full screen:** the expand button at the top of Now playing shows only the lyrics, big and centered,
+  with play, previous, next and karaoke at the bottom. The screen stays on.
+- **Karaoke:** lowers the voice of the song (works best with songs mixed in stereo), from the lyrics full screen,
+  the ⋯ menu of Now playing or the Sound panel.
+- **Car mode** (Home, or ⋯ in Now playing): big cover, big buttons, the time; swipe the cover for next/previous.
+  The screen stays on.
+- **Android Auto:** MusicFlow Play shows in Android Auto with Shuffle everything, Favorites, Playlists and the
+  Mixes; you can also search by voice. The app must have been opened on the phone first.
+
 ## 1.2.4.0 — 2026-11-22 (Android and PC)
 
 - **Autoplay:** when the queue ends, the music goes on with similar songs from your music (same artists, genre,
