@@ -22,12 +22,12 @@ import downloads
 import importer
 import lyrics
 import mf_bridge
-from collections_store import Collections, JsonStore
+from collections_store import Collections, JsonStore, Plays
 from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_synced
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.2.0.0"
+VERSION = "1.2.1.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -38,6 +38,7 @@ app = Flask(__name__, static_folder=None)
 settings = JsonStore(DATA_DIR / "settings.json", {"folders": list(DEFAULT_FOLDERS), "lan_token": ""})
 index = LibraryIndex(DATA_DIR / "library-index.json")
 collections = Collections(DATA_DIR / "collections.json")
+plays = Plays(DATA_DIR / "plays.json")
 lyrics_cache = JsonStore(DATA_DIR / "lyrics-online.json", {})
 queue = downloads.Queue(DATA_DIR / "downloads.json", index, settings)
 importer.init(queue, collections, settings, DATA_DIR, PORT)
@@ -650,10 +651,31 @@ def api_favorites():
     return jsonify({"favorites": collections.set_favorite(tid, bool(data.get("on", True)))})
 
 
+@app.route("/api/ratings", methods=["POST"])
+def api_ratings():
+    data = request.get_json(silent=True) or {}
+    tid = str(data.get("id") or "")
+    if not tid:
+        return jsonify({"error": "Missing track."}), 400
+    return jsonify({"ratings": collections.set_rating(tid, data.get("stars"))})
+
+
+@app.route("/api/plays", methods=["GET", "POST"])
+def api_plays():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        tid = str(data.get("id") or "")
+        if not tid or len(tid) > 64:
+            return jsonify({"error": "Missing track."}), 400
+        return jsonify({"count": plays.add(tid, data.get("secs"))})
+    since = request.args.get("since")
+    return jsonify(plays.snapshot(int(since) if since and since.isdigit() else None))
+
+
 @app.route("/api/playlists", methods=["POST"])
 def api_playlist_create():
     data = request.get_json(silent=True) or {}
-    return jsonify({"playlist": collections.create(data.get("name") or "", data.get("tracks"))})
+    return jsonify({"playlist": collections.create(data.get("name") or "", data.get("tracks"), data.get("rules"))})
 
 
 @app.route("/api/playlists/<pid>", methods=["POST", "DELETE"])
@@ -663,7 +685,7 @@ def api_playlist(pid):
             return jsonify({"error": "Playlist not found."}), 404
         return jsonify({"ok": True})
     data = request.get_json(silent=True) or {}
-    p = collections.update(pid, data.get("name"), data.get("tracks"), data.get("add"))
+    p = collections.update(pid, data.get("name"), data.get("tracks"), data.get("add"), data.get("rules"))
     if not p:
         return jsonify({"error": "Playlist not found."}), 404
     return jsonify({"playlist": p})
