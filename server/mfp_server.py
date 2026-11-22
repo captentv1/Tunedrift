@@ -528,7 +528,8 @@ def api_album_fix():
         if data.get("stop"):
             album_fix.stop()
         else:
-            album_fix.start(index.all(), _save_album, shorten_names=bool(data.get("shorten")), covers=bool(data.get("covers")))
+            album_fix.start(index.all(), _save_album, shorten_names=bool(data.get("shorten")), covers=bool(data.get("covers")),
+                            covers_only=bool(data.get("covers_only")))
     return jsonify(album_fix.STATUS)
 
 

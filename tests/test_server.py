@@ -310,6 +310,31 @@ def test_album_fix_finds_the_checked_album(monkeypatch):
         "album": "Racine carrée", "album_artist": "Stromae", "track_info": "2", "year": "2013", "cover": ""}
     assert album_fix.find("Papaoutai", "Stromae", 232, "Racine Carrée") == {}
     assert album_fix.find("Papaoutai", "Angèle", 232, "") is None
+    hits["data"][3]["album"]["cover_xl"] = "https://e-cdns-images.dzcdn.net/racine.jpg"
+    assert album_fix.find("Papaoutai", "Stromae", 232, "Racine Carrée", want_cover=True) == {"cover": "https://e-cdns-images.dzcdn.net/racine.jpg"}
+
+
+def test_playlist_songs_get_their_own_cover(monkeypatch):
+    import importer
+    import mf_bridge
+    calls = []
+
+    def call(path, payload=None, method="POST"):
+        calls.append(path)
+        if path == "track-covers":
+            return 200, {"covers": {"spotify:track:a": "https://i.scdn.co/a"}}
+        return 200, {"covers": {"1": "https://i.scdn.co/b"}}
+    monkeypatch.setattr(mf_bridge, "call", call)
+    pl = "https://i.scdn.co/playlist"
+    items = [{"title": "A", "artist": "X", "cover": pl, "uri": "spotify:track:a"},
+             {"title": "B", "artist": "Y", "cover": pl, "uri": "spotify:track:b"},
+             {"title": "C", "artist": "Z", "cover": "https://i.scdn.co/c", "uri": ""}]
+    importer._own_covers(items, "https://open.spotify.com/playlist/xyz")
+    assert [i["cover"] for i in items] == ["https://i.scdn.co/a", "https://i.scdn.co/b", "https://i.scdn.co/c"]
+    album = [{"title": "A", "artist": "X", "cover": pl, "uri": ""}, {"title": "B", "artist": "X", "cover": pl, "uri": ""}]
+    calls.clear()
+    importer._own_covers(album, "https://open.spotify.com/album/xyz")
+    assert not calls and album[0]["cover"] == pl
 
 
 def test_edit_song_info_and_details(client):

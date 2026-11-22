@@ -2999,10 +2999,10 @@ const VIEWS = {
         <div class="actions" style="margin:0"><button class="btn" data-r="download">${ico("download")} Import tab</button></div></div>
       <div class="set"><h3>Albums</h3><p>Finds online the album each song belongs to and writes it in the file (album, album artist,
         track number, year, genre), so songs of the same album are together. The songs of an album are compared with its track list online;
-        other songs are searched one by one. Only sure matches are changed (close title, same artist or album, same length).</p>
+        other songs are searched one by one. Only sure matches are changed (close title, same artist or album, same length). <b>Original album covers</b> only replaces the cover of every song with the full-size original cover of its album.</p>
         <label class="check" style="display:flex;gap:8px;align-items:center;margin:0 0 6px"><input type="checkbox" id="f-alb-short"${store.get("albShort", true) ? " checked" : ""}> Shorten long album names (“… (Original Motion Picture Soundtrack)”, “… (Deluxe Edition)”)</label>
         <label class="check" style="display:flex;gap:8px;align-items:center;margin:0 0 12px"><input type="checkbox" id="f-alb-cover"${store.get("albCover", true) ? " checked" : ""}> Add the album cover to songs without one</label>
-        <button class="btn primary" id="f-alb">${ico("refresh")} Fix albums</button><button class="btn hidden" id="f-alb-stop" style="margin-left:8px">Stop</button>
+        <button class="btn primary" id="f-alb">${ico("refresh")} Fix albums</button><button class="btn hidden" id="f-alb-stop" style="margin-left:8px">Stop</button><button class="btn" id="f-alb-art" style="margin-left:8px">${ico("refresh")} Original album covers</button>
         <p id="f-alb-state" style="margin:10px 0 0"></p><div class="progress-line hidden" id="f-alb-bar"><div style="animation:none;width:0"></div></div></div>
       <div class="set"><h3>Storage</h3><div id="st-box"><p>Reading…</p></div></div>
       <div class="set"><h3>Backup</h3><div id="bk-box"><p>Reading…</p></div></div>
@@ -3027,7 +3027,7 @@ const VIEWS = {
     const albShow = st => {
       if (!$("#f-alb")) return;
       const pct = st.total ? Math.round(st.done * 100 / st.total) : 0;
-      $("#f-alb").disabled = st.running; setHidden($("#f-alb-stop"), !st.running); setHidden($("#f-alb-bar"), !st.running);
+      $("#f-alb").disabled = st.running; if ($("#f-alb-art")) $("#f-alb-art").disabled = st.running; setHidden($("#f-alb-stop"), !st.running); setHidden($("#f-alb-bar"), !st.running);
       $("#f-alb-bar div").style.width = pct + "%";
       $("#f-alb-state").textContent = st.running ? `${st.done} / ${st.total} songs (${pct} %) · ${st.updated} fixed${st.current ? " · " + st.current : ""}`
         : st.total ? `${st.stopped ? "Stopped" : "Done"}: ${st.updated} songs fixed${st.covers ? ` (${st.covers} got a cover)` : ""}, ${st.kept} were already right, ${st.not_found} unchanged (no sure match)${st.errors ? `, ${st.errors} could not be changed (no connection or no access to the file?)` : ""}.` : "";
@@ -3038,6 +3038,7 @@ const VIEWS = {
     $("#f-alb-short").onchange = e => store.set("albShort", e.target.checked);
     $("#f-alb-cover").onchange = e => store.set("albCover", e.target.checked);
     $("#f-alb").onclick = async () => { try { albShow(await api("album-fix", {shorten: $("#f-alb-short").checked, covers: $("#f-alb-cover").checked})); } catch (e) { toast(e.message); } };
+    $("#f-alb-art").onclick = async () => { try { albShow(await api("album-fix", {covers_only: true})); } catch (e) { toast(e.message); } };
     $("#f-alb-stop").onclick = async () => { try { albShow(await api("album-fix", {stop: true})); } catch (e) { toast(e.message); } };
     api("album-fix").then(albShow).catch(() => {});
     mfState(st);

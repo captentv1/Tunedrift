@@ -9,6 +9,10 @@
   with play, pause, previous and next. The music keeps going with the screen off.
 - **Widgets play without opening the app:** play, next, previous and the shortcuts (Shuffle everything,
   Favorites, mixes) start the music in the background, even when the app was closed or ended by Android.
+- **Original album covers** (Settings, Albums): replaces the cover of every song with the full-size original
+  cover of its album. Only sure matches are changed.
+- **Fixed:** a downloaded playlist or radio gave every song the playlist's picture. Each song now gets its own
+  album cover.
 - Old releases from before the name Tunedrift are deleted; releases now only contain `Tunedrift.apk` and
   `Tunedrift.exe`.
 
