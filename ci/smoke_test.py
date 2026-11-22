@@ -343,8 +343,8 @@ js("clearInterval(__lagT); $('#q').value = ''; $('#q').dispatchEvent(new Event('
 js("window.__upd = []; { const p0 = window.MFP_updateProgress, e0 = window.MFP_updateError;"
    " window.MFP_updateProgress = p => { __upd.push(p); p0(p); }; window.MFP_updateError = m => { __upd.push('error: ' + m); e0(m); }; } true")
 latest = js("api('latest-version').catch(e => ({error: e.message}))") or {}
-apk_url = next((a["url"] for a in latest.get("assets") or [] if a.get("name") == "MusicFlowPlay.apk"),
-               "https://github.com/captentv1/tunedrift/releases/latest/download/MusicFlowPlay.apk")
+apk_url = next((a["url"] for n in ("Tunedrift.apk", "MusicFlowPlay.apk") for a in latest.get("assets") or [] if a.get("name") == n),
+               "https://github.com/captentv1/tunedrift/releases/latest/download/Tunedrift.apk")
 print("update from:", apk_url)
 js(f"native('installUpdate', {json.dumps(apk_url)})")
 time.sleep(3)
@@ -464,6 +464,33 @@ for label, leave in (("re-enter after swipe", None), ("re-enter after home", "ho
         continue
     results[label] = tap_settings(label.replace(" ", "-") + "-settings")
     print(label, results[label])
+
+# The widget's play button with the app closed (ended by Android): the music starts in the background, the app's
+# window does not open, and the notification is there.
+js("audio.pause()")
+time.sleep(1)
+adb("shell", "am", "force-stop", PACKAGE, check=False)
+time.sleep(2)
+adb("shell", "am", "start-foreground-service", "-n", f"{PACKAGE}/.PlaybackService", "-a", "com.musicflow.play.COMMAND",
+    "--es", "command", "play", check=False)
+try:
+    ws.close()
+except Exception:
+    pass
+try:
+    sock = wait_for("no page after the widget's play with the app closed", 120, devtools_socket)
+    adb("forward", "tcp:9222", f"localabstract:{sock}")
+    target = wait_for("the page did not load in the background", 180, page_target, every=3)
+    ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=30, suppress_origin=True)
+    wait_for("the music did not start from the widget", 120, lambda: js("typeof audio !== 'undefined' && !audio.paused && audio.currentTime > 1"), every=2)
+    resumed = adb("shell", "dumpsys", "activity", "activities", check=False)
+    window_open = any(f"{PACKAGE}/.MainActivity" in l for l in resumed.splitlines() if "mResumedActivity" in l or "ResumedActivity:" in l)
+    notif = f"pkg={PACKAGE}" in adb("shell", "dumpsys", "notification", "--noredact", check=False)
+    screenshot("widget-play-app-closed")
+    results["widget play with the app closed"] = "ok" if not window_open and notif else f"FAILED window_open={window_open} notification={notif}"
+except Exception as exc:
+    results["widget play with the app closed"] = f"FAILED {exc}"
+print("widget play with the app closed:", results["widget play with the app closed"])
 
 bad = {k: v for k, v in results.items() if v != "ok"}
 finish(f"failed: {bad}" if bad else None)

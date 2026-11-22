@@ -350,3 +350,24 @@ def test_album_match_compares_the_track_list(monkeypatch):
     best = album_fix.match_album(local)[0]
     assert best["id"] == 9 and best["matched"] == 2 and album_fix.sure(local, best)
     assert best["tracks"]["a"]["track_info"] == "2" and best["tracks"]["b"]["track_info"] == "3" and best["year"] == "2021"
+
+
+def test_browse_online_categories(client, monkeypatch):
+    """Browse online: the genres (without "All") and playlists, then the songs of one category, kept an hour."""
+    import types
+    calls = []
+    song = {"title": "Hit", "uploader": "Singer", "album": "Best", "duration": "3:00"}
+    fake = types.SimpleNamespace(
+        genres=lambda: [{"id": 0, "name": "All", "image": ""}, {"id": 98, "name": "Classical", "image": "c.jpg"}],
+        popular_playlists=lambda n: [{"id": 7, "song_title": "Top hits", "cover_art": "", "nb": 50}],
+        top=lambda n: calls.append("top") or [song],
+        genre=lambda gid, n: calls.append(gid) or [dict(song, title="Sonata")])
+    monkeypatch.setitem(sys.modules, "discover", fake)
+    client.mod._BROWSE_CACHE.clear()
+    d = client.get("/api/online/browse", headers=client.h).get_json()
+    assert [g["name"] for g in d["genres"]] == ["Classical"] and d["playlists"][0]["id"] == 7
+    assert client.get("/api/online/category?kind=popular", headers=client.h).get_json()["tracks"][0]["title"] == "Hit"
+    assert client.get("/api/online/category?kind=genre&id=98", headers=client.h).get_json()["tracks"][0]["title"] == "Sonata"
+    client.get("/api/online/category?kind=genre&id=98", headers=client.h)
+    assert calls == ["top", 98]
+    assert client.get("/api/online/category?kind=genre&id=x", headers=client.h).status_code == 400

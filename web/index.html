@@ -159,6 +159,10 @@
   .chip{padding:8px 16px;border-radius:var(--pill);border:1px solid var(--border);background:var(--panel);cursor:pointer;font-weight:650;font-size:13px;white-space:nowrap;color:var(--ink)}
   .chip.on,.chip.active{background:var(--ink);color:var(--bg);border-color:var(--ink)}
   .libtabs{display:none}
+  .chips.scroll{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;margin-left:-2px;padding-left:2px}
+  .chips.scroll::-webkit-scrollbar{display:none}
+  .gcard .art{aspect-ratio:1}.gcard .art img{width:100%;height:100%;object-fit:cover}
+  .br-find{width:100%;max-width:420px;padding:10px 14px;border-radius:var(--pill);border:1px solid var(--border);background:var(--panel);color:var(--ink);font:inherit;margin:0 0 12px}
   .empty{padding:56px 20px;text-align:center;color:var(--muted);line-height:1.6}
   .empty > .i{width:52px;height:52px;margin:0 auto 14px;opacity:.5;display:block}
   .more{height:1px}
@@ -926,6 +930,11 @@ async function loadLibrary(quiet) {
     render();
     updateNow();
     if (widgetWant) { const w = widgetWant; widgetWant = null; setTimeout(() => window.MFP_widget(w), 300); }
+    // Started in the background by a widget or the notification (app closed): do what was asked.
+    try {
+      const p = NATIVE && NATIVE.takePending ? NATIVE.takePending() : "";
+      if (p) setTimeout(() => { const [k, a] = p.split(":"); if (k === "widget") window.MFP_widget(a); else window.MFP_cmd(a, 0); }, 300);
+    } catch (e) { console.log("pending", e); }
     if (L.scan.running) scanWatch(); else clearTimeout(L.scanTimer);
   } catch (e) {
     if (e instanceof TypeError && !L.loaded && ++L.tries < 80) { setTimeout(() => loadLibrary(quiet), 500); return; }
@@ -2261,6 +2270,7 @@ const navItem = n => `<div class="nav" data-r="${n.r}">${ico(n.icon)}${n.label}<
 $("#side").innerHTML = $("#topbar .logo").outerHTML + navItem({r: "home", label: "Home", icon: "home"}) +
   `<div class="nav-h">Library</div>` + LIB.map(navItem).join("") +
   `<div class="nav-h">Your music</div>` + [{r: "playlists", label: "Playlists", icon: "list"}, {r: "stats", label: "Your listening", icon: "chart"}, {r: "queue", label: "Queue", icon: "queue"}, {r: "download", label: "Import", icon: "download"}].map(navItem).join("") +
+  `<div class="mf-only">${navItem({r: "browse", label: "Browse online", icon: "search"})}</div>` +
   `<div class="spacer"></div>` + navItem({r: "settings", label: "Settings", icon: "gear"});
 $("#bottomnav").innerHTML = [{r: "home", label: "Home", icon: "home"}, {r: "folders", label: "Library", icon: "library", lib: 1}, {r: "playlists", label: "Playlists", icon: "list"},
   {r: "download", label: "Import", icon: "download"}].map(n => `<button class="bn" data-r="${n.r}"${n.lib ? " data-lib" : ""}>${ico(n.icon)}${n.label}</button>`).join("");
@@ -2817,6 +2827,7 @@ const VIEWS = {
         <button class="tile" data-go="playlists"><span class="ic">${ico("list")}</span><span style="min-width:0"><div class="t1">Playlists</div><div class="t2">${plural(L.playlists.length, "playlist")}</div></span></button>
         <button class="tile" id="h-car"><span class="ic">${ico("car")}</span><span style="min-width:0"><div class="t1">Car mode</div><div class="t2">Big buttons for the road</div></span></button>
         <button class="tile" data-go="stats"><span class="ic">${ico("chart")}</span><span style="min-width:0"><div class="t1">Your listening</div><div class="t2">Statistics and history</div></span></button>
+        <button class="tile mf-only" data-go="browse"><span class="ic">${ico("search")}</span><span style="min-width:0"><div class="t1">Browse online</div><div class="t2">Popular, genres and playlists</div></span></button>
       </div>
       <div id="rel-box" class="mf-only"></div>
       ${shelf("Your mixes", mixCards())}
@@ -3110,14 +3121,14 @@ async function searchOnline(q) {
 // Online songs of an artist or album (MusicFlow installed): what you have plays, the rest downloads.
 const ONL = {items: []};
 const mbOf = d => { const p = String(d || "").split(":").map(Number); const sec = p.length > 1 ? p[0] * 60 + (p[1] || 0) : +d || 0; return sec * 40 / 1024; };
-function onlineBlock(items) {
+function onlineBlock(items, withArtist) {
   const base = ONL.items.length; ONL.items.push(...items);
   const miss = items.map((r, i) => base + i).filter(i => !localMatch(ONL.items[i]));
   const mb = miss.reduce((a, i) => a + mbOf(ONL.items[i].duration), 0);
   return (miss.length > 1 ? `<button class="btn" data-onlall="${miss.join(",")}" style="margin:0 0 8px">${ico("download")} Download ${miss.length} missing (≈ ${Math.round(mb)} MB)</button>` : "")
     + `<div class="rows">${items.map((r, i) => { const have = localMatch(r), k = (r.title || "") + "|" + (r.uploader || "");
     return `<div class="row orow"><div class="art">${r.thumbnail ? `<img loading="lazy" src="${esc(r.thumbnail)}" alt="" onerror="this.remove()">` : ico("note")}</div>
-      <div class="txt"><div class="t1">${esc(r.title || "")}</div><div class="t2">${esc([r.album, r.duration, r.duration ? "≈ " + mbOf(r.duration).toFixed(1) + " MB" : ""].filter(Boolean).join(" · "))}</div></div>
+      <div class="txt"><div class="t1">${esc(r.title || "")}</div><div class="t2">${esc([withArtist ? r.uploader : "", r.album, r.duration, r.duration ? "≈ " + mbOf(r.duration).toFixed(1) + " MB" : ""].filter(Boolean).join(" · "))}</div></div>
       ${have ? `<button class="btn" data-oplay="${have.id}">${ico("play")}<span class="hide-s">In your music</span></button>`
         : SRCH.added.has(k) ? `<button class="btn" data-r="download">${ico("download")}<span class="hide-s">Added</span></button>`
         : `<button class="btn primary" data-onl="${base + i}" title="Download">${ico("download")}<span class="hide-s">Download</span></button>`}</div>`; }).join("")}</div>`;
@@ -3154,6 +3165,56 @@ document.addEventListener("click", async e => {
     catch (err) { t.innerHTML = `<div class="note">${esc(err.message)}</div>`; }
   }
 });
+// Browse online: Popular, each genre and popular playlists; open one to see its songs and search inside it.
+const BR = {cats: null, lists: new Map()};
+async function browseCats() {
+  if (!BR.cats) BR.cats = await api("online/browse");
+  return BR.cats;
+}
+async function browseList(kind, id) {
+  const key = kind + ":" + (id || "");
+  if (!BR.lists.has(key)) BR.lists.set(key, (await api(`online/category?kind=${kind}${id ? "&id=" + id : ""}`)).tracks || []);
+  return BR.lists.get(key);
+}
+const onlCard = (go, img, name, sub) => `<div class="card gcard" data-go="${esc(go)}"><div class="art">${img ? `<img loading="lazy" src="${esc(img)}" alt="" onerror="this.remove()">` : ico("note")}</div>
+  <div class="t1">${esc(name)}</div>${sub ? `<div class="t2">${esc(sub)}</div>` : ""}</div>`;
+VIEWS.browse = async function (main, arg) {
+  const [kind, id, ...rest] = (arg || "").split("/");
+  let name = rest.join("/"); try { name = decodeURIComponent(name); } catch {}
+  const wait = `<div class="muted">Loading…</div><div class="progress-line"><div></div></div>`;
+  const fail = e => `<div class="note">${ico("close")}<span>${esc(navigator.onLine ? e.message : "You are offline.")}</span><button class="btn" data-go="${esc("browse/" + (arg || ""))}">Try again</button></div>`;
+  if (!mfUrl) { main.innerHTML = `<div class="empty">${ico("search")}Browsing online needs MusicFlow, which is not ready yet.</div>`; return; }
+  const here = () => route().name === "browse" && (route().arg || "") === (arg || "");
+  if (!kind) {
+    main.innerHTML = `<div class="head"><div class="grow"><h1>Browse online</h1><div class="sub">Popular songs, every genre and popular playlists</div></div></div>
+      <div id="br-chips"></div><h2 class="sec">Popular now</h2><div id="br-top">${wait}</div><div id="br-cats"></div>`;
+    browseCats().then(c => { if (!here()) return;
+      $("#br-chips").innerHTML = `<div class="chips scroll"><button class="chip active" data-go="browse/popular">Popular</button>${c.genres.map(g => `<button class="chip" data-go="${esc(`browse/genre/${g.id}/${encodeURIComponent(g.name)}`)}">${esc(g.name)}</button>`).join("")}</div>`;
+      $("#br-cats").innerHTML = `<h2 class="sec">Genres</h2><div class="grid">${c.genres.map(g => onlCard(`browse/genre/${g.id}/${encodeURIComponent(g.name)}`, g.image, g.name)).join("")}</div>
+        ${c.playlists.length ? `<h2 class="sec">Popular playlists</h2><div class="grid">${c.playlists.map(p => onlCard(`browse/playlist/${p.id}/${encodeURIComponent(p.song_title)}`, p.cover_art, p.song_title, p.nb ? plural(p.nb, "song") : "")).join("")}</div>` : ""}`;
+    }).catch(e => { if (here()) $("#br-cats").innerHTML = fail(e); });
+    browseList("popular").then(t => { if (here()) $("#br-top").innerHTML = onlineBlock(t.slice(0, 10), true) + `<button class="btn" data-go="browse/popular" style="margin-top:8px">See all popular songs</button>`; })
+      .catch(e => { if (here()) $("#br-top").innerHTML = fail(e); });
+    return;
+  }
+  const title = kind === "popular" ? "Popular now" : name || (kind === "genre" ? "Genre" : "Playlist");
+  main.innerHTML = `<div class="head"><div class="grow"><div class="sub"><a href="#browse" style="color:inherit">Browse online</a> · ${kind === "playlist" ? "Playlist" : kind === "genre" ? "Genre" : "Chart"}</div><h1>${esc(title)}</h1><div class="sub" id="br-n"></div></div></div>
+    <div id="br-chips"></div><input class="br-find" id="br-find" type="search" placeholder="Search in ${esc(title)}" autocomplete="off"><div id="br-list">${wait}</div>`;
+  if (kind !== "playlist") browseCats().then(c => { if (!here()) return;
+    $("#br-chips").innerHTML = `<div class="chips scroll"><button class="chip${kind === "popular" ? " active" : ""}" data-go="browse/popular">Popular</button>${c.genres.map(g => `<button class="chip${String(g.id) === id ? " active" : ""}" data-go="${esc(`browse/genre/${g.id}/${encodeURIComponent(g.name)}`)}">${esc(g.name)}</button>`).join("")}</div>`;
+    const on = $("#br-chips .chip.active"); if (on) on.scrollIntoView({inline: "center", block: "nearest"});
+  }).catch(() => {});
+  let all = [];
+  const draw = () => {
+    const words = norm($("#br-find").value).split(" ").filter(Boolean);
+    const list = words.length ? all.filter(r => { const k = norm((r.title || "") + " " + (r.uploader || "") + " " + (r.album || "")); return words.every(w => k.includes(w)); }) : all;
+    $("#br-n").textContent = words.length ? `${plural(list.length, "song")} of ${all.length}` : plural(all.length, "song");
+    $("#br-list").innerHTML = list.length ? onlineBlock(list, true) : `<div class="muted">Nothing found in ${esc(title)}.</div>`;
+  };
+  $("#br-find").oninput = draw;
+  try { all = await browseList(kind, id); if (here()) draw(); }
+  catch (e) { if (here()) $("#br-list").innerHTML = fail(e); }
+};
 function renderSearch(main, q) {
   const words = norm(q).split(" ").filter(Boolean);
   const hit = s => words.every(w => s.includes(w));
@@ -3183,7 +3244,7 @@ function renderSearch(main, q) {
           : `<button class="btn primary" data-odl="${i}" title="Download">${ico("download")}<span class="hide-s">Download</span></button>`}</div>`; }).join("")}</div>`;
   }
   main.innerHTML = `<div class="head"><div class="grow"><h1>“${esc(q)}”</h1><div class="sub">${local ? plural(songs.length, "song") + " in your music" : "Online"}</div></div></div>
-    <div class="chips mf-only">${chip("data-sscope", "all", "Everywhere", sc === "all")}${chip("data-sscope", "local", "My music", sc === "local")}${chip("data-sscope", "online", "Online", sc === "online")}</div>
+    <div class="chips mf-only">${chip("data-sscope", "all", "Everywhere", sc === "all")}${chip("data-sscope", "local", "My music", sc === "local")}${chip("data-sscope", "online", "Online", sc === "online")}<button class="chip" data-go="browse">${ico("search")} Browse categories</button></div>
     ${searching ? `<div class="progress-line slim" style="margin:0 0 10px"><div></div></div>` : ""}
     ${local ? `<div class="chips kinds">${[["all", "All"], ["songs", "Songs"], ["artists", "Artists"], ["albums", "Albums"], ["folders", "Folders"]].map(([v, l]) => chip("data-skind", v, l, k === v)).join("")}</div>`
       : `<div class="chips kinds">${[["songs", "Songs"], ["artists", "Artists"]].map(([v, l]) => chip("data-skind", v, l, ok === v)).join("")}</div>`}

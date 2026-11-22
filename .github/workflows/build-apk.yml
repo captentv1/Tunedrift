@@ -251,12 +251,10 @@ jobs:
           TAG: v${{ needs.build.outputs.version }}
         run: |
           # A test build (fourth number not 0, e.g. 0.7.2.1) is published for Android only.
-          # Tunedrift.* are the names people download; MusicFlowPlay.* stay because apps installed before the
-          # rename look for those names to update themselves.
           cp MusicFlowPlay.apk Tunedrift.apk
-          FILES="Tunedrift.apk MusicFlowPlay.apk"
+          FILES="Tunedrift.apk"
           # x.y.z.0 is a full release; x.y.z.N (N > 0) is a test build.
-          if [ "$(echo "${TAG#v}" | tr -cd . | wc -c)" -lt 3 ] || [ "${TAG##*.}" = "0" ]; then cp MusicFlowPlay.exe Tunedrift.exe; FILES="$FILES Tunedrift.exe MusicFlowPlay.exe"; fi
+          if [ "$(echo "${TAG#v}" | tr -cd . | wc -c)" -lt 3 ] || [ "${TAG##*.}" = "0" ]; then cp MusicFlowPlay.exe Tunedrift.exe; FILES="$FILES Tunedrift.exe"; fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" $FILES --clobber --repo "$GITHUB_REPOSITORY"
           else
