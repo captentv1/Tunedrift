@@ -117,6 +117,25 @@ def test_favorites_and_playlists(client):
     assert client.post("/api/favorites", headers=client.h, json={"id": a, "on": False}).get_json()["favorites"] == []
 
 
+def test_ratings_plays_and_smart_playlists(client):
+    t = _tracks(client)
+    a, b = t["First Song"]["id"], t["Untagged"]["id"]
+    assert client.post("/api/ratings", headers=client.h, json={"id": a, "stars": 4}).get_json()["ratings"] == {a: 4}
+    assert client.post("/api/ratings", headers=client.h, json={"id": b, "stars": 9}).get_json()["ratings"][b] == 5
+    assert b not in client.post("/api/ratings", headers=client.h, json={"id": b, "stars": 0}).get_json()["ratings"]
+    assert client.get("/api/collections", headers=client.h).get_json()["ratings"] == {a: 4}
+    client.post("/api/plays", headers=client.h, json={"id": a, "secs": 120})
+    assert client.post("/api/plays", headers=client.h, json={"id": a, "secs": 60}).get_json()["count"][0] == 2
+    d = client.get("/api/plays?since=0", headers=client.h).get_json()
+    assert d["counts"][a][0] == 2 and d["counts"][a][2] == 180 and len(d["log"]) == 2
+    assert "log" not in client.get("/api/plays", headers=client.h).get_json()
+    rules = {"match": "all", "rules": [{"f": "rating", "op": "gt", "v": "3"}, {"f": "bad", "op": "is", "v": "x"}], "limit": "25"}
+    p = client.post("/api/playlists", headers=client.h, json={"name": "Best", "rules": rules}).get_json()["playlist"]
+    assert p["rules"] == {"match": "all", "rules": [{"f": "rating", "op": "gt", "v": "3"}], "sort": "", "limit": 25}
+    p = client.post(f"/api/playlists/{p['id']}", headers=client.h, json={"rules": {"match": "any", "rules": []}}).get_json()["playlist"]
+    assert p["rules"]["match"] == "any"
+
+
 def test_rescan_uses_cache_and_sees_changes(client, tmp_path):
     music = Path(client.mod.settings.data["folders"][0])
     _song(music / "New One.mp3")

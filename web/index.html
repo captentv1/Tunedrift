@@ -210,6 +210,15 @@
   .seek{display:flex;align-items:center;gap:8px;width:100%;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
   .seek span{width:38px;flex:0 0 auto}
   .seek span:first-child{text-align:right}
+  .stars{display:flex;gap:6px;justify-content:center;margin:8px 0}.stars button{background:none;border:0;cursor:pointer;color:var(--muted);padding:4px}
+  .stars button .i{width:34px;height:34px}.stars button.on{color:#f5b301}
+  .rate-s{color:#f5b301;font-size:12px;letter-spacing:1px;margin-left:6px}
+  .statgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:6px 0 16px}
+  .stat{padding:12px 14px;border-radius:var(--r-md);background:var(--panel);border:1px solid var(--border)}.stat b{display:block;font-size:22px}.stat span{color:var(--muted);font-size:12.5px}
+  .bars{display:flex;align-items:flex-end;gap:3px;height:110px;padding:6px 0;margin-bottom:4px}.bars div{flex:1;background:var(--accent);border-radius:4px 4px 0 0;min-height:2px;opacity:.85}
+  .barlbl{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-bottom:14px}
+  .toplist{counter-reset:n}.toplist .row .no{width:26px}
+  .rule{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0}.rule select,.rule input{flex:1 1 90px;min-width:0}#sm-rules .rule [data-f],#sm-rules .rule [data-op]{flex:1 1 40%}#sm-rules .rule [data-v]{flex:1 1 60%}#sm-rules .rule .rb{flex:none}
   #fx-box{max-height:62vh;overflow:auto;margin:0 -4px;padding:0 4px}
   #fx-box h4{margin:16px 0 8px;font-size:14px}#fx-box h4:first-child{margin-top:0}
   #fx-box .chips{display:flex;flex-wrap:wrap;gap:6px}#fx-box .chip{padding:6px 12px}
@@ -609,6 +618,9 @@ try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) =
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-eq" viewBox="0 0 24 24"><path d="M5 3h2v6h2v3H3V9h2zm0 10h2v8H5zm6-10h2v10h2v3H9v-3h2zm0 16h2v2h-2zm6-16h2v3h2v3h-6V6h2zm0 8h2v10h-2z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8zm0 4.5-1.3 2.7-3 .4 2.2 2.1-.5 3 2.6-1.4 2.6 1.4-.5-3 2.2-2.1-3-.4z"/></symbol>
+  <symbol id="i-star-f" viewBox="0 0 24 24"><path d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10h3v10zm6.5 0V4h3v16zM17 20v-7h3v7z"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.7 14.6A8.6 8.6 0 0 1 9.4 3.3 9 9 0 1 0 20.7 14.6z"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M12 3.2 3 10v10.2c0 .7.5 1.2 1.2 1.2H9v-6.2h6v6.2h4.8c.7 0 1.2-.5 1.2-1.2V10z"/></symbol>
   <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 3h3v18H4zm5 0h3v18H9zm5.2 1.3 2.9-.8 4.6 17.1-2.9.8z"/></symbol>
@@ -746,7 +758,7 @@ let toastTimer;
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2600); }
 
 /* ---------- Library ---------- */
-const L = {tracks: new Map(), list: [], artists: new Map(), albums: new Map(), favorites: [], playlists: [], loaded: false, scan: {}, tries: 0};
+const L = {tracks: new Map(), list: [], artists: new Map(), albums: new Map(), favorites: [], playlists: [], ratings: {}, plays: {}, loaded: false, scan: {}, tries: 0};
 
 function albumKey(t) { return norm(t.album || UNKNOWN_ALBUM) + "\u0001" + norm(t.album ? t.album_artist : ""); }
 
@@ -818,7 +830,9 @@ function scanWatch(n = 0) {
 }
 async function loadLibrary(quiet) {
   try {
-    const [d, c, st] = await Promise.all([api("tracks"), api("collections"), api("state").catch(() => ({}))]);
+    const [d, c, st, pl] = await Promise.all([api("tracks"), api("collections"), api("state").catch(() => ({})), api("plays").catch(() => null)]);
+    if (pl) L.plays = pl.counts || {};
+    L.ratings = c.ratings || {};
     mfState(st);
     L.roots = st.folders || L.roots || [];
     if (st.version && !Upd.version) {
@@ -1018,7 +1032,21 @@ audio.addEventListener("durationchange", nativeState);
 audio.addEventListener("play", () => { document.body.classList.add("is-playing"); syncPlayButtons(); nativeState(); });
 audio.addEventListener("pause", () => { document.body.classList.remove("is-playing"); syncPlayButtons(); store.set("position", audio.currentTime); nativeState(); });
 audio.addEventListener("ended", () => { if (FX.sleepAtEnd()) return; Player.next(true); });
-audio.addEventListener("timeupdate", () => updateTime());
+audio.addEventListener("timeupdate", () => { updateTime(); countPlay(); });
+let heard = {id: null, secs: 0, last: 0, done: false};
+function countPlay() {
+  const id = Player.currentId(); if (!id) return;
+  const c = audio.currentTime || 0;
+  if (heard.id !== id || c < heard.last - 1 && c < 2) heard = {id, secs: 0, last: c, done: heard.id === id && c >= 2 ? heard.done : false};
+  const d = c - heard.last; heard.last = c;
+  if (d > 0 && d < 3) heard.secs += d;
+  const t = L.tracks.get(id), need = Math.min(30, ((t && t.length_s) || audio.duration || 60) / 2);
+  if (heard.done || heard.secs < need) return;
+  heard.done = true;
+  const len = Math.round((t && t.length_s) || audio.duration || heard.secs);
+  const old = L.plays[id] || [0, 0, 0]; L.plays[id] = [old[0] + 1, Math.floor(Date.now() / 1000), old[2] + len];
+  api("plays", {id, secs: len}).catch(() => {});
+}
 audio.addEventListener("error", () => {
   if (!audio.getAttribute("src")) return;
   const t = Player.current();
@@ -1749,6 +1777,7 @@ function trackMenu(anchor, id, ctx) {
     {label: "Play next", icon: "playnext", run: () => Player.playNext([id])},
     {label: "Add to queue", icon: "queue", run: () => Player.addToQueue([id])},
     {label: isFav(id) ? "Remove from favorites" : "Add to favorites", icon: isFav(id) ? "heart-f" : "heart", run: () => toggleFav(id)},
+    {label: stars(id) ? `Rating: ${"★".repeat(stars(id))}` : "Rate…", icon: "star", run: () => rateSong(id)},
     {label: "Edit info…", icon: "edit", run: () => editSong(id)},
     {label: "Details", icon: "note", run: () => songDetails(id)},
     "-", {head: "Add to playlist"},
@@ -1776,15 +1805,168 @@ function listMenu(anchor, ids, extra = []) {
   ]);
 }
 
+// Ratings (1 to 5 stars) ---------------------------------------------------------------------------------------
+function rateSong(id) {
+  const t = L.tracks.get(id); if (!t) return;
+  let n = stars(id);
+  const draw = d => { for (const b of $$(".stars button", d)) { const on = +b.dataset.s <= n; b.classList.toggle("on", on); b.innerHTML = ico(on ? "star-f" : "star"); } };
+  dialog("Rate this song", `<p class="muted" style="margin:0;text-align:center">${esc(t.title)} · ${esc(t.artist || UNKNOWN_ARTIST)}</p>
+    <div class="stars">${[1, 2, 3, 4, 5].map(k => `<button data-s="${k}" aria-label="${k} stars"></button>`).join("")}</div>`, "Save", async () => {
+    try { L.ratings = (await api("ratings", {id, stars: n})).ratings; toast(n ? `${"★".repeat(n)} saved` : "Rating removed"); if (["songs", "mix", "playlist"].includes(route().name)) render(); }
+    catch (e) { toast(e.message); }
+  });
+  const d = $("#dialog"); draw(d);
+  $(".stars", d).onclick = e => { const b = e.target.closest("[data-s]"); if (!b) return; n = +b.dataset.s === n ? 0 : +b.dataset.s; draw(d); };
+}
+
+// Automatic mixes ----------------------------------------------------------------------------------------------
+const DAY = 86400, nowS = () => Math.floor(Date.now() / 1000);
+const MIXES = {
+  top: {name: "Most played", sub: "Your 50 most played songs", list: () => L.list.filter(t => plays(t.id)).sort((a, b) => plays(b.id) - plays(a.id) || lastPlayed(b.id) - lastPlayed(a.id)).slice(0, 50)},
+  week: {name: "On repeat", sub: "Most played in the last 2 weeks", list: () => L.list.filter(t => plays(t.id) >= 2 && lastPlayed(t.id) > nowS() - 14 * DAY).sort((a, b) => plays(b.id) - plays(a.id)).slice(0, 40)},
+  new: {name: "Recently added", sub: "The last 50 songs added", list: () => L.list.slice().sort((a, b) => b.mtime - a.mtime).slice(0, 50)},
+  rediscover: {name: "Rediscover", sub: "Songs you liked but haven't played in a month", list: () => shuffled(L.list.filter(t => plays(t.id) >= 2 && lastPlayed(t.id) < nowS() - 30 * DAY)).slice(0, 50)},
+  never: {name: "Never played", sub: "Songs you have but never listened to", list: () => shuffled(L.list.filter(t => !plays(t.id))).slice(0, 50)},
+  rated: {name: "Top rated", sub: "4 and 5 stars", list: () => L.list.filter(t => stars(t.id) >= 4).sort((a, b) => stars(b.id) - stars(a.id) || plays(b.id) - plays(a.id))},
+  favmix: {name: "Favorites mix", sub: "Your favorites, shuffled", list: () => shuffled(L.favorites.map(id => L.tracks.get(id)).filter(Boolean)).slice(0, 60)},
+};
+const mixCache = {};
+function mixTracks(id) {
+  const m = MIXES[id]; if (!m) return [];
+  // the shuffled mixes keep their order while you look at them
+  const c = mixCache[id]; if (c && c.n === L.list.length && Date.now() - c.at < 30 * 60000) return c.list.map(x => L.tracks.get(x)).filter(Boolean);
+  const list = m.list(); mixCache[id] = {n: L.list.length, at: Date.now(), list: list.map(t => t.id)}; return list;
+}
+function mixCards() {
+  return Object.entries(MIXES).map(([id, m]) => { const ts = mixTracks(id); return ts.length ? {go: "mix/" + id, cover: (ts.find(t => t.cover) || {}).id, icon: "shuffle", name: m.name, sub: plural(ts.length, "song")} : null; }).filter(Boolean);
+}
+
+// Smart playlists: songs chosen by rules, updated by themselves -------------------------------------------------
+const RULE_FIELDS = {
+  title: ["Title", "text"], artist: ["Artist", "text"], album: ["Album", "text"], genre: ["Genre", "text"], folder: ["Folder", "text"], format: ["Format", "text"],
+  year: ["Year", "num"], length: ["Length (min)", "num"], rating: ["Stars", "num"], plays: ["Plays", "num"],
+  played: ["Last played", "date"], added: ["Added", "date"], favorite: ["Favorite", "bool"],
+};
+const RULE_OPS = {text: [["has", "contains"], ["lacks", "does not contain"], ["is", "is"], ["not", "is not"]], num: [["gt", "more than"], ["lt", "less than"], ["is", "is"]],
+  date: [["within", "in the last (days)"], ["before", "not in the last (days)"]], bool: [["is", "is"]]};
+function ruleValue(t, f) {
+  switch (f) {
+    case "title": return t.title; case "artist": return (t.artists || []).join(" ") + " " + (t.artist || ""); case "album": return t.album; case "genre": return t.genre;
+    case "folder": return t.path; case "format": return t.format;
+    case "year": return t.year || 0; case "length": return (t.length_s || 0) / 60; case "rating": return stars(t.id); case "plays": return plays(t.id);
+    case "played": return lastPlayed(t.id); case "added": return t.mtime || 0; case "favorite": return isFav(t.id);
+  }
+  return "";
+}
+function ruleOk(t, r) {
+  const kind = (RULE_FIELDS[r.f] || [])[1], v = ruleValue(t, r.f);
+  if (kind === "text") { const a = norm(v), b = norm(r.v); return r.op === "has" ? a.includes(b) : r.op === "lacks" ? !a.includes(b) : r.op === "is" ? a === b : a !== b; }
+  if (kind === "num") { const b = parseFloat(String(r.v).replace(",", ".")) || 0; return r.op === "gt" ? v > b : r.op === "lt" ? v < b : Math.round(v) === Math.round(b); }
+  if (kind === "date") { const since = nowS() - (parseFloat(r.v) || 0) * DAY; return r.op === "within" ? v >= since : v < since; }
+  if (kind === "bool") return v === (r.v !== "no");
+  return true;
+}
+function smartTracks(p) {
+  const R = p.rules || {}, rules = R.rules || [];
+  let list = L.list.filter(t => !rules.length || (R.match === "any" ? rules.some(r => ruleOk(t, r)) : rules.every(r => ruleOk(t, r))));
+  list = R.sort === "random" ? shuffled(list) : sortedSongs(list, R.sort || "title");
+  return R.limit ? list.slice(0, R.limit) : list;
+}
+const playlistTracks = p => p.rules ? smartTracks(p) : p.tracks.map(id => L.tracks.get(id)).filter(Boolean);
+function smartEditor(p) {
+  const R = p ? JSON.parse(JSON.stringify(p.rules)) : {match: "all", rules: [{f: "rating", op: "gt", v: "3"}], sort: "plays", limit: 0};
+  const ruleHtml = (r, k) => { const kind = RULE_FIELDS[r.f][1];
+    return `<div class="rule" data-k="${k}"><select data-f>${Object.entries(RULE_FIELDS).map(([f, [l]]) => `<option value="${f}"${f === r.f ? " selected" : ""}>${l}</option>`).join("")}</select>
+      <select data-op>${RULE_OPS[kind].map(([o, l]) => `<option value="${o}"${o === r.op ? " selected" : ""}>${l}</option>`).join("")}</select>
+      ${kind === "bool" ? `<select data-v><option value="yes"${r.v !== "no" ? " selected" : ""}>yes</option><option value="no"${r.v === "no" ? " selected" : ""}>no</option></select>` : `<input class="text" data-v value="${esc(r.v)}" inputmode="${kind === "text" ? "text" : "decimal"}">`}
+      <button class="rb iconbtn" data-del title="Remove">${ico("close")}</button></div>`; };
+  const body = () => `<input class="text" id="sm-name" maxlength="120" placeholder="Name" value="${esc(p ? p.name : "My smart playlist")}">
+    <p style="margin:12px 0 4px">Songs that match <select id="sm-match"><option value="all"${R.match !== "any" ? " selected" : ""}>all the rules</option><option value="any"${R.match === "any" ? " selected" : ""}>any rule</option></select></p>
+    <div id="sm-rules">${R.rules.map(ruleHtml).join("")}</div><button class="btn" id="sm-add">${ico("plus")} Add a rule</button>
+    <div class="rule" style="margin-top:12px"><span>Order</span><select id="sm-sort">${[["plays", "Most played"], ["played", "Recently played"], ["rating", "Rating"], ["recent", "Recently added"], ["title", "Title"], ["artist", "Artist"], ["year", "Year"], ["random", "Random"]].map(([v, l]) => `<option value="${v}"${R.sort === v ? " selected" : ""}>${l}</option>`).join("")}</select>
+      <span>at most</span><input class="text" id="sm-limit" inputmode="numeric" placeholder="all" value="${R.limit || ""}" style="flex:0 1 70px"><span>songs</span></div>
+    <p class="muted" id="sm-count" style="margin:10px 0 0"></p>`;
+  const read = d => {
+    R.match = $("#sm-match", d).value; R.sort = $("#sm-sort", d).value; R.limit = parseInt($("#sm-limit", d).value) || 0;
+    R.rules = $$("#sm-rules .rule", d).map(row => ({f: $("[data-f]", row).value, op: $("[data-op]", row).value, v: $("[data-v]", row).value}));
+  };
+  const count = d => { read(d); $("#sm-count", d).textContent = plural(smartTracks({rules: R}).length, "song") + " now"; };
+  dialog(p ? "Edit smart playlist" : "New smart playlist", `<div id="sm-box" style="max-height:62vh;overflow:auto">${body()}</div>`, p ? "Save" : "Create", async d => {
+    read(d); const name = $("#sm-name", d).value.trim() || "Smart playlist";
+    try {
+      if (p) { Object.assign(p, (await api("playlists/" + p.id, {name, rules: R})).playlist); render(); }
+      else { const n = (await api("playlists", {name, rules: R})).playlist; L.playlists.push(n); go("playlist/" + n.id); }
+    } catch (e) { toast(e.message); return false; }
+  });
+  const d = $("#dialog"); count(d);
+  d.addEventListener("change", e => {
+    const row = e.target.closest("#sm-rules .rule");
+    if (row && e.target.matches("[data-f]")) { read(d); const r = R.rules[+row.dataset.k]; r.op = RULE_OPS[RULE_FIELDS[r.f][1]][0][0]; r.v = RULE_FIELDS[r.f][1] === "bool" ? "yes" : ""; $("#sm-rules", d).innerHTML = R.rules.map(ruleHtml).join(""); }
+    count(d);
+  });
+  d.addEventListener("input", () => count(d));
+  d.addEventListener("click", e => {
+    if (e.target.closest("#sm-add")) { read(d); R.rules.push({f: "genre", op: "has", v: ""}); $("#sm-rules", d).innerHTML = R.rules.map(ruleHtml).join(""); count(d); }
+    const del = e.target.closest("[data-del]"); if (del) { read(d); R.rules.splice(+del.closest(".rule").dataset.k, 1); $("#sm-rules", d).innerHTML = R.rules.map(ruleHtml).join(""); count(d); }
+  });
+}
+
+// Listening statistics and history -------------------------------------------------------------------------------
+async function statsView(main, period) {
+  period = ["week", "month", "year", "all"].includes(period) ? period : "week";
+  const span = {week: 7, month: 30, year: 365, all: 0}[period], since = span ? nowS() - span * DAY : 0;
+  main.innerHTML = `<div class="head"><div class="grow"><h1>Your listening</h1><div class="sub">Statistics and history</div></div></div>
+    <div class="chips" style="margin-bottom:14px">${[["week", "7 days"], ["month", "30 days"], ["year", "12 months"], ["all", "All time"]].map(([v, l]) => `<button class="chip${v === period ? " active" : ""}" data-go="stats/${v}">${l}</button>`).join("")}</div>
+    <div id="st-box"><div class="progress-line"><div></div></div></div>`;
+  let d; try { d = await api("plays?since=" + since); } catch (e) { $("#st-box").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  if (route().name !== "stats") return;
+  L.plays = d.counts || L.plays;
+  const log = d.log || [];
+  const songN = new Map(), artN = new Map(), genN = new Map(); let secs = 0;
+  for (const [, id, s] of log) {
+    secs += s; songN.set(id, (songN.get(id) || 0) + 1);
+    const t = L.tracks.get(id); if (!t) continue;
+    for (const a of (t.artists && t.artists.length ? t.artists.slice(0, 1) : [t.artist || UNKNOWN_ARTIST])) artN.set(a, (artN.get(a) || 0) + 1);
+    if (t.genre) genN.set(t.genre, (genN.get(t.genre) || 0) + 1);
+  }
+  if (!log.length) { $("#st-box").innerHTML = `<div class="empty">${ico("chart")}Nothing listened to in this period yet.<br>A song counts after 30 seconds.</div>`; return; }
+  const hours = secs >= 3600 ? `${Math.floor(secs / 3600)} h ${Math.floor(secs / 60) % 60} min` : `${Math.round(secs / 60)} min`;
+  // plays per day (7 or 30 days) or per month
+  const days = span && span <= 30 ? span : 12, buckets = new Array(days).fill(0), labels = [];
+  const now = new Date();
+  if (span && span <= 30) {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1).getTime() / 1000;
+    for (const [at] of log) { const k = Math.floor((at - start) / DAY); if (k >= 0 && k < days) buckets[k]++; }
+    labels.push(new Date(start * 1000).toLocaleDateString(undefined, {day: "numeric", month: "short"}), "Today");
+  } else {
+    for (const [at] of log) { const dt = new Date(at * 1000), k = days - 1 - ((now.getFullYear() - dt.getFullYear()) * 12 + now.getMonth() - dt.getMonth()); if (k >= 0 && k < days) buckets[k]++; }
+    labels.push(new Date(now.getFullYear(), now.getMonth() - 11, 1).toLocaleDateString(undefined, {month: "short", year: "numeric"}), "This month");
+  }
+  const max = Math.max(1, ...buckets);
+  const topSongs = [...songN].sort((a, b) => b[1] - a[1]).map(([id, n]) => [L.tracks.get(id), n]).filter(x => x[0]).slice(0, 10);
+  const topArt = [...artN].sort((a, b) => b[1] - a[1]).slice(0, 10), topGen = [...genN].sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const recent = log.slice(-60).reverse().map(([at, id]) => [L.tracks.get(id), at]).filter(x => x[0]);
+  const when = at => { const dt = new Date(at * 1000), today = new Date().toDateString(); return (dt.toDateString() === today ? "" : dt.toLocaleDateString(undefined, {day: "numeric", month: "short"}) + " ") + dt.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"}); };
+  $("#st-box").innerHTML = `<div class="statgrid"><div class="stat"><b>${hours}</b><span>listened</span></div><div class="stat"><b>${log.length}</b><span>plays</span></div>
+      <div class="stat"><b>${songN.size}</b><span>different songs</span></div><div class="stat"><b>${artN.size}</b><span>artists</span></div></div>
+    <div class="bars">${buckets.map(n => `<div style="height:${Math.round(n / max * 100)}%" title="${n}"></div>`).join("")}</div><div class="barlbl"><span>${esc(labels[0])}</span><span>${esc(labels[1])}</span></div>
+    <h2 class="sec">Top songs</h2><div class="rows toplist">${topSongs.map(([t, n], k) => `<div class="row" data-id="${t.id}" data-st="${k}"><div class="no">${k + 1}</div><div class="art">${t.cover ? artHtml(t.id) : ico("note")}</div><div class="txt"><div class="t1">${esc(t.title)}</div><div class="t2">${esc(t.artist || UNKNOWN_ARTIST)}</div></div><span class="dur">${plural(n, "play")}</span></div>`).join("")}</div>
+    <h2 class="sec">Top artists</h2><div class="rows">${topArt.map(([a, n], k) => `<div class="row" data-go="artist/${esc(encodeURIComponent(norm(a)))}"><div class="no">${k + 1}</div><div class="art" style="border-radius:50%">${(L.artists.get(norm(a)) || {}).cover ? artHtml(L.artists.get(norm(a)).cover) : ico("person")}</div><div class="txt"><div class="t1">${esc(a)}</div></div><span class="dur">${plural(n, "play")}</span></div>`).join("")}</div>
+    ${topGen.length ? `<h2 class="sec">Top genres</h2><div class="chips">${topGen.map(([g, n]) => `<span class="chip">${esc(g)} · ${n}</span>`).join("")}</div>` : ""}
+    <h2 class="sec">History</h2><div class="rows">${recent.map(([t, at], k) => `<div class="row" data-id="${t.id}" data-hist="${k}"><div class="art">${t.cover ? artHtml(t.id) : ico("note")}</div><div class="txt"><div class="t1">${esc(t.title)}</div><div class="t2">${esc(t.artist || UNKNOWN_ARTIST)}</div></div><span class="dur">${esc(when(at))}</span></div>`).join("")}</div>`;
+  const top = topSongs.map(([t]) => t.id), hist = recent.map(([t]) => t.id);
+  $("#st-box").onclick = e => { const r = e.target.closest("[data-st],[data-hist]"); if (!r) return; if (r.dataset.st) Player.playList(top, +r.dataset.st, false); else Player.playList(hist, +r.dataset.hist, false); };
+}
+
 /* ---------- Views ---------- */
 // Library: the views reached from the Library tab on phones (chips at the top) and listed in the side panel.
 const LIB = [{r: "folders", label: "Folders", icon: "folder"}, {r: "songs", label: "Songs", icon: "note"}, {r: "artists", label: "Artists", icon: "person"},
   {r: "albums", label: "Albums", icon: "album"}, {r: "favorites", label: "Favorites", icon: "heart"}];
-const GROUP = {folder: "folders", artist: "artists", album: "albums", playlist: "playlists"};
+const GROUP = {folder: "folders", artist: "artists", album: "albums", playlist: "playlists", mix: "playlists"};
 const navItem = n => `<div class="nav" data-r="${n.r}">${ico(n.icon)}${n.label}</div>`;
 $("#side").innerHTML = $("#topbar .logo").outerHTML + navItem({r: "home", label: "Home", icon: "home"}) +
   `<div class="nav-h">Library</div>` + LIB.map(navItem).join("") +
-  `<div class="nav-h">Your music</div>` + [{r: "playlists", label: "Playlists", icon: "list"}, {r: "queue", label: "Queue", icon: "queue"}, {r: "download", label: "Import", icon: "download"}].map(navItem).join("") +
+  `<div class="nav-h">Your music</div>` + [{r: "playlists", label: "Playlists", icon: "list"}, {r: "stats", label: "Your listening", icon: "chart"}, {r: "queue", label: "Queue", icon: "queue"}, {r: "download", label: "Import", icon: "download"}].map(navItem).join("") +
   `<div class="spacer"></div>` + navItem({r: "settings", label: "Settings", icon: "gear"});
 $("#bottomnav").innerHTML = [{r: "home", label: "Home", icon: "home"}, {r: "folders", label: "Library", icon: "library", lib: 1}, {r: "playlists", label: "Playlists", icon: "list"},
   {r: "download", label: "Import", icon: "download"}].map(n => `<button class="bn" data-r="${n.r}"${n.lib ? " data-lib" : ""}>${ico(n.icon)}${n.label}</button>`).join("");
@@ -1858,7 +2040,8 @@ function tracksOf(target) {
   if (kind === "folder") { const f = L.folders.get(key); return f ? f.all.slice().sort((a, b) => cmpName(a.path, b.path)) : []; }
   if (kind === "album") return (L.albums.get(key) || {}).tracks || [];
   if (kind === "artist") { const a = L.artists.get(key); return a ? sortedSongs(a.tracks, "album") : []; }
-  if (kind === "playlist") { const p = L.playlists.find(x => x.id === key); return p ? p.tracks.map(id => L.tracks.get(id)).filter(Boolean) : []; }
+  if (kind === "playlist") { const p = L.playlists.find(x => x.id === key); return p ? playlistTracks(p) : []; }
+  if (kind === "mix") return mixTracks(key);
   if (kind === "favorites") return L.favorites.map(id => L.tracks.get(id)).filter(Boolean);
   return [];
 }
@@ -1869,12 +2052,20 @@ document.addEventListener("click", e => {
   if (ids.length) Player.playList(ids, 0, false); else toast("Nothing to play here");
 }, true);
 
-const SORTS = {title: "Title", artist: "Artist", album: "Album", recent: "Recently added"};
+const SORTS = {title: "Title", artist: "Artist", album: "Album", recent: "Recently added", year: "Year", genre: "Genre", length: "Length",
+  plays: "Most played", played: "Recently played", rating: "Rating"};
+const plays = id => (L.plays[id] || [0, 0, 0])[0], lastPlayed = id => (L.plays[id] || [0, 0, 0])[1], stars = id => L.ratings[id] || 0;
 function sortedSongs(list = L.list, by = store.get("sort", "title")) {
   const a = list.slice(), cmp = (x, y) => x.localeCompare(y, undefined, {sensitivity: "base", numeric: true});
   if (by === "artist") a.sort((x, y) => cmp(x.artist || "\uffff", y.artist || "\uffff") || cmp(x.album, y.album) || (x.track_no - y.track_no) || cmp(x.title, y.title));
   else if (by === "album") a.sort((x, y) => cmp(x.album || "\uffff", y.album || "\uffff") || (x.track_no - y.track_no) || cmp(x.title, y.title));
   else if (by === "recent") a.sort((x, y) => y.mtime - x.mtime);
+  else if (by === "year") a.sort((x, y) => (y.year || 0) - (x.year || 0) || cmp(x.album, y.album) || (x.track_no - y.track_no));
+  else if (by === "genre") a.sort((x, y) => cmp(x.genre || "\uffff", y.genre || "\uffff") || cmp(x.artist, y.artist) || cmp(x.title, y.title));
+  else if (by === "length") a.sort((x, y) => (y.length_s || 0) - (x.length_s || 0));
+  else if (by === "plays") a.sort((x, y) => plays(y.id) - plays(x.id) || lastPlayed(y.id) - lastPlayed(x.id) || cmp(x.title, y.title));
+  else if (by === "played") a.sort((x, y) => lastPlayed(y.id) - lastPlayed(x.id) || cmp(x.title, y.title));
+  else if (by === "rating") a.sort((x, y) => stars(y.id) - stars(x.id) || plays(y.id) - plays(x.id) || cmp(x.title, y.title));
   else a.sort((x, y) => cmp(x.title, y.title));
   return a;
 }
@@ -2329,7 +2520,9 @@ const VIEWS = {
         ${cur ? `<button class="tile" id="h-cur"><span class="art">${artHtml(cur.cover ? cur.id : null)}</span><span style="min-width:0"><div class="t1">${esc(cur.title)}</div><div class="t2">Continue listening</div></span></button>` : ""}
         <button class="tile" data-go="favorites"><span class="ic" style="background:var(--fav);color:#fff">${ico("heart")}</span><span style="min-width:0"><div class="t1">Favorites</div><div class="t2">${plural(fav.length, "song")}</div></span></button>
         <button class="tile" data-go="playlists"><span class="ic">${ico("list")}</span><span style="min-width:0"><div class="t1">Playlists</div><div class="t2">${plural(L.playlists.length, "playlist")}</div></span></button>
+        <button class="tile" data-go="stats"><span class="ic">${ico("chart")}</span><span style="min-width:0"><div class="t1">Your listening</div><div class="t2">Statistics and history</div></span></button>
       </div>
+      ${shelf("Your mixes", mixCards())}
       ${shelf("Recently played", recentAl.slice(0, 12).map(albumCard))}
       ${shelf("Recently added", albums.slice().sort((a, b) => newest(b) - newest(a)).slice(0, 12).map(albumCard))}
       ${top.kids.size ? `<h2 class="sec">Your folders</h2>` + folderCards([...top.kids.values()].sort((a, b) => b.all.length - a.all.length).slice(0, 12)).replace('class="grid"', 'class="grid shelf"') : ""}
@@ -2423,29 +2616,45 @@ const VIEWS = {
   playlists(main) {
     const fav = L.favorites.filter(id => L.tracks.has(id));
     const items = [{go: "favorites", cover: (L.tracks.get(fav.find(id => L.tracks.get(id).cover)) || {}).id, icon: "heart", name: "Favorites", sub: plural(fav.length, "song")},
-      ...L.playlists.map(p => { const ok = p.tracks.filter(id => L.tracks.has(id)); return {go: "playlist/" + p.id, cover: ok.find(id => L.tracks.get(id).cover), icon: "list", name: p.name, sub: plural(ok.length, "song")}; })];
+      ...L.playlists.map(p => { const ok = playlistTracks(p); return {go: "playlist/" + p.id, cover: (ok.find(t => t.cover) || {}).id, icon: p.rules ? "star" : "list", name: p.name, sub: (p.rules ? "Smart · " : "") + plural(ok.length, "song")}; })];
     main.innerHTML = `<div class="head"><div class="grow"><h1>Playlists</h1><div class="sub">${plural(L.playlists.length, "playlist")}</div></div></div>
-      <div class="actions"><button class="btn primary" id="a-new">${ico("plus")} New playlist</button></div>` + cardsHtml(items);
+      <div class="actions" style="flex-wrap:wrap"><button class="btn primary" id="a-new">${ico("plus")} New playlist</button><button class="btn" id="a-smart">${ico("star")} New smart playlist</button></div>` + cardsHtml(items) +
+      shelf("Mixes made for you", mixCards());
     $("#a-new").onclick = () => newPlaylist([]);
+    $("#a-smart").onclick = () => smartEditor(null);
   },
   playlist(main, pid) {
     const p = L.playlists.find(x => x.id === pid);
     if (!p) { main.innerHTML = `<div class="empty">${ico("list")}Playlist not found.</div>`; return; }
-    const songs = p.tracks.map(id => L.tracks.get(id)).filter(Boolean), missing = p.tracks.length - songs.length;
+    const songs = playlistTracks(p), missing = p.rules ? 0 : p.tracks.length - songs.length;
     const cover = songs.find(t => t.cover);
-    main.innerHTML = `<div class="head"><div class="art">${cover ? artHtml(cover.id) : ico("list")}</div><div class="grow"><div class="sub">Playlist</div><h1>${esc(p.name)}</h1><div class="sub">${plural(songs.length, "song")} · ${totalTime(songs)}${missing ? ` · ${missing} not found in your folders` : ""}</div></div></div>
+    main.innerHTML = `<div class="head"><div class="art">${cover ? artHtml(cover.id) : ico("list")}</div><div class="grow"><div class="sub">${p.rules ? "Smart playlist · updates by itself" : "Playlist"}</div><h1>${esc(p.name)}</h1><div class="sub">${plural(songs.length, "song")} · ${totalTime(songs)}${missing ? ` · ${missing} not found in your folders` : ""}</div></div></div>
       <div class="actions"><button class="btn primary" id="a-play">${ico("play")} Play</button><button class="btn" id="a-shuf">${ico("shuffle")} Shuffle</button>
-      <button class="btn" id="a-ren">${ico("edit")} Rename</button><button class="btn danger" id="a-del">${ico("trash")} Delete</button></div><div id="list"></div>`;
+      ${p.rules ? `<button class="btn" id="a-rules">${ico("edit")} Rules</button>` : `<button class="btn" id="a-ren">${ico("edit")} Rename</button>`}<button class="btn danger" id="a-del">${ico("trash")} Delete</button></div><div id="list"></div>`;
     const ids = songs.map(t => t.id);
     $("#a-play").onclick = () => Player.playList(ids, 0, false);
     $("#a-shuf").onclick = () => Player.playList(ids, 0, true);
-    $("#a-ren").onclick = () => askName("Rename playlist", p.name, "Rename", async name => { try { Object.assign(p, (await api("playlists/" + p.id, {name})).playlist); render(); } catch (e) { toast(e.message); } });
+    if (p.rules) $("#a-rules").onclick = () => smartEditor(p);
+    else $("#a-ren").onclick = () => askName("Rename playlist", p.name, "Rename", async name => { try { Object.assign(p, (await api("playlists/" + p.id, {name})).playlist); render(); } catch (e) { toast(e.message); } });
     $("#a-del").onclick = () => dialog("Delete playlist?", `<p class="muted" style="margin:0">“${esc(p.name)}” will be deleted. Your songs stay in the folder.</p>`, "Delete", async () => {
       try { await api("playlists/" + p.id, null, "DELETE"); L.playlists = L.playlists.filter(x => x.id !== p.id); go("playlists"); } catch (e) { toast(e.message); }
     }, true);
-    if (!songs.length) { $("#list").innerHTML = `<div class="empty">${ico("list")}This playlist is empty.<br>Use ⋯ on a song, then “Add to playlist”.</div>`; return; }
-    mountRows($("#list"), songs, {list: songs, ctx: p.id});
+    if (!songs.length) { $("#list").innerHTML = p.rules ? `<div class="empty">${ico("star")}No song matches the rules yet.</div>` : `<div class="empty">${ico("list")}This playlist is empty.<br>Use ⋯ on a song, then “Add to playlist”.</div>`; return; }
+    mountRows($("#list"), songs, {list: songs, ctx: p.rules ? undefined : p.id});
   },
+  mix(main, id) {
+    const m = MIXES[id]; if (!m) { main.innerHTML = `<div class="empty">Mix not found.</div>`; return; }
+    const songs = mixTracks(id), cover = songs.find(t => t.cover);
+    main.innerHTML = `<div class="head"><div class="art">${cover ? artHtml(cover.id) : ico("shuffle")}</div><div class="grow"><div class="sub">Mix · made for you</div><h1>${esc(m.name)}</h1><div class="sub">${esc(m.sub)} · ${plural(songs.length, "song")} · ${totalTime(songs)}</div></div></div>
+      <div class="actions"><button class="btn primary" id="a-play">${ico("play")} Play</button><button class="btn" id="a-shuf">${ico("shuffle")} Shuffle</button><button class="btn" id="a-save">${ico("plus")} Save as playlist</button></div><div id="list"></div>`;
+    const ids = songs.map(t => t.id);
+    $("#a-play").onclick = () => Player.playList(ids, 0, false);
+    $("#a-shuf").onclick = () => Player.playList(ids, 0, true);
+    $("#a-save").onclick = () => askName("Save as playlist", m.name, "Save", async name => { try { const p = (await api("playlists", {name, tracks: ids})).playlist; L.playlists.push(p); toast(`Playlist “${p.name}” created`); } catch (e) { toast(e.message); } });
+    if (!songs.length) { $("#list").innerHTML = `<div class="empty">${ico("shuffle")}Nothing here yet: listen to some music first.</div>`; return; }
+    mountRows($("#list"), songs, {list: songs});
+  },
+  stats(main, period) { statsView(main, period); },
   favorites(main) {
     const songs = L.favorites.map(id => L.tracks.get(id)).filter(Boolean);
     main.innerHTML = `<div class="head"><div class="grow"><h1>Favorites</h1><div class="sub">${plural(songs.length, "song")} · ${totalTime(songs)}</div></div></div>
