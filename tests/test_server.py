@@ -396,3 +396,25 @@ def test_browse_online_categories(client, monkeypatch):
     client.get("/api/online/category?kind=genre&id=98", headers=client.h)
     assert calls == ["top", 98]
     assert client.get("/api/online/category?kind=genre&id=x", headers=client.h).status_code == 400
+
+
+def test_play_a_song_online(client, monkeypatch):
+    """A song that is not downloaded plays online: its best version is found, then the player goes to its stream."""
+    import mf_bridge
+    import mfp_server
+    calls = []
+
+    def call(path, payload=None, method="POST"):
+        calls.append((path, payload))
+        if path == "resolve-track":
+            return 200, {"result": {"url": "https://www.youtube.com/watch?v=abc"}}
+        return 200, {"stream_url": "https://rr1.googlevideo.com/videoplayback?x=1"}
+    monkeypatch.setattr(mf_bridge, "call", call)
+    mfp_server._STREAMS.clear()
+    r = client.get("/api/online/stream?title=Hit&artist=Singer&duration=3:00", headers=client.h)
+    assert r.status_code == 302 and r.headers["Location"] == "https://rr1.googlevideo.com/videoplayback?x=1"
+    assert calls[0] == ("resolve-track", {"query": "Hit Singer", "title": "Hit", "artist": "Singer", "duration": "3:00"})
+    assert client.get("/api/online/stream?title=Hit&artist=Singer", headers=client.h).status_code == 302 and len(calls) == 2
+    r = client.get("/api/online/stream?url=https://www.youtube.com/watch?v=zzz", headers=client.h)
+    assert r.status_code == 302 and calls[-1] == ("stream-url", {"url": "https://www.youtube.com/watch?v=zzz"})
+    assert client.get("/api/online/stream", headers=client.h).status_code == 400
