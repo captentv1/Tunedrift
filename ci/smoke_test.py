@@ -196,6 +196,19 @@ print("from memory:", state)
 if not (state.get("src", "").startswith("blob:") and state.get("t", 0) > 2 and not state.get("err")):
     results["flac from memory"] = f"FAILED {state}"
 
+# Sound: equalizer, same volume and speed go through Web Audio; the song must still play, faster.
+js("FX.s.eq = true; FX.s.level = true; FX.s.bands = EQ_PRESETS.bass[1].slice(); FX.s.speed = 1.25; FX.applyRate(); FX.applyAudio();"
+   " Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false); true")
+time.sleep(2)
+fx0 = js(STATE) or {}
+time.sleep(4)
+fx1 = js(STATE) or {}
+fx = js("({ctx: FX.ctx ? FX.ctx.state : 'none', rate: audio.playbackRate})") or {}
+print("sound:", fx, fx0.get("t"), fx1.get("t"))
+moved = fx1.get("t", 0) - fx0.get("t", 0)
+results["equalizer and speed"] = "ok" if fx.get("ctx") == "running" and fx.get("rate") == 1.25 and moved > 3 and not fx1.get("paused") else f"FAILED {fx} {fx0} {fx1}"
+js("FX.s.eq = false; FX.s.level = false; FX.s.speed = 1; FX.save(); FX.applyRate(); FX.applyAudio(); true")
+
 js("Player.playList([L.list.find(t => t.title === 'Fmt mp3').id], 0, false)")
 
 
