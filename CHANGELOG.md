@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.4.0.0 — 2026-11-22 (Android and PC)
+
+- **Browse online** (Home, the side menu, or "Browse categories" in the search): Popular now, every genre
+  (Classical, Rap, Rock, Jazz…) and popular playlists. Open one to see its songs, search inside it, download
+  with one tap.
+- **The player stays after closing the app:** swipe the app away, paused or playing, and the notification stays
+  with play, pause, previous and next. The music keeps going with the screen off.
+- **Widgets play without opening the app:** play, next, previous and the shortcuts (Shuffle everything,
+  Favorites, mixes) start the music in the background, even when the app was closed or ended by Android.
+- **Original album covers** (Settings, Albums): replaces the cover of every song with the full-size original
+  cover of its album. Only sure matches are changed.
+- **Fixed:** a downloaded playlist or radio gave every song the playlist's picture. Each song now gets its own
+  album cover.
+- Old releases from before the name Tunedrift are deleted; releases now only contain `Tunedrift.apk` and
+  `Tunedrift.exe`.
+
 ## 1.3.1.0 — 2026-11-22 (Android and PC)
 
 - **Playwave is now Tunedrift**, a name no other app uses. New name in the app, the widgets, the notifications

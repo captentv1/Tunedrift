@@ -54,6 +54,10 @@ class PlaybackService : MediaBrowserServiceCompat() {
         @Volatile var playing = false
         @Volatile var shuffle = false
         @Volatile var repeat = "off"
+        /** The page is starting in the background to play (widget or notification used while the app was closed). */
+        @Volatile var starting = false
+        /** Widget shortcuts that start a list (sent to the page's MFP_widget). */
+        val WIDGET_ACTIONS = setOf("shuffleall", "favorites", "mixtop", "mixnew")
         private const val CUSTOM_SHUFFLE = "shuffle"
         private const val CUSTOM_REPEAT = "repeat"
     }
@@ -78,9 +82,29 @@ class PlaybackService : MediaBrowserServiceCompat() {
         }
     }
 
+    /** What starts music when the page is not running yet (app closed or ended by Android). */
+    private val startsMusic = setOf("play", "toggle", "next", "prev", "shuffleall", "favorites", "mixtop", "mixnew")
+
     private fun send(command: String, value: Long) {
-        mainHandler.post { commandSink?.invoke(command, value) }
+        mainHandler.post {
+            if (WebHost.webView != null && (WebHost.ready || WebHost.activity != null)) {
+                if (command in WIDGET_ACTIONS) MainActivity.callPage("window.MFP_widget && MFP_widget('$command')")
+                else (commandSink ?: MainActivity.pageSink).invoke(command, value)
+                return@post
+            }
+            // The app is closed: the page starts in the background (no window) and plays as soon as it is ready.
+            if (command !in startsMusic) return@post
+            WebHost.pending = if (command in WIDGET_ACTIONS) "widget:$command" else "cmd:$command"
+            starting = true
+            mainHandler.removeCallbacks(stopStarting)
+            mainHandler.postDelayed(stopStarting, 60_000)
+            MainActivity.startHeadless(this)
+            refresh()
+        }
     }
+
+    /** Still nothing after a minute (no music, no permission…): the notification stops saying it is starting. */
+    private val stopStarting = Runnable { if (starting) { starting = false; refresh() } }
 
     override fun onCreate() {
         super.onCreate()
@@ -160,7 +184,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         result.detach()
         Thread {
             val items = try { children(parentId) } catch (e: Exception) {
-                mutableListOf(item("none", "Open Playwave on the phone first", "", false))
+                mutableListOf(item("none", "Open Tunedrift on the phone first", "", false))
             }
             try { result.sendResult(items) } catch (e: Exception) { }
         }.start()
@@ -220,13 +244,12 @@ class PlaybackService : MediaBrowserServiceCompat() {
         return out
     }
 
-    // Swiped away from the recent apps: the music goes on (the page lives on without its window, see WebHost),
-    // as in Samsung Music. Paused, the app closes with its notification.
+    // Swiped away from the recent apps: the music goes on (the page lives on without its window, see WebHost).
+    // Paused, the notification stays too, with its controls: play starts the music again without opening the app.
+    // Its ✕ (or swiping it away while paused) closes the player.
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (!playing) {
-            stopForegroundCompat()
-            stopSelf()
-        }
+        sentNotif = ""
+        refresh()
         super.onTaskRemoved(rootIntent)
     }
 
@@ -296,7 +319,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
         if (notifKey == sentNotif && !mustStartForeground) return
         val notification = buildNotification()
         val nm = getSystemService(NotificationManager::class.java)
-        if (playing || mustStartForeground) {
+        if (playing) starting = false
+        if (playing || starting || mustStartForeground) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
@@ -309,7 +333,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
             }
             mustStartForeground = false
         }
-        if (!playing) {
+        if (!playing && !starting) {
             // Paused: the notification stays, but can be swiped away (which closes the player), as in Samsung Music.
             if (inForeground) {
                 inForeground = false
@@ -392,7 +416,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         )
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_note)
-            .setContentTitle(title.ifEmpty { "Playwave" })
+            .setContentTitle(title.ifEmpty { "Tunedrift" })
             .setContentText(artist)
             .setContentIntent(openApp)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)

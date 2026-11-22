@@ -53,6 +53,142 @@ class MainActivity : AppCompatActivity() {
 
         fun callPage(js: String) = WebHost.eval(js)
 
+        fun isLocal(url: String?) = url?.startsWith(PAGE_URL) == true
+
+        /** Commands sent to the page (notification, lock screen, headset, widgets). */
+        val pageSink: (String, Long) -> Unit = { command, value ->
+            if (command.matches(Regex("[a-z]+"))) callPage("window.MFP_cmd && MFP_cmd('$command', $value)")
+        }
+
+        /** Starts the local server once for the whole life of the app (with or without a window). */
+        fun startServerOnce(ctx: Context) {
+            if (serverStarted) return
+            serverStarted = true
+            val app = ctx.applicationContext
+            Thread {
+                if (!Python.isStarted()) Python.start(AndroidPlatform(app))
+                startPythonServer(app)
+            }.start()
+        }
+
+        /** Settings, bridge and clients of a new page, then loads it once the server answers. */
+        fun setUpPage(w: WebView, ctx: Context) {
+            w.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+            w.settings.javaScriptEnabled = true
+            w.settings.domStorageEnabled = true
+            w.settings.mediaPlaybackRequiresUserGesture = false
+            w.addJavascriptInterface(PageBridge(ctx.applicationContext), "MFPNative")
+            setClients(w)
+            Thread { waitForServerThenLoad() }.start()
+        }
+
+        /**
+         * The page without a window: a widget, the notification or the lock screen asks for music while the app
+         * is closed (swiped away, or ended by Android). The page starts in the background and plays; the app's
+         * window does not open.
+         */
+        fun startHeadless(ctx: Context) {
+            if (WebHost.webView != null) return
+            startServerOnce(ctx)
+            PlaybackService.commandSink = pageSink
+            setUpPage(WebHost.obtainHeadless(ctx.applicationContext), ctx)
+        }
+
+        fun openExternal(ctx: Context, url: String) {
+            if (Uri.parse(url).scheme?.lowercase() !in setOf("https", "http")) return
+            try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) { }
+        }
+
+        fun setClients(w: WebView) {
+            w.webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
+                    Log.i("MFPConsole", message?.message() ?: "")
+                    return true
+                }
+
+                override fun onShowFileChooser(
+                    view: WebView?, callback: android.webkit.ValueCallback<Array<Uri>>?, params: FileChooserParams?
+                ): Boolean {
+                    val act = WebHost.activity ?: return false
+                    act.fileCallback?.onReceiveValue(null)
+                    act.fileCallback = callback
+                    return try { act.fileLauncher.launch("*/*"); true } catch (e: Exception) { act.fileCallback = null; false }
+                }
+            }
+            w.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val url = request?.url ?: return false
+                    if (isLocal(url.toString())) return false
+                    WebHost.appContext()?.let { openExternal(it, url.toString()) }
+                    return true
+                }
+
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                    localPage = isLocal(url)
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    WebHost.activity?.let { act ->
+                        act.loadingView.visibility = View.GONE
+                        if (act.insetsJs.isNotEmpty() && isLocal(url)) view?.evaluateJavascript(act.insetsJs, null)
+                        act.routeFrom(act.intent)
+                    }
+                }
+
+                // Android can end the page's renderer to get memory back (a phone busy downloading and converting):
+                // without this the whole app was closed ("it crashes when I download and play"). Now the page loads again.
+                override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                    Log.w("MFP", "page renderer gone (crash=${detail?.didCrash()})")
+                    if (view !== WebHost.webView) return true
+                    val ctx = view?.context?.applicationContext
+                    WebHost.release()
+                    PlaybackService.playing = false
+                    val act = WebHost.activity
+                    if (act != null) {
+                        act.loadingView.visibility = View.VISIBLE
+                        act.attachPage()
+                    } else if (ctx != null && PlaybackService.running) {
+                        try { ctx.startService(Intent(ctx, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP)) } catch (e: Exception) { }
+                    }
+                    return true
+                }
+            }
+        }
+
+        private fun startPythonServer(ctx: Context) {
+            try {
+                val storage = Environment.getExternalStorageDirectory()
+                val folders = listOf(File(storage, "Music"), File(storage, "Download"))
+                    .joinToString(File.pathSeparator) { it.absolutePath }
+                val roots = listOf(storage.absolutePath, "/storage").joinToString(File.pathSeparator)
+                val dataDir = File(ctx.filesDir, "data").apply { mkdirs() }
+                // Where songs go until a root folder is chosen: Music/MusicFlow (seen by every music player) when the
+                // app may write there, else the app's own folder.
+                val mfDest = if (hasAllFilesAccess(ctx)) File(storage, "Music/MusicFlow")
+                else (ctx.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: File(ctx.filesDir, "Music"))
+                Python.getInstance().getModule("mfp_mobile").callAttr(
+                    "start", dataDir.absolutePath, API_TOKEN, folders, roots,
+                    mfDest.absolutePath, File(ctx.filesDir, "musicflow-config.json").absolutePath
+                )
+            } catch (e: Exception) {
+                Log.e("MFP", "server did not start", e)
+            }
+        }
+
+        private fun waitForServerThenLoad() {
+            var attempts = 0
+            while (attempts < 400) {
+                try {
+                    Socket("127.0.0.1", SERVER_PORT).close()
+                    break
+                } catch (e: Exception) {
+                    attempts++
+                    Thread.sleep(150)
+                }
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post { WebHost.webView?.loadUrl(PAGE_URL) }
+        }
+
         fun hasAllFilesAccess(ctx: Context): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 Environment.isExternalStorageManager()
@@ -88,8 +224,6 @@ class MainActivity : AppCompatActivity() {
         return if (folder.isDirectory) folder.absolutePath else null
     }
 
-    private fun isLocal(url: String?) = url?.startsWith(PAGE_URL) == true
-
     private var fileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
     private val fileLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         fileCallback?.onReceiveValue(if (uri != null) arrayOf(uri) else null)
@@ -116,18 +250,10 @@ class MainActivity : AppCompatActivity() {
         Thread { try { UpdateManager.forgetOldDownload(applicationContext) } catch (e: Exception) { } }.start()
         if (BuildConfig.WEB_DEBUG) intent?.getStringExtra("test_spotify_base")?.let { SpotifyBot.useTestSite(it) }
 
-        PlaybackService.commandSink = { command, value ->
-            if (command.matches(Regex("[a-z]+"))) callPage("window.MFP_cmd && MFP_cmd('$command', $value)")
-        }
+        PlaybackService.commandSink = pageSink
         watchNewSongs()
         hadAllFiles = hasAllFilesAccess(this)
-        if (!serverStarted) {
-            serverStarted = true
-            Thread {
-                if (!Python.isStarted()) Python.start(AndroidPlatform(applicationContext))
-                startPythonServer()
-            }.start()
-        }
+        startServerOnce(this)
         attachPage()
         askPermissions()
     }
@@ -147,7 +273,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Puts the page in this window: the one kept from before (music still playing) or a new one. */
-    private fun attachPage() {
+    fun attachPage() {
         val (w, fresh) = WebHost.obtain(this)
         webView = w
         findViewById<FrameLayout>(R.id.page_holder).addView(
@@ -162,69 +288,9 @@ class MainActivity : AppCompatActivity() {
             routeFrom(intent)
             return
         }
-        w.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
-        w.settings.javaScriptEnabled = true
-        w.settings.domStorageEnabled = true
-        w.settings.mediaPlaybackRequiresUserGesture = false
-        w.addJavascriptInterface(PageBridge(applicationContext), "MFPNative")
-        Thread { waitForServerThenLoad() }.start()
+        setUpPage(w, this)
     }
 
-    private fun setClients(w: WebView) {
-        w.webChromeClient = object : WebChromeClient() {
-            override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
-                Log.i("MFPConsole", message?.message() ?: "")
-                return true
-            }
-
-            override fun onShowFileChooser(
-                view: WebView?, callback: android.webkit.ValueCallback<Array<Uri>>?, params: FileChooserParams?
-            ): Boolean {
-                val act = WebHost.activity ?: return false
-                act.fileCallback?.onReceiveValue(null)
-                act.fileCallback = callback
-                return try { act.fileLauncher.launch("*/*"); true } catch (e: Exception) { act.fileCallback = null; false }
-            }
-        }
-        w.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val url = request?.url ?: return false
-                if (isLocal(url.toString())) return false
-                openExternal(url.toString())
-                return true
-            }
-
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                localPage = isLocal(url)
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                WebHost.activity?.let { act ->
-                    act.loadingView.visibility = View.GONE
-                    if (act.insetsJs.isNotEmpty() && isLocal(url)) view?.evaluateJavascript(act.insetsJs, null)
-                    act.routeFrom(act.intent)
-                }
-            }
-
-            // Android can end the page's renderer to get memory back (a phone busy downloading and converting):
-            // without this the whole app was closed ("it crashes when I download and play"). Now the page loads again.
-            override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
-                Log.w("MFP", "page renderer gone (crash=${detail?.didCrash()})")
-                if (view !== WebHost.webView) return true
-                val ctx = view?.context?.applicationContext
-                WebHost.release()
-                PlaybackService.playing = false
-                val act = WebHost.activity
-                if (act != null) {
-                    act.loadingView.visibility = View.VISIBLE
-                    act.attachPage()
-                } else if (ctx != null && PlaybackService.running) {
-                    try { ctx.startService(Intent(ctx, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP)) } catch (e: Exception) { }
-                }
-                return true
-            }
-        }
-    }
 
     private fun routeFrom(i: Intent?) {
         // Emulator test build only: removes the task as swiping it away from the recent apps does.
@@ -242,10 +308,7 @@ class MainActivity : AppCompatActivity() {
         if (r.matches(Regex("[a-z]+"))) callPage("location.hash = '$r'")
     }
 
-    fun openExternal(url: String) {
-        if (Uri.parse(url).scheme?.lowercase() !in setOf("https", "http")) return
-        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) { }
-    }
+    fun openExternal(url: String) = openExternal(this, url)
 
     private var insetsJs = ""
 
@@ -285,39 +348,7 @@ class MainActivity : AppCompatActivity() {
         if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
     }
 
-    private fun startPythonServer() {
-        try {
-            val storage = Environment.getExternalStorageDirectory()
-            val folders = listOf(File(storage, "Music"), File(storage, "Download"))
-                .joinToString(File.pathSeparator) { it.absolutePath }
-            val roots = listOf(storage.absolutePath, "/storage").joinToString(File.pathSeparator)
-            val dataDir = File(filesDir, "data").apply { mkdirs() }
-            // Where songs go until a root folder is chosen: Music/MusicFlow (seen by every music player) when the
-            // app may write there, else the app's own folder.
-            val mfDest = if (hasAllFilesAccess(this)) File(storage, "Music/MusicFlow")
-            else (getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: File(filesDir, "Music"))
-            Python.getInstance().getModule("mfp_mobile").callAttr(
-                "start", dataDir.absolutePath, API_TOKEN, folders, roots,
-                mfDest.absolutePath, File(filesDir, "musicflow-config.json").absolutePath
-            )
-        } catch (e: Exception) {
-            Log.e("MFP", "server did not start", e)
-        }
-    }
 
-    private fun waitForServerThenLoad() {
-        var attempts = 0
-        while (attempts < 400) {
-            try {
-                Socket("127.0.0.1", SERVER_PORT).close()
-                break
-            } catch (e: Exception) {
-                attempts++
-                Thread.sleep(150)
-            }
-        }
-        runOnUiThread { WebHost.webView?.loadUrl(PAGE_URL) }
-    }
 
     private var pendingApk: File? = null
     @Volatile var inForeground = false
@@ -409,15 +440,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // The window closes (e.g. swiped away from the recent apps): while a song plays, the page stays alive in
-        // WebHost with the playback service, so the music goes on. Otherwise the page is freed.
-        val playing = PlaybackService.playing && PlaybackService.running
+        // The window closes (e.g. swiped away from the recent apps): while the player's notification is there
+        // (playing or paused), the page stays alive in WebHost with the playback service, so the music goes on and
+        // the notification, lock screen and widgets keep working. Otherwise the page is freed.
+        val player = PlaybackService.running
         SpotifyBot.closeLogin()
         SpotifyBot.detach()
-        WebHost.detach(this, keep = playing || isChangingConfigurations)
-        if (isFinishing && !playing && PlaybackService.running) {
-            try { startService(Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP)) } catch (e: Exception) { }
-        }
+        WebHost.detach(this, keep = player || isChangingConfigurations)
         super.onDestroy()
     }
 }
@@ -433,6 +462,17 @@ class PageBridge(private val app: Context) {
             if (PlaybackService.running) app.startService(intent)
             else if (PlaybackService.playing) ContextCompat.startForegroundService(app, intent.putExtra(PlaybackService.EXTRA_FOREGROUND, true))
         } catch (e: Exception) { }
+    }
+
+    /** Called by the page once its library is loaded: from then on commands go straight to it. Returns what a
+     *  widget or the notification asked for while the page was starting in the background ("" if nothing). */
+    @JavascriptInterface
+    fun takePending(): String {
+        if (!allowed()) return ""
+        WebHost.ready = true
+        val p = WebHost.pending
+        WebHost.pending = ""
+        return p
     }
 
     // Security: the token is only given to the app's own page.

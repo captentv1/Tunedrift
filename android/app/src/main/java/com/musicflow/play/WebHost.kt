@@ -36,6 +36,22 @@ object WebHost {
         return w to true
     }
 
+    /** A page with no window yet (started by a widget or the notification while the app is closed). */
+    fun obtainHeadless(app: Context): WebView {
+        webView?.let { return it }
+        ready = false
+        val ctx = MutableContextWrapper(app)
+        val w = WebView(ctx)
+        wrapper = ctx
+        webView = w
+        return w
+    }
+
+    /** True once the page has loaded the library and can play: commands sent before wait in [pending]. */
+    @Volatile var ready = false
+    /** What a widget or the notification asked for while the page was starting: "cmd:play", "widget:shuffleall"… */
+    @Volatile var pending = ""
+
     /** The window closes: the page stays (music playing) or is freed. */
     fun detach(activity: MainActivity, keep: Boolean) {
         if (activityRef?.get() === activity) activityRef = null
@@ -49,6 +65,7 @@ object WebHost {
     fun release() {
         val w = webView ?: return
         webView = null
+        ready = false
         wrapper = null
         (w.parent as? ViewGroup)?.removeView(w)
         try { w.destroy() } catch (e: Exception) { }

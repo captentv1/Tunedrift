@@ -100,13 +100,13 @@ object UpdateManager {
         }
     }
 
-    // Security: only install Playwave itself, newer, signed with the same key.
+    // Security: only install Tunedrift itself, newer, signed with the same key.
     fun verify(ctx: Context, apk: File) {
         val pm = ctx.packageManager
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else 0
         val newInfo = pm.getPackageArchiveInfo(apk.path, flags)
         if (newInfo == null || newInfo.packageName != ctx.packageName) {
-            apk.delete(); throw Exception("this file is not Playwave")
+            apk.delete(); throw Exception("this file is not Tunedrift")
         }
         val current = pm.getPackageInfo(ctx.packageName, flags)
         if (PackageInfoCompat.getLongVersionCode(newInfo) <= PackageInfoCompat.getLongVersionCode(current)) {
@@ -131,7 +131,7 @@ object UpdateManager {
     fun notifyReady(ctx: Context, version: String) {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            nm.createNotificationChannel(NotificationChannel(UPDATE_CHANNEL, "Playwave updates", NotificationManager.IMPORTANCE_DEFAULT))
+            nm.createNotificationChannel(NotificationChannel(UPDATE_CHANNEL, "Tunedrift updates", NotificationManager.IMPORTANCE_DEFAULT))
         }
         val openIntent = PendingIntent.getActivity(ctx, 0,
             Intent(ctx, MainActivity::class.java).putExtra(EXTRA_INSTALLER, true)
@@ -139,7 +139,7 @@ object UpdateManager {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         nm.notify(NOTIF_ID, NotificationCompat.Builder(ctx, UPDATE_CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("Playwave $version is ready")
+            .setContentTitle("Tunedrift $version is ready")
             .setContentText("Tap to install the update")
             .setContentIntent(openIntent).setAutoCancel(true).build())
     }

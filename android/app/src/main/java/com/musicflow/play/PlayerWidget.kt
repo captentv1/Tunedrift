@@ -58,8 +58,8 @@ class PlayerWidget : AppWidgetProvider() {
             val v = RemoteViews(context.packageName, layout)
             val on = PlaybackService.running
             val playing = on && PlaybackService.playing
-            v.setTextViewText(R.id.w_title, if (on && PlaybackService.title.isNotEmpty()) PlaybackService.title else "Playwave")
-            v.setTextViewText(R.id.w_artist, if (on) PlaybackService.artist else "Tap to open")
+            v.setTextViewText(R.id.w_title, if (on && PlaybackService.title.isNotEmpty()) PlaybackService.title else "Tunedrift")
+            v.setTextViewText(R.id.w_artist, if (on) PlaybackService.artist else "Tap play to listen")
             val cover = lastCover
             if (on && cover != null) v.setImageViewBitmap(R.id.w_cover, cover) else v.setImageViewResource(R.id.w_cover, R.mipmap.ic_launcher)
             v.setImageViewResource(R.id.w_play, if (playing) R.drawable.ic_w_pause else R.drawable.ic_w_play)
@@ -76,8 +76,8 @@ class PlayerWidget : AppWidgetProvider() {
 
             val openApp = open(context, null, 10)
             v.setOnClickPendingIntent(R.id.w_root, openApp)
+            // Every button works with the app closed: the music starts in the background, the app does not open.
             fun cmd(c: String, code: Int): PendingIntent {
-                if (!on) return if (c == "play") open(context, "play", 19) else openApp
                 val i = Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_COMMAND).putExtra(PlaybackService.EXTRA_COMMAND, c)
                 val f = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 return if (Build.VERSION.SDK_INT >= 26) PendingIntent.getForegroundService(context, code, i, f) else PendingIntent.getService(context, code, i, f)
@@ -89,10 +89,10 @@ class PlayerWidget : AppWidgetProvider() {
             v.setOnClickPendingIntent(R.id.w_shuffle, cmd("shuffle", 15))
             v.setOnClickPendingIntent(R.id.w_repeat, cmd("repeat", 16))
             v.setOnClickPendingIntent(R.id.w_upbox, open(context, "queue", 17))
-            v.setOnClickPendingIntent(R.id.w_sc_shuffle, open(context, "shuffleall", 20))
-            v.setOnClickPendingIntent(R.id.w_sc_fav, open(context, "favorites", 21))
-            v.setOnClickPendingIntent(R.id.w_sc_top, open(context, "mixtop", 22))
-            v.setOnClickPendingIntent(R.id.w_sc_new, open(context, "mixnew", 23))
+            v.setOnClickPendingIntent(R.id.w_sc_shuffle, cmd("shuffleall", 20))
+            v.setOnClickPendingIntent(R.id.w_sc_fav, cmd("favorites", 21))
+            v.setOnClickPendingIntent(R.id.w_sc_top, cmd("mixtop", 22))
+            v.setOnClickPendingIntent(R.id.w_sc_new, cmd("mixnew", 23))
             return v
         }
     }

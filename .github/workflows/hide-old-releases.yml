@@ -1,5 +1,6 @@
-# Keeps only the latest release public. Every older release is turned into a draft: drafts are
-# visible only to the repository owner and collaborators, so nobody else can download old versions.
+# Keeps only the latest release public.
+# - Releases from before the name Tunedrift (MusicFlow Play, Playwave) are deleted, with their files and tags.
+# - Older Tunedrift releases become drafts: visible only to the repository owner and collaborators.
 # Runs after each build on main, and can be started by hand (Actions › Hide old releases › Run workflow).
 name: Hide old releases
 
@@ -18,16 +19,24 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Turn every release except the latest into a draft
+      - name: Delete pre-Tunedrift releases, draft the other old ones
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           latest=$(gh api "repos/$REPO/releases/latest" --jq .id)
           echo "Latest release kept public: $(gh api "repos/$REPO/releases/latest" --jq .tag_name)"
-          gh api "repos/$REPO/releases" --paginate --jq '.[] | select(.draft == false) | "\(.id) \(.tag_name)"' |
-          while read -r id tag; do
+          gh api "repos/$REPO/releases" --paginate --jq '.[] | "\(.id)\t\(.tag_name)\t\(.draft)\t\(.name)"' |
+          while IFS=$'\t' read -r id tag draft name; do
             [ "$id" = "$latest" ] && continue
-            echo "Hiding $tag"
-            gh api -X PATCH "repos/$REPO/releases/$id" -F draft=true --silent
+            case "$name" in
+              Tunedrift*)
+                [ "$draft" = "true" ] && continue
+                echo "Hiding $tag ($name)"
+                gh api -X PATCH "repos/$REPO/releases/$id" -F draft=true --silent ;;
+              *)
+                echo "Deleting $tag ($name)"
+                gh api -X DELETE "repos/$REPO/releases/$id" --silent
+                gh api -X DELETE "repos/$REPO/git/refs/tags/$tag" --silent || true ;;
+            esac
           done

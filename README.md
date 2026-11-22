@@ -34,6 +34,8 @@ Tunedrift is a **local music player** (MP3, FLAC, M4A, Opus, OGG, WAV) with **sy
 - **Synced lyrics** (`.lrc` or tags), tap a line to jump; search online on LRCLIB when a song has none
 - **Playlists and favorites**
 - **Edit song info** (title, artist, album…), fix albums online from their track list, song details
+- **Browse online**: Popular now, every genre and popular playlists, with search inside each one
+- **Widgets and notification that work with the app closed**: play, next, previous, shortcuts
 - **Search online and download** (MusicFlow inside the app): best version, tags, cover and lyrics
 - **Import** playlists from a link, your Spotify or YouTube account, your computer (over Wi-Fi) or a file, into one
   root folder; songs already on the device are linked, never downloaded twice
