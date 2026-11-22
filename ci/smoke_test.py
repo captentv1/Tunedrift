@@ -1,7 +1,7 @@
 """Emulator test of the Android app. Installs the APK (a test build with WebView debugging on), puts one song
 per format on the device, opens the app and drives its page through the WebView's DevTools socket: it plays
 each song and checks that the position moves. Then it checks that Android's media session reports playback, that MusicFlow's search and download loaded inside
-the app, imports a playlist from a computer's Playwave (PC_LINK) while a song plays, imports it again (nothing
+the app, imports a playlist from a computer's Tunedrift (PC_LINK) while a song plays, imports it again (nothing
 is copied twice), and swipes the app away from the recent apps while a song plays (the music must go on).
 Usage: smoke_test.py <apk> <out_dir> <songs_dir>
 The songs dir holds one "Fmt <ext> - Tester.<ext>" file per format (made with ffmpeg by the workflow)."""
@@ -344,7 +344,7 @@ js("window.__upd = []; { const p0 = window.MFP_updateProgress, e0 = window.MFP_u
    " window.MFP_updateProgress = p => { __upd.push(p); p0(p); }; window.MFP_updateError = m => { __upd.push('error: ' + m); e0(m); }; } true")
 latest = js("api('latest-version').catch(e => ({error: e.message}))") or {}
 apk_url = next((a["url"] for a in latest.get("assets") or [] if a.get("name") == "MusicFlowPlay.apk"),
-               "https://github.com/captentv1/musicflow-play/releases/download/v1.1.0.0/MusicFlowPlay.apk")
+               "https://github.com/captentv1/tunedrift/releases/latest/download/MusicFlowPlay.apk")
 print("update from:", apk_url)
 js(f"native('installUpdate', {json.dumps(apk_url)})")
 time.sleep(3)

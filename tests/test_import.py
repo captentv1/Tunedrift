@@ -1,5 +1,5 @@
 """Import and download queue: songs already on the device are linked, never downloaded again; playlists from
-files, lists of titles and another Playwave (local server)."""
+files, lists of titles and another Tunedrift (local server)."""
 import threading
 import time
 from pathlib import Path
@@ -71,7 +71,7 @@ def test_import_links_songs_already_on_the_device(client, tmp_path):
 
 
 def test_local_server_copies_files_once(client, tmp_path):
-    """The phone imports a playlist of the computer (Playwave started with --lan): the files are copied."""
+    """The phone imports a playlist of the computer (Tunedrift started with --lan): the files are copied."""
     from werkzeug.serving import make_server
     import importlib, sys
     other_dir = tmp_path / "pc"

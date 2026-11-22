@@ -25,7 +25,7 @@ def make(collections: dict, plays: dict, tracks: list[dict], prefs: dict, versio
     used.update((collections.get("ratings") or {}).keys())
     used.update((plays.get("counts") or {}).keys())
     songs = {t["id"]: [t.get("path", ""), t.get("title", ""), t.get("artist", "")] for t in tracks if t["id"] in used}
-    return {"app": "Playwave", "kind": "backup", "version": version, "created": int(time.time()),
+    return {"app": "Tunedrift", "kind": "backup", "version": version, "created": int(time.time()),
             "collections": collections, "plays": plays, "prefs": prefs if isinstance(prefs, dict) else {}, "songs": songs}
 
 
@@ -51,7 +51,7 @@ def remap(backup: dict, tracks: list[dict]) -> dict:
 def restore(backup: dict, coll, plays, tracks: list[dict]) -> dict:
     """Adds the backup to what is here: nothing here is lost. Returns the counts and the app settings."""
     if not isinstance(backup, dict) or backup.get("kind") != "backup":
-        raise ValueError("This file is not a Playwave backup.")
+        raise ValueError("This file is not a Tunedrift backup.")
     ids = remap(backup, tracks)
     m = lambda xs: [ids[x] for x in xs or [] if x in ids]
     c = backup.get("collections") or {}

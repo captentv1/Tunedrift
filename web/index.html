@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#000000">
-<title>Playwave</title>
+<title>Tunedrift</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <style>
@@ -500,7 +500,7 @@
     --line:#333;--accent:#1ed760;--ok:#1ed760;--err:#ff5470;--border:#1f1f1f;--t1:rgba(30,215,96,.08);--t2:rgba(30,215,96,.15)}
   html[data-theme="oled"]{background:#000!important}
   html[data-theme="oled"] body{background:transparent!important;background-image:none!important}
-  /* Playwave parts in the glass themes */
+  /* Tunedrift parts in the glass themes */
   html[data-theme^="glass"]{--panel3:rgba(255,255,255,.16);--accent-ink:#fff}
   html[data-theme="glass-light"], html[data-theme="glass-sakura"]{--panel3:rgba(255,255,255,.85)}
   html[data-theme^="glass"] #side, html[data-theme^="glass"] #bar, html[data-theme^="glass"] .tile:not(.big),
@@ -552,7 +552,7 @@ try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) =
 <div id="ambient"></div>
 <div id="app">
   <header id="topbar">
-    <a class="logo" href="#home" data-r="home" aria-label="Playwave: home"><span class="wm">PLAY<span>WAVE</span></span><span class="dot"></span></a>
+    <a class="logo" href="#home" data-r="home" aria-label="Tunedrift: home"><span class="wm">TUNE<span>DRIFT</span></span><span class="dot"></span></a>
     <button class="iconbtn" id="search-back" title="Close search" aria-label="Close search"><svg class="i" style="transform:rotate(90deg)"><use href="#i-down"/></svg></button>
     <div id="search">
       <svg class="i"><use href="#i-search"/></svg>
@@ -1395,7 +1395,7 @@ function updateNow() {
   }
   setArt($("#bar-art"), t); setArt($("#np-art"), t);
   $("#np .bgblur").style.backgroundImage = t && t.cover ? `url("${coverUrl(t.id)}")` : "none";
-  document.title = t ? `${t.title} · ${t.artist || UNKNOWN_ARTIST}` : "Playwave";
+  document.title = t ? `${t.title} · ${t.artist || UNKNOWN_ARTIST}` : "Tunedrift";
   if (t) native("nowPlaying", t.title, t.artist || UNKNOWN_ARTIST, t.album || "", t.cover ? new URL(coverUrl(t.id), location.href).href : "", (t.length_s || 0) * 1000);
   else native("stop");
   if ("mediaSession" in navigator) {
@@ -2133,7 +2133,7 @@ async function backupView(box) {
   for (const b of $$("[data-bk]", box)) b.onclick = () => dialog("Restore this backup?", `<p class="muted" style="margin:0">Its playlists, favorites, ratings, history and settings are added to what is here.</p>`, "Restore", async () => { try { done(await api("backup", {name: b.dataset.bk})); } catch (e) { toast(e.message); } });
   $("#bk-file").onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
-    try { const data = JSON.parse(await f.text()); done(await api("backup", {data})); } catch (err) { toast(err instanceof SyntaxError ? "This file is not a Playwave backup." : err.message); }
+    try { const data = JSON.parse(await f.text()); done(await api("backup", {data})); } catch (err) { toast(err instanceof SyntaxError ? "This file is not a Tunedrift backup." : err.message); }
   };
 }
 
@@ -2526,7 +2526,7 @@ const IMP = {
       if (ch) this.drawLists("youtube", {kind: "youtube", address: ch});
     } else if (k === "server") {
       const servers = st.servers || [];
-      box.innerHTML = `<p>Copy the playlists of Playwave on your computer to this device, over Wi-Fi: the files are copied as they are (nothing is searched or downloaded again).
+      box.innerHTML = `<p>Copy the playlists of Tunedrift on your computer to this device, over Wi-Fi: the files are copied as they are (nothing is searched or downloaded again).
           On the computer, start <code>run_lan.bat</code> (or <code>mfp_server.py --lan</code>) and paste the link it shows.</p>
         <div class="addrow"><input class="text" id="srv-addr" placeholder="http://192.168.1.20:5091/?t=…" inputmode="url"><button class="btn primary" id="srv-go">Connect</button></div>
         ${servers.filter(x => x.token).length ? `<div class="chips" style="margin:10px 0 0">${servers.filter(x => x.token).map(x => `<button class="chip" data-srv="${esc(x.base)}">${esc(x.base.replace(/^https?:\/\//, ""))}</button>`).join("")}</div>` : ""}
@@ -2718,13 +2718,13 @@ const Upd = {
       let d = null;
       try { const c = JSON.parse(localStorage.getItem("mfp.updCache") || "null"); if (auto && c && Date.now() - c.t < 6 * 3600e3) d = c.d; } catch {}
       if (!d) {
-        const r = await fetch("https://api.github.com/repos/captentv1/musicflow-play/releases/latest").catch(() => null);
+        const r = await fetch("https://api.github.com/repos/captentv1/tunedrift/releases/latest").catch(() => null);
         if (r && r.ok) { const x = await r.json(); d = {tag_name: x.tag_name, body: x.body, assets: (x.assets || []).map(a => ({name: a.name, url: a.browser_download_url}))}; }
         else d = await api("latest-version");
         try { localStorage.setItem("mfp.updCache", JSON.stringify({t: Date.now(), d})); } catch {}
       }
       const v = String(d.tag_name || "").replace(/^v/, ""), cur = Upd.version || "";
-      const ext = NATIVE ? ".apk" : ".exe", file = (d.assets || []).find(a => a.name === "Playwave" + ext) || (d.assets || []).find(a => a.name === "MusicFlowPlay" + ext);
+      const ext = NATIVE ? ".apk" : ".exe", file = (d.assets || []).find(a => a.name === "Tunedrift" + ext) || (d.assets || []).find(a => a.name === "MusicFlowPlay" + ext);
       if (!v || !file || !cur || !this.newer(v, cur)) { this.info = null; this.button("Check for updates"); this.state(`Up to date (${cur})`); return; }
       this.info = {v, url: file.url, notes: String(d.body || "").slice(0, 800)};
       this.button(`Update to ${v}`); this.state(`Version ${v} is available (you have ${cur}).`);
@@ -2734,21 +2734,21 @@ const Upd = {
   offer(v, notes) {
     try { if (localStorage.getItem("mfp.updLater") === v) return; localStorage.setItem("mfp.updLater", v); } catch {}
     if ($("#dialog")) return;
-    dialog(`Playwave ${v} is available`, `<p class="muted" style="margin:0;white-space:pre-wrap;max-height:40vh;overflow:auto">${esc(notes || "A new version is ready.")}</p>`, "Install", () => { Upd.install(); });
+    dialog(`Tunedrift ${v} is available`, `<p class="muted" style="margin:0;white-space:pre-wrap;max-height:40vh;overflow:auto">${esc(notes || "A new version is ready.")}</p>`, "Install", () => { Upd.install(); });
   },
   button(t) { const b = $("#u-btn"); if (b) { b.textContent = t; b.classList.toggle("primary", t !== "Check for updates"); } },
   install() {
     if (this.ready) { this.ready = ""; this.state("Opening the installer… Confirm “Install”."); native("installDownloadedUpdate"); return; }
     if (!this.info) return this.check(false);
     if (NATIVE) {
-      if (!NATIVE.installUpdate) { toast("Update: download Playwave.apk from GitHub"); return; }
-      this.state("Downloading the update…"); toast(`Downloading Playwave ${this.info.v}…`);
+      if (!NATIVE.installUpdate) { toast("Update: download Tunedrift.apk from GitHub"); return; }
+      this.state("Downloading the update…"); toast(`Downloading Tunedrift ${this.info.v}…`);
       try { NATIVE.installUpdate(this.info.url); } catch (e) { this.state(`Update failed: ${e.message || e}`); toast(`Update failed: ${e.message || e}`); }
     }
-    else { window.open(this.info.url, "_blank"); this.state("The new Playwave.exe is downloading: close this one, then open the new one."); }
+    else { window.open(this.info.url, "_blank"); this.state("The new Tunedrift.exe is downloading: close this one, then open the new one."); }
   },
 };
-window.MFP_updateProgress = p => (p === 100 || p === -2) && !$("#u-state") ? toast(p === 100 ? "Opening the installer…" : "Allow Playwave to install apps") : Upd.state(p === -2 ? "Allow Playwave to install apps, then come back: the installation continues."
+window.MFP_updateProgress = p => (p === 100 || p === -2) && !$("#u-state") ? toast(p === 100 ? "Opening the installer…" : "Allow Tunedrift to install apps") : Upd.state(p === -2 ? "Allow Tunedrift to install apps, then come back: the installation continues."
   : p >= 100 ? "Opening the installer… Confirm “Install”." : `Downloading the update… ${p >= 0 ? p + "%" : ""}`);
 window.MFP_updateError = m => { Upd.state(`Update failed: ${m}. Try again.`); toast(`Update failed: ${m}`); };
 
@@ -2759,7 +2759,7 @@ function render() {
   for (const n of $$("[data-r]")) n.classList.toggle("active", n.dataset.lib !== undefined ? inLib : n.dataset.r === grp);
   if (!TOKEN) { main.innerHTML = `<div class="empty">${ico("gear")}Open the player with the link shown by the server<br>(it ends with <code>?t=…</code>).</div>`; return; }
   if (L.error && !L.loaded) { main.innerHTML = `<div class="empty">${ico("close")}${esc(L.error)}<br><button class="btn" onclick="L.error=null;L.tries=0;loadLibrary()" style="margin-top:12px">Try again</button></div>`; return; }
-  if (!L.loaded) { main.innerHTML = `<div class="empty">${NATIVE ? "Starting Playwave…" : "Loading…"}<div class="progress-line"><div></div></div></div>`; return; }
+  if (!L.loaded) { main.innerHTML = `<div class="empty">${NATIVE ? "Starting Tunedrift…" : "Loading…"}<div class="progress-line"><div></div></div></div>`; return; }
   const q = $("#q").value.trim();
   if (q) { $("#ambient").classList.remove("on"); return renderSearch(main, q); }
   (VIEWS[r.name] || VIEWS.folders)(main, r.arg);
@@ -2976,11 +2976,11 @@ const VIEWS = {
   async settings(main) {
     let st = {};
     try { st = await api("state"); } catch (e) { main.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-    main.innerHTML = `<div class="head"><div class="grow"><h1>Settings</h1><div class="sub">Playwave ${esc(st.version)}</div></div></div>
+    main.innerHTML = `<div class="head"><div class="grow"><h1>Settings</h1><div class="sub">Tunedrift ${esc(st.version)}</div></div></div>
       <div class="set"><h3>Theme</h3><p>The same themes as MusicFlow.</p><div id="themes">${themeChoices()}</div>
         <label class="chk"><input type="checkbox" id="f-lite"${document.documentElement.classList.contains("lite") ? " checked" : ""}> Battery saver: no blur or moving effects (less heat and battery)</label>
         <div style="display:flex;align-items:center;gap:10px;margin-top:14px"><span>Text size</span><select id="f-zoom">${[["0.9", "Small"], ["1", "Normal"], ["1.12", "Large"], ["1.25", "Very large"]].map(([v, n]) => `<option value="${v}"${(localStorage.getItem("mfp.textsize") || "1") === v ? " selected" : ""}>${n}</option>`).join("")}</select></div></div>
-      ${Upd.usable() ? `<div class="set"><h3>Updates</h3><p id="u-state">Playwave ${esc(st.version)}</p>
+      ${Upd.usable() ? `<div class="set"><h3>Updates</h3><p id="u-state">Tunedrift ${esc(st.version)}</p>
         <button class="btn" id="u-btn">Check for updates</button> <button class="btn" id="u-new">What's new</button>
         <label class="chk"><input type="checkbox" id="u-auto"${Upd.on() ? " checked" : ""}> Check for new versions and offer them automatically</label></div>` : ""}
       <div class="set"><h3>Downloads</h3><p>Search online from the search box (press Enter) and download with one tap. The root folder,
