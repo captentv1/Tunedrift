@@ -1,7 +1,7 @@
 """Emulator test of the Android app. Installs the APK (a test build with WebView debugging on), puts one song
 per format on the device, opens the app and drives its page through the WebView's DevTools socket: it plays
 each song and checks that the position moves. Then it checks that Android's media session reports playback, that MusicFlow's search and download loaded inside
-the app, imports a playlist from a computer's MusicFlow Play (PC_LINK) while a song plays, imports it again (nothing
+the app, imports a playlist from a computer's Playwave (PC_LINK) while a song plays, imports it again (nothing
 is copied twice), and swipes the app away from the recent apps while a song plays (the music must go on).
 Usage: smoke_test.py <apk> <out_dir> <songs_dir>
 The songs dir holds one "Fmt <ext> - Tester.<ext>" file per format (made with ffmpeg by the workflow)."""

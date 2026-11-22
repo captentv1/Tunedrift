@@ -160,7 +160,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         result.detach()
         Thread {
             val items = try { children(parentId) } catch (e: Exception) {
-                mutableListOf(item("none", "Open MusicFlow Play on the phone first", "", false))
+                mutableListOf(item("none", "Open Playwave on the phone first", "", false))
             }
             try { result.sendResult(items) } catch (e: Exception) { }
         }.start()
@@ -392,7 +392,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         )
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_note)
-            .setContentTitle(title.ifEmpty { "MusicFlow Play" })
+            .setContentTitle(title.ifEmpty { "Playwave" })
             .setContentText(artist)
             .setContentIntent(openApp)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
