@@ -58,7 +58,7 @@ class PlayerWidget : AppWidgetProvider() {
             val v = RemoteViews(context.packageName, layout)
             val on = PlaybackService.running
             val playing = on && PlaybackService.playing
-            v.setTextViewText(R.id.w_title, if (on && PlaybackService.title.isNotEmpty()) PlaybackService.title else "MusicFlow Play")
+            v.setTextViewText(R.id.w_title, if (on && PlaybackService.title.isNotEmpty()) PlaybackService.title else "Playwave")
             v.setTextViewText(R.id.w_artist, if (on) PlaybackService.artist else "Tap to open")
             val cover = lastCover
             if (on && cover != null) v.setImageViewBitmap(R.id.w_cover, cover) else v.setImageViewResource(R.id.w_cover, R.mipmap.ic_launcher)

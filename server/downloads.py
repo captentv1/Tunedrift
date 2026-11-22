@@ -1,7 +1,7 @@
 """The download queue: songs from a search, an artist or album page, or an imported playlist.
 
 Every song goes through the same chain: is it already on the device? (then it is only linked, never downloaded
-again) -> from another MusicFlow Play (local server): the file is copied as it is -> otherwise MusicFlow finds the
+again) -> from another Playwave (local server): the file is copied as it is -> otherwise MusicFlow finds the
 best video and downloads it with its tags, cover and lyrics. The queue runs in the app's process, so it goes on
 while the page is hidden or the app is closed (Android keeps a notification while it works), and it is saved, so
 what was not finished starts again at the next launch. Few songs at once (one on a phone): converting several
@@ -341,7 +341,7 @@ class Queue:
         self._done(item)
 
     def _copy(self, item, folder: Path):
-        """From another MusicFlow Play (e.g. the computer): the file itself, no search, no conversion."""
+        """From another Playwave (e.g. the computer): the file itself, no search, no conversion."""
         u = urllib.parse.urlsplit(item["file_url"])
         if u.scheme not in ("http", "https"):
             raise RuntimeError("Wrong address.")

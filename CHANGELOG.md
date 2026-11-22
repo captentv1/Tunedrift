@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0.0 — 2026-11-22 (Android and PC)
+
+- **MusicFlow Play is now Playwave.** New name in the app, the widgets, the notifications and the downloads
+  (`Playwave.apk`, `Playwave.exe`). Your music, playlists, favorites, settings and backups stay as they are, and
+  apps already installed update to Playwave on their own.
+- New website: https://captentv1.github.io/musicflow-play/
+
 ## 1.2.5.0 — 2026-11-22 (Android and PC)
 
 - **Lyrics full screen:** the expand button at the top of Now playing shows only the lyrics, big and centered,
