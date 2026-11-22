@@ -16,6 +16,7 @@ try { mfVersion = (file("$mfDir/android/app/build.gradle").text =~ /ciVersionNam
 tasks.register('copyMusicFlowCode') {
     inputs.dir("$mfDir/android/app/src/main/java")
     inputs.dir('../../web')
+    inputs.file('../../CHANGELOG.md')
     outputs.dir(mfGenerated)
     doLast {
         def javaOut = file("$mfGenerated/java/com/musicflow/app")
@@ -24,6 +25,8 @@ tasks.register('copyMusicFlowCode') {
         file("$javaOut/SpotifySearch.kt").text = file("$src/SpotifySearch.kt").text
         // The player's page goes in web/.
         copy { from '../../web'; into "$mfGenerated/python/web" }
+        // The changelog, for "What's new" after an update.
+        copy { from '../../CHANGELOG.md'; into "$mfGenerated/python/web" }
     }
 }
 preBuild.dependsOn 'copyMusicFlowCode'
@@ -75,7 +78,7 @@ android {
         minSdk 26
         targetSdk 35
         versionCode Integer.parseInt((project.findProperty('ciVersionCode') ?: '2').toString())
-        versionName((project.findProperty('ciVersionName') ?: '1.2.2.0').toString())
+        versionName((project.findProperty('ciVersionName') ?: '1.2.3.0').toString())
 
         ndk {
             abiFilters "arm64-v8a"

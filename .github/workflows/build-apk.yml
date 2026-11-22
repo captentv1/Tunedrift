@@ -197,7 +197,7 @@ jobs:
           # MusicFlow's code (desktop/app.py, core/, yt-dlp, ffmpeg) is in the exe: nothing to install, no second page.
           $std = python ci/stdlib_args.py
           python -m PyInstaller --noconfirm --onefile --name MusicFlowPlay --icon NONE --distpath dist --workpath build --specpath build `
-            --paths server --paths musicflow/core --paths musicflow/desktop --add-data "$PWD\web\*;web" `
+            --paths server --paths musicflow/core --paths musicflow/desktop --add-data "$PWD\web\*;web" --add-data "$PWD\CHANGELOG.md;web" `
             --collect-submodules mutagen --collect-submodules flask --collect-submodules werkzeug --collect-submodules certifi `
             --collect-all yt_dlp --collect-all yt_dlp_ejs --collect-all imageio_ffmpeg --collect-submodules selenium `
             --hidden-import truststore --hidden-import library --hidden-import app --hidden-import spotify_scan `
