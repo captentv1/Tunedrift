@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import hmac
 import io
+import json
 import mimetypes
 import os
 import secrets
+import shutil
 import socket
 import sys
 import threading
@@ -18,6 +20,7 @@ paths.use_core()
 
 from flask import Flask, jsonify, request, send_file
 
+import backup
 import downloads
 import importer
 import lyrics
@@ -27,7 +30,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.2.2.0"
+VERSION = "1.2.3.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -649,6 +652,61 @@ def api_favorites():
     if not tid:
         return jsonify({"error": "Missing track."}), 400
     return jsonify({"favorites": collections.set_favorite(tid, bool(data.get("on", True)))})
+
+
+def _backup_dir() -> Path:
+    root = (settings.data.get("dl") or {}).get("root") or next(iter(settings.data["folders"]), "") or str(DATA_DIR)
+    return Path(root) / backup.BACKUP_DIR_NAME
+
+
+@app.route("/api/backup", methods=["GET", "POST"])
+def api_backup():
+    folder = _backup_dir()
+    if request.method == "GET":
+        return jsonify({"dir": str(folder), "files": backup.list_files(folder)})
+    data = request.get_json(silent=True) or {}
+    tracks = index.all()
+    if data.get("save"):
+        b = backup.make(collections.snapshot(), plays.snapshot(since=0), tracks, data.get("prefs") or {}, VERSION)
+        try:
+            f = backup.save_file(folder, b)
+        except OSError as exc:
+            return jsonify({"error": f"The backup could not be saved: {exc.strerror or exc}"}), 400
+        return jsonify({"file": str(f), "dir": str(folder), "files": backup.list_files(folder)})
+    src = data.get("data")
+    if data.get("name"):
+        name = Path(str(data["name"])).name
+        try:
+            src = json.loads((folder / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return jsonify({"error": f"This backup can't be read: {exc}"}), 400
+    try:
+        return jsonify(backup.restore(src, collections, plays, tracks))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/changelog")
+def api_changelog():
+    for f in (paths.WEB_DIR / "CHANGELOG.md", paths.ROOT / "CHANGELOG.md"):
+        if f.is_file():
+            text = f.read_text(encoding="utf-8")
+            break
+    else:
+        return jsonify({"versions": []})
+    return jsonify({"versions": backup.changelog(text, request.args.get("since", ""), VERSION)})
+
+
+@app.route("/api/storage")
+def api_storage():
+    out = []
+    for folder in settings.data["folders"]:
+        try:
+            u = shutil.disk_usage(folder)
+            out.append({"folder": folder, "free": u.free, "total": u.total})
+        except OSError:
+            pass
+    return jsonify({"disks": out})
 
 
 @app.route("/api/ratings", methods=["POST"])
