@@ -210,6 +210,16 @@
   .seek{display:flex;align-items:center;gap:8px;width:100%;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
   .seek span{width:38px;flex:0 0 auto}
   .seek span:first-child{text-align:right}
+  #fx-box{max-height:62vh;overflow:auto;margin:0 -4px;padding:0 4px}
+  #fx-box h4{margin:16px 0 8px;font-size:14px}#fx-box h4:first-child{margin-top:0}
+  #fx-box .chips{display:flex;flex-wrap:wrap;gap:6px}#fx-box .chip{padding:6px 12px}
+  #fx-box .fxrow{display:flex;align-items:center;gap:10px;margin:6px 0}#fx-box .fxrow>span:first-child{width:72px;flex:none}#fx-box .fxrow>b{width:58px;text-align:right;flex:none;font-weight:600}
+  #fx-eq{display:flex;gap:4px;justify-content:space-between;height:150px;margin-top:8px}
+  #fx-eq .band{display:flex;flex-direction:column;align-items:center;flex:1;min-width:0;font-size:10px;color:var(--muted)}
+  #fx-eq .band input{writing-mode:vertical-lr;direction:rtl;width:18px;height:110px;flex:none}
+  #fx-eq .band input::-webkit-slider-runnable-track{width:5px;height:auto;background:var(--panel3)}
+  #fx-eq .band input::-webkit-slider-thumb{margin-top:0;margin-left:-4.5px}
+  .cb.fx-on,.iconbtn.fx-on{color:var(--accent)}
   input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:18px;background:transparent;cursor:pointer;min-width:0;margin:0}
   input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:linear-gradient(var(--accent),var(--accent)) 0/var(--p,0%) 100% no-repeat,var(--panel3)}
   input[type=range]::-moz-range-track{height:5px;border-radius:3px;background:var(--panel3)}
@@ -544,6 +554,7 @@ try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) =
     <button class="cb dim" data-act="fav" title="Favorite"><svg class="i"><use href="#i-heart"/></svg></button>
     <button class="cb dim" data-act="lyrics" title="Lyrics"><svg class="i"><use href="#i-lyrics"/></svg></button>
     <button class="cb dim" data-act="queue" title="Queue"><svg class="i"><use href="#i-queue"/></svg></button>
+    <button class="cb dim" data-act="fx" title="Sound and sleep timer"><svg class="i"><use href="#i-eq"/></svg></button>
     <button class="cb dim" data-act="mute" title="Mute"><svg class="i"><use href="#i-vol"/></svg></button>
     <input type="range" id="vol" min="0" max="100" value="100" aria-label="Volume">
   </div>
@@ -557,6 +568,7 @@ try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) =
   <header>
     <button class="iconbtn" id="np-close" title="Close" aria-label="Close"><svg class="i"><use href="#i-down"/></svg></button>
     <div class="title">Now playing</div>
+    <button class="iconbtn" data-act="fx" id="np-fx" title="Sound and sleep timer" aria-label="Sound and sleep timer"><svg class="i"><use href="#i-eq"/></svg></button>
     <button class="iconbtn" id="np-more" title="More" aria-label="More"><svg class="i"><use href="#i-more"/></svg></button>
   </header>
   <div class="body">
@@ -593,8 +605,11 @@ try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) =
 
 <div id="toast" role="status"></div>
 <audio id="audio" preload="auto"></audio>
+<audio id="audio-tail" preload="auto"></audio>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-eq" viewBox="0 0 24 24"><path d="M5 3h2v6h2v3H3V9h2zm0 10h2v8H5zm6-10h2v10h2v3H9v-3h2zm0 16h2v2h-2zm6-16h2v3h2v3h-6V6h2zm0 8h2v10h-2z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.7 14.6A8.6 8.6 0 0 1 9.4 3.3 9 9 0 1 0 20.7 14.6z"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M12 3.2 3 10v10.2c0 .7.5 1.2 1.2 1.2H9v-6.2h6v6.2h4.8c.7 0 1.2-.5 1.2-1.2V10z"/></symbol>
   <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 3h3v18H4zm5 0h3v18H9zm5.2 1.3 2.9-.8 4.6 17.1-2.9.8z"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></symbol>
@@ -885,7 +900,7 @@ const Player = {
   load(autoplay, at = 0) {
     const t = this.current();
     if (!t) { audio.removeAttribute("src"); audio.load(); updateNow(); return; }
-    if (this.blobUrl) { URL.revokeObjectURL(this.blobUrl); this.blobUrl = null; }
+    if (this.blobUrl) { const old = this.blobUrl; setTimeout(() => URL.revokeObjectURL(old), 30000); this.blobUrl = null; }
     this.blobTried = null;
     audio.src = audioUrl(t.id);
     this.pendingSeek = at > 0 ? at : 0;
@@ -1002,7 +1017,7 @@ audio.addEventListener("seeked", nativeState);
 audio.addEventListener("durationchange", nativeState);
 audio.addEventListener("play", () => { document.body.classList.add("is-playing"); syncPlayButtons(); nativeState(); });
 audio.addEventListener("pause", () => { document.body.classList.remove("is-playing"); syncPlayButtons(); store.set("position", audio.currentTime); nativeState(); });
-audio.addEventListener("ended", () => Player.next(true));
+audio.addEventListener("ended", () => { if (FX.sleepAtEnd()) return; Player.next(true); });
 audio.addEventListener("timeupdate", () => updateTime());
 audio.addEventListener("error", () => {
   if (!audio.getAttribute("src")) return;
@@ -1043,6 +1058,186 @@ const vol = $("#vol");
 audio.volume = store.get("volume", 1);
 vol.value = Math.round(audio.volume * 100); vol.style.setProperty("--p", vol.value + "%");
 vol.addEventListener("input", () => { audio.volume = vol.value / 100; audio.muted = false; vol.style.setProperty("--p", vol.value + "%"); store.set("volume", audio.volume); syncMute(); });
+/* ---------- Sound: sleep timer, crossfade, speed and tone, equalizer, same volume ---------- */
+// Everything here is off until it is turned on. The equalizer and "same volume" send the sound through Web Audio,
+// which is only set up the first time one of them is turned on.
+const tail = $("#audio-tail");
+const EQ_FREQ = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const EQ_PRESETS = {
+  flat: ["Flat", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+  bass: ["Bass", [6, 5, 4, 2, 0, 0, 0, 0, 0, 0]],
+  treble: ["Treble", [0, 0, 0, 0, 0, 1, 2, 4, 5, 6]],
+  vocal: ["Voice", [-2, -2, -1, 1, 3, 4, 3, 1, 0, -1]],
+  pop: ["Pop", [-1, 1, 3, 4, 3, 0, -1, -1, 1, 2]],
+  rock: ["Rock", [4, 3, 2, 0, -1, -1, 1, 2, 3, 4]],
+  rap: ["Rap", [5, 5, 3, 1, -1, -1, 1, 1, 2, 2]],
+  electro: ["Electro", [5, 4, 1, 0, -2, 1, 0, 2, 4, 5]],
+  classical: ["Classical", [0, 0, 0, 0, 0, 0, -2, -3, -3, -4]],
+  acoustic: ["Acoustic", [3, 3, 2, 1, 1, 1, 2, 2, 2, 1]],
+};
+const FX = {
+  s: Object.assign({xfade: 0, speed: 1, tone: 0, eq: false, preset: "flat", bands: EQ_PRESETS.flat[1].slice(), level: false}, store.get("fx", {})),
+  sleepAt: 0, sleepEnd: false, fading: false, ctx: null, nodes: null,
+  save() { store.set("fx", this.s); },
+  // speed keeps the tone; the tone (in half steps) also changes the speed a little, as on a record player
+  rate() { return this.s.speed * Math.pow(2, this.s.tone / 12); },
+  applyRate() {
+    for (const a of [audio, tail]) {
+      try { a.preservesPitch = !this.s.tone; a.webkitPreservesPitch = !this.s.tone; } catch {}
+      a.playbackRate = this.rate(); a.defaultPlaybackRate = this.rate();
+    }
+  },
+  graph() {
+    if (this.ctx) return true;
+    try {
+      const C = window.AudioContext || window.webkitAudioContext; if (!C) return false;
+      const ctx = new C(), out = ctx.createGain(), comp = ctx.createDynamicsCompressor(), lvl = ctx.createGain();
+      const bands = EQ_FREQ.map((f, k) => { const b = ctx.createBiquadFilter(); b.type = k === 0 ? "lowshelf" : k === EQ_FREQ.length - 1 ? "highshelf" : "peaking"; b.frequency.value = f; b.Q.value = 1.1; return b; });
+      const input = ctx.createGain();
+      for (const el of [audio, tail]) ctx.createMediaElementSource(el).connect(input);
+      let n = input; for (const b of bands) { n.connect(b); n = b; }
+      n.connect(comp); comp.connect(lvl); lvl.connect(out); out.connect(ctx.destination);
+      this.ctx = ctx; this.nodes = {bands, comp, lvl};
+      audio.addEventListener("play", () => { if (ctx.state !== "running") ctx.resume().catch(() => {}); });
+      return true;
+    } catch (e) { console.log("MFP_FX", e.message); return false; }
+  },
+  applyAudio() {
+    if (!this.s.eq && !this.s.level && !this.ctx) return;
+    if (!this.graph()) return;
+    const {bands, comp, lvl} = this.nodes;
+    bands.forEach((b, k) => { b.gain.value = this.s.eq ? (this.s.bands[k] || 0) : 0; });
+    // "Same volume": loud songs are brought down and quiet ones up, so they all play at about the same level
+    const on = this.s.level;
+    comp.threshold.value = on ? -30 : 0; comp.knee.value = on ? 12 : 0; comp.ratio.value = on ? 5 : 1;
+    comp.attack.value = 0.005; comp.release.value = 0.3;
+    lvl.gain.value = on ? 1.9 : 1;
+    if (!audio.paused && this.ctx.state !== "running") this.ctx.resume().catch(() => {});
+  },
+  // -------- sleep timer
+  setSleep(min) {
+    this.sleepEnd = min === "end"; this.sleepAt = typeof min === "number" && min > 0 ? Date.now() + min * 60000 : 0;
+    clearInterval(this.sleepTimer);
+    if (this.sleepAt) this.sleepTimer = setInterval(() => this.sleepTick(), 1000);
+    this.mark();
+    toast(this.sleepEnd ? "The music stops at the end of this song" : this.sleepAt ? `The music stops in ${min} min` : "Sleep timer off");
+  },
+  sleepLeft() { return this.sleepAt ? Math.max(0, this.sleepAt - Date.now()) : 0; },
+  sleepTick() {
+    if (!this.sleepAt) return;
+    const left = this.sleepLeft();
+    const el = $("#fx-sleep-left"); if (el) el.textContent = this.sleepLabel();
+    if (left > 0) return;
+    // fade out over 8 seconds, then pause and put the volume back
+    this.sleepAt = 0; clearInterval(this.sleepTimer); this.mark();
+    const v0 = store.get("volume", 1); let k = 0;
+    const t = setInterval(() => { k++; audio.volume = Math.max(0, v0 * (1 - k / 40)); if (k >= 40) { clearInterval(t); audio.pause(); audio.volume = v0; } }, 200);
+  },
+  sleepAtEnd() {
+    if (!this.sleepEnd) return false;
+    this.sleepEnd = false; this.mark(); audio.pause(); audio.currentTime = 0;
+    if (Player.i + 1 < Player.queue.length) { Player.i++; Player.load(false); }
+    return true;
+  },
+  sleepLabel() {
+    if (this.sleepEnd) return "Stops at the end of this song";
+    const l = this.sleepLeft(); if (!l) return "";
+    return "Stops in " + fmt(Math.ceil(l / 1000));
+  },
+  mark() {
+    const on = this.sleepAt || this.sleepEnd || this.s.eq || this.s.level || this.s.xfade || this.s.speed !== 1 || this.s.tone;
+    for (const b of $$('[data-act="fx"]')) { b.classList.toggle("fx-on", !!on); b.classList.toggle("dim", !on && b.classList.contains("cb")); b.innerHTML = ico(this.sleepAt || this.sleepEnd ? "moon" : "eq"); }
+  },
+  // -------- crossfade: the end of the song keeps playing on a second player while the next one starts
+  hasNext() { return Player.repeat !== "one" && (Player.i + 1 < Player.queue.length || (Player.repeat === "all" && Player.queue.length > 1)); },
+  tick() {
+    const x = this.s.xfade;
+    if (!x || this.fading || audio.paused || this.sleepEnd || !this.hasNext()) return;
+    const d = audio.duration, c = audio.currentTime;
+    if (!isFinite(d) || !d) return;
+    const lead = x < 0 ? 0.7 : x;   // x < 0: "no gap", only the very end overlaps
+    if (d < lead * 2 + 10) return;
+    if ((d - c) / (audio.playbackRate || 1) <= lead) this.cross(x);
+  },
+  cross(x) {
+    this.fading = true;
+    const v = store.get("volume", 1);
+    tail.src = audio.currentSrc || audio.src;
+    tail.currentTime = audio.currentTime + 0.12;
+    tail.volume = audio.volume; tail.muted = audio.muted;
+    try { tail.preservesPitch = audio.preservesPitch; } catch {}
+    tail.playbackRate = audio.playbackRate;
+    const go = () => {
+      const fadeIn = x > 0;
+      if (fadeIn) audio.volume = 0;
+      Player.next(true);
+      const steps = Math.max(1, Math.round((x > 0 ? x : 0.7) * 10)); let k = 0;
+      clearInterval(this.fadeTimer);
+      this.fadeTimer = setInterval(() => {
+        k++;
+        const f = Math.min(1, k / steps), vv = store.get("volume", 1);
+        if (fadeIn) { audio.volume = vv * f; tail.volume = vv * (1 - f); }
+        if (k >= steps + 3) { clearInterval(this.fadeTimer); tail.pause(); tail.removeAttribute("src"); tail.load(); audio.volume = vv; this.fading = false; }
+      }, 100);
+    };
+    tail.play().then(go).catch(() => { this.fading = false; audio.volume = v; });
+  },
+  // -------- the panel
+  open() {
+    const s = this.s, P = (v, l, on) => `<button class="chip${on ? " active" : ""}" ${v}>${esc(l)}</button>`;
+    const html = `<div id="fx-box">
+      <h4>${ico("moon")} Sleep timer <span class="muted" id="fx-sleep-left" style="font-weight:400">${esc(this.sleepLabel())}</span></h4>
+      <div class="chips">${[["0", "Off"], ["15", "15 min"], ["30", "30 min"], ["45", "45 min"], ["60", "1 h"], ["90", "1 h 30"], ["end", "End of song"]].map(([v, l]) => P(`data-sleep="${v}"`, l, v === "end" ? this.sleepEnd : v === "0" ? !this.sleepAt && !this.sleepEnd : false)).join("")}</div>
+      <h4>Between songs</h4>
+      <div class="chips">${[[0, "Normal"], [-1, "No gap"], [2, "Crossfade 2 s"], [4, "4 s"], [6, "6 s"], [8, "8 s"], [12, "12 s"]].map(([v, l]) => P(`data-xf="${v}"`, l, s.xfade === v)).join("")}</div>
+      <h4>Speed and tone</h4>
+      <div class="fxrow"><span>Speed</span><input type="range" id="fx-speed" min="50" max="200" step="5" value="${Math.round(s.speed * 100)}"><b id="fx-speed-v">${s.speed.toFixed(2)}×</b></div>
+      <div class="fxrow"><span>Tone</span><input type="range" id="fx-tone" min="-6" max="6" step="1" value="${s.tone}"><b id="fx-tone-v">${s.tone > 0 ? "+" : ""}${s.tone}</b></div>
+      <p class="muted" style="margin:2px 0 0;font-size:12px">The speed keeps the tone. Changing the tone also changes the speed a little (6 % per step).</p>
+      <button class="btn" id="fx-rate0" style="margin-top:8px">Normal speed and tone</button>
+      <h4>Same volume</h4>
+      <label class="chk"><input type="checkbox" id="fx-level"${s.level ? " checked" : ""}> Play every song at about the same volume (quiet songs louder, loud ones softer)</label>
+      <h4>Equalizer</h4>
+      <label class="chk"><input type="checkbox" id="fx-eq-on"${s.eq ? " checked" : ""}> Equalizer on</label>
+      <div class="chips" id="fx-presets" style="margin-top:8px">${Object.entries(EQ_PRESETS).map(([k, [l]]) => P(`data-pre="${k}"`, l, s.preset === k)).join("")}</div>
+      <div id="fx-eq">${EQ_FREQ.map((f, k) => `<div class="band"><span data-bv="${k}">${s.bands[k] > 0 ? "+" : ""}${s.bands[k]}</span><input type="range" min="-12" max="12" step="1" value="${s.bands[k]}" data-band="${k}" aria-label="${f} Hz"><span>${f >= 1000 ? f / 1000 + "k" : f}</span></div>`).join("")}</div>
+    </div>`;
+    dialog("Sound", html, "Done", () => {});
+    const d = $("#dialog"); const x = $("[data-x]", d); if (x) x.remove();
+    const paint = el => el.style.setProperty("--p", ((el.value - el.min) / (el.max - el.min) * 100) + "%");
+    for (const r of $$("#fx-box input[type=range]", d)) paint(r);
+    d.addEventListener("click", e => {
+      const c = e.target.closest(".chip"); if (!c) return;
+      if (c.dataset.sleep) { const v = c.dataset.sleep; this.setSleep(v === "end" ? "end" : +v); $("#fx-sleep-left").textContent = this.sleepLabel(); }
+      if (c.dataset.xf) { s.xfade = +c.dataset.xf; this.save(); }
+      if (c.dataset.pre) { s.preset = c.dataset.pre; s.bands = EQ_PRESETS[s.preset][1].slice(); s.eq = true; $("#fx-eq-on").checked = true; this.save(); this.applyAudio();
+        for (const b of $$("[data-band]", d)) { b.value = s.bands[+b.dataset.band]; paint(b); $(`[data-bv="${b.dataset.band}"]`, d).textContent = (b.value > 0 ? "+" : "") + b.value; } }
+      for (const o of $$(".chip", c.parentElement)) o.classList.toggle("active", o === c);
+      this.mark();
+    });
+    const sp = $("#fx-speed"), tn = $("#fx-tone");
+    sp.oninput = () => { s.speed = sp.value / 100; $("#fx-speed-v").textContent = s.speed.toFixed(2) + "×"; paint(sp); this.applyRate(); this.save(); this.mark(); };
+    tn.oninput = () => { s.tone = +tn.value; $("#fx-tone-v").textContent = (s.tone > 0 ? "+" : "") + s.tone; paint(tn); this.applyRate(); this.save(); this.mark(); };
+    $("#fx-rate0").onclick = () => { sp.value = 100; tn.value = 0; sp.oninput(); tn.oninput(); };
+    $("#fx-level").onchange = e => { s.level = e.target.checked; this.save(); this.applyAudio(); this.mark(); };
+    $("#fx-eq-on").onchange = e => { s.eq = e.target.checked; this.save(); this.applyAudio(); this.mark(); };
+    for (const b of $$("[data-band]", d)) b.oninput = () => {
+      s.bands[+b.dataset.band] = +b.value; s.preset = ""; s.eq = true; $("#fx-eq-on").checked = true; paint(b);
+      $(`[data-bv="${b.dataset.band}"]`, d).textContent = (b.value > 0 ? "+" : "") + b.value;
+      for (const o of $$("[data-pre]", d)) o.classList.remove("active");
+      this.save(); this.applyAudio(); this.mark();
+    };
+  },
+  init() {
+    this.applyRate();
+    audio.addEventListener("loadedmetadata", () => this.applyRate());
+    audio.addEventListener("timeupdate", () => { this.tick(); if (this.sleepAt && this.sleepLeft() <= 0) this.sleepTick(); });
+    // the Web Audio graph needs a tap first; it is built on the first play when the equalizer or the same volume is on
+    if (this.s.eq || this.s.level) audio.addEventListener("play", () => this.applyAudio(), {once: true});
+    this.mark();
+  },
+};
+FX.init();
 function syncMute() { for (const b of $$('[data-act="mute"]')) b.innerHTML = ico(audio.muted || audio.volume === 0 ? "mute" : "vol"); }
 function syncPlayButtons() { const p = !audio.paused; for (const b of $$('[data-act="toggle"]')) { b.innerHTML = ico(p ? "pause" : "play"); b.title = p ? "Pause" : "Play"; } if ("mediaSession" in navigator) navigator.mediaSession.playbackState = p ? "playing" : "paused"; }
 
@@ -1056,6 +1251,7 @@ document.addEventListener("click", e => {
   else if (a === "shuffle") Player.setShuffle(!Player.shuffle);
   else if (a === "repeat") Player.cycleRepeat();
   else if (a === "fav") toggleFav(Player.currentId());
+  else if (a === "fx") FX.open();
   else if (a === "mute") { audio.muted = !audio.muted; syncMute(); }
   else if (a === "lyrics") openNow("lyrics");
   else if (a === "queue") openNow("queue");
