@@ -177,6 +177,41 @@ def test_changelog_since_a_version():
     assert backup.changelog(text, "1.2.0.0", "")[0]["body"] == "- b"
 
 
+def test_discovery_daily_songs_and_new_releases(client, tmp_path):
+    import discovery
+    import time as t
+    store = client.mod.disc_store
+
+    class A:
+        @staticmethod
+        def search_artists(name, n):
+            return [{"id": 7, "name": name}]
+
+    class D:
+        @staticmethod
+        def mix(aid):
+            return [{"title": "First Song", "uploader": "Artiste Été"}, {"title": "Own Song", "uploader": "Me Myself"},
+                    {"title": "New One", "uploader": "Other Star"}, {"title": "Second", "uploader": "Other Star"}]
+    have = {discovery.song_key("First Song", "Artiste Été, Guest")}
+    d = discovery.daily(store, ["Me Myself"], have, "2026-11-22", api=(A, D))
+    assert sorted(s["title"] for s in d["songs"]) == ["New One", "Second"] and d["songs"][0]["because"] == "Me Myself"
+    assert discovery.daily(store, ["Me Myself"], have, "2026-11-22", api=None)["songs"] == d["songs"]  # kept all day
+
+    today = t.strftime("%Y-%m-%d")
+    rel = discovery.Releases(store)
+    rel._run([{"id": 7, "name": "Star"}], get=lambda path: {"data": [
+        {"id": 1, "title": "Fresh", "record_type": "single", "release_date": today},
+        {"id": 2, "title": "Old", "record_type": "album", "release_date": "2001-01-01"}]})
+    v = rel.view()
+    assert [i["title"] for i in v["items"]] == ["Fresh"] and v["items"][0]["new"] and v["checked"]
+    rel.seen()
+    assert not rel.view()["items"][0]["new"]
+    assert rel.check([{"id": 7, "name": "Star"}])["items"]  # checked recently: not again
+    f = client.post("/api/follow", headers=client.h, json={"id": 7, "name": "Star"}).get_json()["follows"]
+    assert f == [{"id": 7, "name": "Star"}]
+    assert client.post("/api/follow", headers=client.h, json={"name": "Star", "on": False}).get_json()["follows"] == []
+
+
 def test_rescan_uses_cache_and_sees_changes(client, tmp_path):
     music = Path(client.mod.settings.data["folders"][0])
     _song(music / "New One.mp3")

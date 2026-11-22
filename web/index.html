@@ -778,7 +778,7 @@ let toastTimer;
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2600); }
 
 /* ---------- Library ---------- */
-const L = {tracks: new Map(), list: [], artists: new Map(), albums: new Map(), favorites: [], playlists: [], ratings: {}, plays: {}, loaded: false, scan: {}, tries: 0};
+const L = {tracks: new Map(), list: [], artists: new Map(), albums: new Map(), favorites: [], playlists: [], ratings: {}, plays: {}, follows: [], loaded: false, scan: {}, tries: 0};
 
 function albumKey(t) { return norm(t.album || UNKNOWN_ALBUM) + "\u0001" + norm(t.album ? t.album_artist : ""); }
 
@@ -852,7 +852,7 @@ async function loadLibrary(quiet) {
   try {
     const [d, c, st, pl] = await Promise.all([api("tracks"), api("collections"), api("state").catch(() => ({})), api("plays").catch(() => null)]);
     if (pl) L.plays = pl.counts || {};
-    L.ratings = c.ratings || {};
+    L.ratings = c.ratings || {}; L.follows = c.follows || [];
     mfState(st);
     L.roots = st.folders || L.roots || [];
     if (st.version && !Upd.version) {
@@ -978,6 +978,10 @@ const Player = {
     if (auto && this.repeat === "one") { audio.currentTime = 0; audio.play().catch(() => {}); return; }
     if (this.i + 1 < this.queue.length) { this.i++; this.load(true); return; }
     if (this.repeat === "all") { this.i = 0; this.load(true); return; }
+    if (auto && store.get("autoplay", true)) {
+      const more = similarSongs(this.queue.slice(-6), this.queue.slice(-60), 15);
+      if (more.length) { this.queue.push(...more); if (this.original) this.original.push(...more); this.i++; this.save(); this.load(true); afterQueueChange(); toast("Autoplay: similar songs from your music"); return; }
+    }
     if (auto) { audio.pause(); audio.currentTime = 0; this.save(); updateNow(); return; }
     this.i = 0; this.load(false);
   },
@@ -2073,6 +2077,79 @@ async function backupView(box) {
   };
 }
 
+// Autoplay: when the queue ends, similar songs from your music (same artists, genre, years; ones you like first)
+function similarSongs(seedIds, avoidIds, n) {
+  const seeds = seedIds.map(id => L.tracks.get(id)).filter(Boolean); if (!seeds.length) return [];
+  const avoid = new Set(avoidIds), arts = new Map(), gens = new Map(), years = [];
+  for (const t of seeds) { for (const a of t.artists || []) arts.set(norm(a), (arts.get(norm(a)) || 0) + 1); if (t.genre) gens.set(norm(t.genre), (gens.get(norm(t.genre)) || 0) + 1); if (t.year) years.push(+t.year); }
+  const y = years.length ? years.reduce((a, b) => a + b, 0) / years.length : 0;
+  const recent = nowS() - 2 * 3600;
+  const scored = [];
+  for (const t of L.list) {
+    if (avoid.has(t.id) || lastPlayed(t.id) > recent) continue;
+    let sc = 0;
+    for (const a of t.artists || []) sc += 3 * (arts.get(norm(a)) || 0);
+    if (t.genre) sc += 2 * (gens.get(norm(t.genre)) || 0);
+    if (y && t.year && Math.abs(+t.year - y) <= 4) sc += 1;
+    if (!sc) continue;
+    sc += Math.min(2, plays(t.id) / 5) + stars(t.id) / 2 + (isFav(t.id) ? 1 : 0) + Math.random() * 2.5;
+    scored.push([sc, t]);
+  }
+  scored.sort((a, b) => b[0] - a[0]);
+  // not more than 3 songs in a row from the same artist
+  const out = [], per = new Map();
+  for (const [, t] of scored) { const a = norm((t.artists || [])[0] || t.artist); if ((per.get(a) || 0) >= 4) continue; per.set(a, (per.get(a) || 0) + 1); out.push(t.id); if (out.length >= n) break; }
+  if (out.length < 5) for (const t of shuffled(L.list)) { if (out.length >= n) break; if (!avoid.has(t.id) && !out.includes(t.id)) out.push(t.id); }
+  return out;
+}
+
+// Discover: songs you don't have, close to what you listen to; new releases of the artists you follow
+function topArtists(k) {
+  const n = new Map();
+  for (const t of L.list) { const p = plays(t.id) * 3 + (isFav(t.id) ? 2 : 0) + 0.2; for (const a of (t.artists || []).slice(0, 1)) if (a && a !== UNKNOWN_ARTIST) n.set(a, (n.get(a) || 0) + p); }
+  return [...n].sort((a, b) => b[1] - a[1]).slice(0, k).map(x => x[0]);
+}
+const DISC = {daily: null, rel: null};
+async function discoverBox(box) {
+  if (!box || !mfUrl) return;
+  const day = new Date().toDateString();
+  if (!DISC.daily || DISC.daily.day !== day) {
+    box.innerHTML = `<h2 class="sec">Discover</h2><div class="muted">Looking for songs for you…</div><div class="progress-line"><div></div></div>`;
+    try { DISC.daily = {day, d: await api("discover?artists=" + encodeURIComponent(topArtists(5).join("|")))}; } catch { box.innerHTML = ""; return; }
+  }
+  if (!document.body.contains(box)) return;
+  const songs = (DISC.daily.d.songs || []).filter(t => !localMatch(t));
+  if (!songs.length) { box.innerHTML = ""; return; }
+  const sotd = songs[0];
+  box.innerHTML = `<h2 class="sec">Song of the day</h2>
+    <div class="note" style="align-items:center;gap:14px;margin-bottom:6px">${sotd.thumbnail ? `<img src="${esc(sotd.thumbnail)}" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover">` : ico("note")}
+      <span style="flex:1;min-width:0"><b>${esc(sotd.title)}</b><br><span class="muted">${esc(sotd.uploader || "")}${sotd.because ? ` · because you listen to ${esc(sotd.because)}` : ""}</span></span></div>
+    ${onlineBlock([sotd])}
+    ${songs.length > 1 ? `<h2 class="sec">Discover for you</h2><p class="muted" style="margin:-4px 0 8px">New to you, close to the artists you play most. A new list every day.</p>${onlineBlock(songs.slice(1))}` : ""}`;
+}
+async function releasesBox(box, quiet) {
+  if (!box || !mfUrl || !L.follows.length) { if (box) box.innerHTML = ""; return; }
+  try { DISC.rel = await api("releases"); } catch { return; }
+  if (!document.body.contains(box)) return;
+  const items = (DISC.rel.items || []).slice(0, 12);
+  if (DISC.rel.running) setTimeout(() => { if (document.body.contains(box)) releasesBox(box, true); }, 6000);
+  if (!items.length) { box.innerHTML = ""; return; }
+  const fresh = items.filter(i => i.new).length;
+  box.innerHTML = `<h2 class="sec">New releases${fresh ? ` <span class="chip" style="font-size:11px;padding:2px 8px;vertical-align:middle">${fresh} new</span>` : ""}</h2>
+    <div class="rows">${items.map(a => `<div><div class="row" data-oalb="${a.id}" style="cursor:pointer"><div class="art">${a.cover ? `<img loading="lazy" src="${esc(a.cover)}" alt="">` : ico("album")}</div>
+      <div class="txt"><div class="t1">${a.new ? "● " : ""}${esc(a.title)}</div><div class="t2">${esc([a.artist, a.type === "single" ? "Single" : a.type === "ep" ? "EP" : "Album", new Date(a.date).toLocaleDateString(undefined, {day: "numeric", month: "short"})].join(" · "))}</div></div>${ico("down")}</div><div class="oalb-t"></div></div>`).join("")}</div>`;
+  if (fresh && !quiet) { toast(fresh === 1 ? `New from ${items.find(i => i.new).artist}: ${items.find(i => i.new).title}` : `${fresh} new releases from artists you follow`); setTimeout(() => api("releases", {seen: true}).catch(() => {}), 4000); }
+}
+const isFollowed = name => L.follows.some(a => norm(a.name) === norm(name));
+async function toggleFollow(name, id, btn) {
+  const on = !isFollowed(name);
+  if (btn) btn.disabled = true;
+  try { L.follows = (await api("follow", {name, id, on})).follows; toast(on ? `You follow ${name}: their new releases will show on Home` : `You no longer follow ${name}`); }
+  catch (e) { toast(e.message); }
+  if (btn) { btn.disabled = false; btn.innerHTML = followLabel(name); }
+}
+const followLabel = name => isFollowed(name) ? `${ico("heart-f")} Following` : `${ico("plus")} Follow`;
+
 /* ---------- Views ---------- */
 // Library: the views reached from the Library tab on phones (chips at the top) and listed in the side panel.
 const LIB = [{r: "folders", label: "Folders", icon: "folder"}, {r: "songs", label: "Songs", icon: "note"}, {r: "artists", label: "Artists", icon: "person"},
@@ -2606,9 +2683,10 @@ const VIEWS = {
     let name = raw; try { name = decodeURIComponent(raw); } catch {}
     const mineKey = norm(name), local = L.artists.get(mineKey);
     main.innerHTML = `<div class="head"><div class="art" style="border-radius:50%" id="oa-pic">${ico("person")}</div><div class="grow"><div class="sub">Artist · online</div><h1>${esc(name)}</h1><div class="sub" id="oa-sub"></div></div></div>
-      <div class="actions" style="flex-wrap:wrap">${mfUrl ? `<button class="btn" id="oa-radio">${ico("shuffle")} Artist radio</button>` : ""}${local ? `<button class="btn" data-go="artist/${esc(encodeURIComponent(mineKey))}">${ico("person")} In your music (${plural(local.tracks.length, "song")})</button>` : ""}</div>
+      <div class="actions" style="flex-wrap:wrap"><button class="btn" id="oa-follow">${followLabel(name)}</button>${mfUrl ? `<button class="btn" id="oa-radio">${ico("shuffle")} Artist radio</button>` : ""}${local ? `<button class="btn" data-go="artist/${esc(encodeURIComponent(mineKey))}">${ico("person")} In your music (${plural(local.tracks.length, "song")})</button>` : ""}</div>
       <div id="oa-box"><div class="muted">Reading the discography…</div><div class="progress-line"><div></div></div></div>`;
     if ($("#oa-radio")) $("#oa-radio").onclick = () => openRadio(name, "artist");
+    $("#oa-follow").onclick = e => toggleFollow(name, /^\d+$/.test(id) ? +id : null, e.currentTarget);
     try {
       const d = await api("online/artist?id=" + encodeURIComponent(id));
       if (route().name !== "oartist" || route().arg !== arg) return;
@@ -2637,7 +2715,9 @@ const VIEWS = {
         <button class="tile" data-go="playlists"><span class="ic">${ico("list")}</span><span style="min-width:0"><div class="t1">Playlists</div><div class="t2">${plural(L.playlists.length, "playlist")}</div></span></button>
         <button class="tile" data-go="stats"><span class="ic">${ico("chart")}</span><span style="min-width:0"><div class="t1">Your listening</div><div class="t2">Statistics and history</div></span></button>
       </div>
+      <div id="rel-box" class="mf-only"></div>
       ${shelf("Your mixes", mixCards())}
+      <div id="disc-box" class="mf-only"></div>
       ${shelf("Recently played", recentAl.slice(0, 12).map(albumCard))}
       ${shelf("Recently added", albums.slice().sort((a, b) => newest(b) - newest(a)).slice(0, 12).map(albumCard))}
       ${top.kids.size ? `<h2 class="sec">Your folders</h2>` + folderCards([...top.kids.values()].sort((a, b) => b.all.length - a.all.length).slice(0, 12)).replace('class="grid"', 'class="grid shelf"') : ""}
@@ -2647,6 +2727,7 @@ const VIEWS = {
     if (LYS.items.length) LYS.draw();
     if (!window.__testMode) LYS.load();
     if (cur) $("#h-cur").onclick = () => { if (audio.paused) Player.toggle(); openNow(); };
+    if (!window.__testMode) { releasesBox($("#rel-box")); discoverBox($("#disc-box")); }
   },
   folders(main) { VIEWS.folder(main, ""); },
   folder(main, key) {
@@ -2694,7 +2775,8 @@ const VIEWS = {
       <div class="actions"><button class="btn primary" id="a-play">${ico("play")} Play</button><button class="btn" id="a-shuf">${ico("shuffle")} Shuffle</button><button class="btn" id="a-more">${ico("more")}</button></div>
       ${albums.length ? `<h2 class="sec">Albums</h2>` + cardsHtml(albums.map(al => ({go: "album/" + encodeURIComponent(al.key), cover: al.cover, icon: "album", name: al.name, sub: [al.year, plural(al.tracks.length, "song")].filter(Boolean).join(" · ")}))) : ""}
       <h2 class="sec">Songs</h2><div id="list"></div><div id="onl" class="mf-only"><h2 class="sec">Online</h2>
-      <div class="actions" style="margin:0;flex-wrap:wrap"><button class="btn primary" id="o-songs">${ico("note")} All songs of ${esc(a.name)}</button><button class="btn" id="o-radio">${ico("shuffle")} Artist radio</button></div></div>`;
+      <div class="actions" style="margin:0;flex-wrap:wrap"><button class="btn primary" id="o-songs">${ico("note")} All songs of ${esc(a.name)}</button><button class="btn" id="o-radio">${ico("shuffle")} Artist radio</button><button class="btn" id="o-follow">${followLabel(a.name)}</button></div></div>`;
+    $("#o-follow").onclick = e => toggleFollow(a.name, null, e.currentTarget);
     $("#o-songs").onclick = () => artistOnline($("#onl"), a.name);
     $("#o-radio").onclick = () => openRadio(a.name, "artist");
     const ids = songs.map(t => t.id);
@@ -2782,7 +2864,9 @@ const VIEWS = {
   },
   queue(main) {
     main.innerHTML = `<div class="head"><div class="grow"><h1>Queue</h1><div class="sub">${plural(Player.queue.length, "song")}</div></div></div>
-      <div class="actions"><button class="btn" id="a-save">${ico("plus")} Save as playlist</button></div><div id="qlist">${queueHtml()}</div>`;
+      <div class="actions" style="flex-wrap:wrap"><button class="btn" id="a-save">${ico("plus")} Save as playlist</button></div>
+      <label class="chk" style="margin:0 0 12px"><input type="checkbox" id="a-auto"${store.get("autoplay", true) ? " checked" : ""}> Autoplay: when the queue ends, keep playing similar songs from your music</label><div id="qlist">${queueHtml()}</div>`;
+    $("#a-auto").onchange = e => store.set("autoplay", e.target.checked);
     $("#a-save").onclick = () => Player.queue.length ? newPlaylist(Player.queue.slice()) : toast("The queue is empty");
   },
   async settings(main) {
