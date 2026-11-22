@@ -92,7 +92,7 @@ class Plays(JsonStore):
 
 class Collections(JsonStore):
     def __init__(self, file_path: Path):
-        super().__init__(file_path, {"favorites": [], "playlists": [], "ratings": {}})
+        super().__init__(file_path, {"favorites": [], "playlists": [], "ratings": {}, "follows": []})
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -124,6 +124,16 @@ class Collections(JsonStore):
                 r.pop(tid, None)
             self.save()
             return dict(r)
+
+    def set_follow(self, aid: int, name: str, on: bool) -> list:
+        """Artists followed for their new releases: [{id, name}] (Deezer ids)."""
+        with self.lock:
+            f = [a for a in self.data.setdefault("follows", []) if a["id"] != aid]
+            if on:
+                f.insert(0, {"id": aid, "name": str(name or "")[:120]})
+            self.data["follows"] = f
+            self.save()
+            return list(f)
 
     def create(self, name: str, tracks=None, rules=None) -> dict:
         p = {"id": uuid.uuid4().hex[:12], "name": (name or "").strip()[:120] or "New playlist",
