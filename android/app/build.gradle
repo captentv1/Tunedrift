@@ -86,6 +86,7 @@ android {
 
         // Only the emulator test build turns this on (-PciWebDebug=true), so the test can drive the page.
         buildConfigField "String", "MF_VERSION", "\"${mfVersion}\""
+        buildConfigField "String", "STORE", "\"github\""
         buildConfigField "boolean", "WEB_DEBUG", (project.findProperty('ciWebDebug') ?: 'false').toString()
         // Emulator test build only: also reaches the test computer (10.0.2.2) over http, for its fake Spotify.
         manifestPlaceholders = [netConfig: (project.findProperty('ciWebDebug') ?: 'false').toString() == 'true'
@@ -111,6 +112,13 @@ android {
             signingConfig keyFile.exists() ? signingConfigs.release : (project.hasProperty('ciKeystore') ? signingConfigs.ciTest : signingConfigs.debug)
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        // Google Play build (./gradlew bundlePlay): the same app without its own updates, which Play does.
+        // src/play/AndroidManifest.xml removes the permission to install APKs.
+        play {
+            initWith release
+            matchingFallbacks = ['release']
+            buildConfigField "String", "STORE", "\"play\""
         }
     }
 
