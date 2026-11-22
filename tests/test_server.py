@@ -1,4 +1,5 @@
 import importlib
+import json
 import shutil
 import subprocess
 import sys
@@ -134,6 +135,46 @@ def test_ratings_plays_and_smart_playlists(client):
     assert p["rules"] == {"match": "all", "rules": [{"f": "rating", "op": "gt", "v": "3"}], "sort": "", "limit": 25}
     p = client.post(f"/api/playlists/{p['id']}", headers=client.h, json={"rules": {"match": "any", "rules": []}}).get_json()["playlist"]
     assert p["rules"]["match"] == "any"
+
+
+def test_backup_and_restore_find_the_songs_again(client, tmp_path):
+    t = _tracks(client)
+    a, b = t["First Song"]["id"], t["Untagged"]["id"]
+    client.post("/api/favorites", headers=client.h, json={"id": a})
+    client.post("/api/ratings", headers=client.h, json={"id": b, "stars": 5})
+    client.post("/api/plays", headers=client.h, json={"id": a, "secs": 100})
+    client.post("/api/playlists", headers=client.h, json={"name": "Mine", "tracks": [b, a]})
+    saved = client.post("/api/backup", headers=client.h, json={"save": True, "prefs": {"theme": '"oled"'}}).get_json()
+    assert saved["files"] and Path(saved["file"]).is_file()
+    data = json.loads(Path(saved["file"]).read_text(encoding="utf-8"))
+    # another phone: the same songs have other ids
+    data["songs"] = {"old-" + k: v for k, v in data["songs"].items()}
+    data["songs"]["old-gone"] = ["/nowhere/x.mp3", "Gone", "Nobody"]
+    c = data["collections"]
+    c["favorites"] = ["old-" + x for x in c["favorites"]]
+    c["ratings"] = {"old-" + k: v for k, v in c["ratings"].items()}
+    c["playlists"][0]["tracks"] = ["old-" + x for x in c["playlists"][0]["tracks"]] + ["old-gone"]
+    c["playlists"][0]["id"] = "other"
+    data["plays"]["log"] = [[e[0] - 50, "old-" + e[1], e[2]] for e in data["plays"]["log"]]
+    data["plays"]["counts"] = {}
+    r = client.post("/api/backup", headers=client.h, json={"data": data}).get_json()
+    assert r["prefs"] == {"theme": '"oled"'} and r["restored"]["missing"] == 1 and r["restored"]["plays"] == 1
+    col = client.get("/api/collections", headers=client.h).get_json()
+    assert col["favorites"] == [a] and col["ratings"] == {b: 5}
+    assert [p["tracks"] for p in col["playlists"] if p["id"] == "other"] == [[b, a]]
+    assert client.post("/api/backup", headers=client.h, json={"data": {"x": 1}}).status_code == 400
+    by_name = client.post("/api/backup", headers=client.h, json={"name": Path(saved["file"]).name}).get_json()
+    assert by_name["restored"]["favorites"] == 0
+
+
+def test_changelog_since_a_version():
+    sys.path.insert(0, str(ROOT / "server"))
+    import backup
+    sys.path.remove(str(ROOT / "server"))
+    text = "# Changelog\n\n## 1.2.1.0 — x\n\n- b\n\n## 1.2.0.0 — y\n\n- a\n\n## 1.1.9.0\n- old\n"
+    assert [v["v"] for v in backup.changelog(text, "1.1.9.0", "1.2.1.0")] == ["1.2.1.0", "1.2.0.0"]
+    assert [v["v"] for v in backup.changelog(text, "1.2.0.0", "1.2.0.0")] == []
+    assert backup.changelog(text, "1.2.0.0", "")[0]["body"] == "- b"
 
 
 def test_rescan_uses_cache_and_sees_changes(client, tmp_path):

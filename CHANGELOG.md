@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.3.0 — 2026-11-22 (Android and PC)
+
+- **What's new:** after an update, the app shows what changed since the version you had. It is also in Settings ›
+  Updates › What's new.
+- **Storage** (Settings): space used by your music and free on the phone, size per format, the biggest songs, and
+  songs never played (added more than 2 months ago) to delete if you need room.
+- **Backup** (Settings): saves your favorites, playlists, ratings, listening history and settings in a file next
+  to your music. Restore it on this phone or another one: the songs are found again by their place or their name.
+- **New songs added by themselves:** songs put on the phone by another app or copied from a computer appear in
+  the library a few seconds later, with a message.
+
 ## 1.2.2.0 — 2026-11-22 (Android)
 
 **Five home screen widgets** (hold the home screen › Widgets › MusicFlow Play):

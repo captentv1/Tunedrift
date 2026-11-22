@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
         private const val SERVER_PORT = 5091
         const val PAGE_URL = "http://127.0.0.1:5091/"
         const val EXTRA_ROUTE = "route"
+        @Volatile private var watching = false
         @Volatile private var serverStarted = false
         @Volatile var localPage = true
         private const val ALLOWED_UPDATE_URL = "https://github.com/captentv1/musicflow-play/releases/download/"
@@ -118,6 +119,7 @@ class MainActivity : AppCompatActivity() {
         PlaybackService.commandSink = { command, value ->
             if (command.matches(Regex("[a-z]+"))) callPage("window.MFP_cmd && MFP_cmd('$command', $value)")
         }
+        watchNewSongs()
         hadAllFiles = hasAllFilesAccess(this)
         if (!serverStarted) {
             serverStarted = true
@@ -128,6 +130,20 @@ class MainActivity : AppCompatActivity() {
         }
         attachPage()
         askPermissions()
+    }
+
+    /** Songs added to the phone (downloaded by another app, copied from a computer): the page reads the folders
+     *  again a few seconds later and adds them. Watched once for the whole life of the app. */
+    private fun watchNewSongs() {
+        if (watching) return
+        watching = true
+        try {
+            applicationContext.contentResolver.registerContentObserver(
+                android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true,
+                object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+                    override fun onChange(selfChange: Boolean) { callPage("window.MFP_newFiles && MFP_newFiles()") }
+                })
+        } catch (e: Exception) { }
     }
 
     /** Puts the page in this window: the one kept from before (music still playing) or a new one. */
