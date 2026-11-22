@@ -21,6 +21,7 @@ paths.use_core()
 from flask import Flask, jsonify, request, send_file
 
 import backup
+import discovery
 import downloads
 import importer
 import lyrics
@@ -30,7 +31,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.2.3.0"
+VERSION = "1.2.4.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -42,6 +43,8 @@ settings = JsonStore(DATA_DIR / "settings.json", {"folders": list(DEFAULT_FOLDER
 index = LibraryIndex(DATA_DIR / "library-index.json")
 collections = Collections(DATA_DIR / "collections.json")
 plays = Plays(DATA_DIR / "plays.json")
+disc_store = JsonStore(DATA_DIR / "discovery.json", {"daily": {}, "releases": {}})
+releases = discovery.Releases(disc_store)
 lyrics_cache = JsonStore(DATA_DIR / "lyrics-online.json", {})
 queue = downloads.Queue(DATA_DIR / "downloads.json", index, settings)
 importer.init(queue, collections, settings, DATA_DIR, PORT)
@@ -707,6 +710,55 @@ def api_storage():
         except OSError:
             pass
     return jsonify({"disks": out})
+
+
+@app.route("/api/follow", methods=["POST"])
+def api_follow():
+    data = request.get_json(silent=True) or {}
+    name, aid = str(data.get("name") or "").strip(), data.get("id")
+    on = bool(data.get("on", True))
+    if not str(aid or "").isdigit():
+        if not on:
+            follows = [a for a in collections.snapshot().get("follows") or [] if discovery._norm(a["name"]) == discovery._norm(name)]
+            aid = follows[0]["id"] if follows else None
+        else:
+            import artists
+            try:
+                found = artists.search_artists(name, 5)
+            except Exception as exc:
+                return jsonify({"error": f"Online search failed: {exc}"}), 502
+            if not found:
+                return jsonify({"error": "This artist was not found online."}), 404
+            best = next((x for x in found if discovery._norm(x["name"]) == discovery._norm(name)), found[0])
+            aid, name = best["id"], best["name"]
+    if aid is None:
+        return jsonify({"follows": collections.snapshot().get("follows") or []})
+    follows = collections.set_follow(int(aid), name, on)
+    if on:
+        releases.check(follows, force=True)
+    return jsonify({"follows": follows})
+
+
+@app.route("/api/releases", methods=["GET", "POST"])
+def api_releases():
+    data = request.get_json(silent=True) or {}
+    if data.get("seen"):
+        releases.seen()
+    follows = collections.snapshot().get("follows") or []
+    return jsonify(releases.check(follows, force=bool(data.get("check"))))
+
+
+@app.route("/api/discover")
+def api_discover():
+    names = [n for n in request.args.get("artists", "").split("|") if n.strip()][:5]
+    if not names:
+        return jsonify({"songs": []})
+    have = {discovery.song_key(t.get("title"), t.get("artist")) for t in index.all()}
+    import time as _t
+    try:
+        return jsonify(discovery.daily(disc_store, names, have, _t.strftime("%Y-%m-%d")))
+    except Exception as exc:
+        return jsonify({"error": f"Online search failed: {exc}"}), 502
 
 
 @app.route("/api/ratings", methods=["POST"])

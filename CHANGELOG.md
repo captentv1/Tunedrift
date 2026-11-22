@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.4.0 — 2026-11-22 (Android and PC)
+
+- **Autoplay:** when the queue ends, the music goes on with similar songs from your music (same artists, genre,
+  years; the ones you like first). It can be turned off in the Queue.
+- **Song of the day and Discover for you** (Home): songs you don't have yet, close to the artists you play most,
+  a new list every day, to download with one tap.
+- **Follow an artist** (button on the artist page): their new albums and singles show under **New releases** on
+  Home, with a message when one comes out.
+
 ## 1.2.3.0 — 2026-11-22 (Android and PC)
 
 - **What's new:** after an update, the app shows what changed since the version you had. It is also in Settings ›
