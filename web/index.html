@@ -2738,7 +2738,7 @@ function foldSections(root) {
 const Upd = {
   info: null, ready: "",
   on() { try { return localStorage.getItem("mfp.updatesOff") !== "1"; } catch { return true; } },
-  usable() { return NATIVE ? !!NATIVE.installUpdate : ["127.0.0.1", "localhost"].includes(location.hostname); },
+  usable() { if (NATIVE && NATIVE.store && NATIVE.store() === "play") return false; return NATIVE ? !!NATIVE.installUpdate : ["127.0.0.1", "localhost"].includes(location.hostname); },
   state(t) { const e = $("#u-state"); if (e) e.textContent = t; },
   newer(a, b) { const x = a.split(".").map(n => +n || 0), y = b.split(".").map(n => +n || 0);
     for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; },
