@@ -1,4 +1,4 @@
-"""A computer's MusicFlow Play for the emulator test: LAN mode, the given music folder, and a playlist "PC Party"
+"""A computer's Playwave for the emulator test: LAN mode, the given music folder, and a playlist "PC Party"
 with all its songs. Writes the link the phone uses (the emulator reaches this computer at 10.0.2.2) to pc/link.txt.
 Usage: pc_server.py <music folder>"""
 import sys

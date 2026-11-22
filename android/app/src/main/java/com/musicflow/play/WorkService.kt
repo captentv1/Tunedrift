@@ -63,7 +63,7 @@ class WorkService : Service() {
             )
             val b = NotificationCompat.Builder(ctx, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
-                .setContentTitle("MusicFlow Play")
+                .setContentTitle("Playwave")
                 .setContentText(text)
                 .setContentIntent(open)
                 .setOngoing(true)

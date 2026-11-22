@@ -31,7 +31,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.2.5.0"
+VERSION = "1.3.0.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -180,25 +180,33 @@ def api_latest_version():
     """Latest release, read from GitHub's redirect when its API refuses this network (it limits checks)."""
     import re
     import urllib.error
+    import urllib.parse
     import urllib.request
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):
             return None
-    location = ""
-    try:
-        req = urllib.request.Request(RELEASES + "/latest", headers={"User-Agent": "MusicFlowPlay"})
-        # Android's Python has no certificates of its own.
-        urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=mf_bridge.ssl_context())).open(req, timeout=15).close()
-    except urllib.error.HTTPError as exc:
-        location = exc.headers.get("Location", "") if exc.code in (301, 302, 303, 307, 308) else ""
-    except Exception as exc:
-        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 502
+    url, location, releases = RELEASES + "/latest", "", RELEASES
+    # Up to two hops: if the repository was renamed, GitHub first sends to the new name, then to the tag.
+    for _ in range(2):
+        location = ""
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "MusicFlowPlay"})
+            # Android's Python has no certificates of its own.
+            urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=mf_bridge.ssl_context())).open(req, timeout=15).close()
+        except urllib.error.HTTPError as exc:
+            location = exc.headers.get("Location", "") if exc.code in (301, 302, 303, 307, 308) else ""
+        except Exception as exc:
+            return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 502
+        if not location.rstrip("/").endswith("/releases/latest"):
+            break
+        url = urllib.parse.urljoin(url, location)
+        releases = url.rstrip("/").rsplit("/", 1)[0]
     tag = location.rstrip("/").rsplit("/", 1)[-1]
     if not re.fullmatch(r"v?\d+(\.\d+)*", tag):
         return jsonify({"error": "No release found."}), 502
     return jsonify({"tag_name": tag, "body": "", "assets": [
-        {"name": n, "url": f"{RELEASES}/download/{tag}/{n}"} for n in ("MusicFlowPlay.apk", "MusicFlowPlay.exe")]})
+        {"name": n, "url": f"{releases}/download/{tag}/{n}"} for n in ("Playwave.apk", "Playwave.exe", "MusicFlowPlay.apk", "MusicFlowPlay.exe")]})
 
 
 @app.route("/api/folders", methods=["POST"])
@@ -841,7 +849,7 @@ def _inside(path: Path, folder: Path) -> bool:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="MusicFlow Play")
+    parser = argparse.ArgumentParser(description="Playwave")
     parser.add_argument("--lan", action="store_true", help="let phones on the same Wi-Fi open the player")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--no-musicflow", action="store_true", help="don't start MusicFlow (search and download)")
@@ -864,7 +872,7 @@ def main(argv=None):
     if not args.no_musicflow:
         start_musicflow()
     _scan_async()
-    print(f"MusicFlow Play {VERSION} on {url}")
+    print(f"Playwave {VERSION} on {url}")
     if args.lan:
         print(f"On your phone (same Wi-Fi): http://{_lan_address()}:{PORT}/?t={CONFIG['token']}")
     if not args.no_browser:
