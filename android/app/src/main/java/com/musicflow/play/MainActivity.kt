@@ -546,6 +546,17 @@ class PageBridge(private val app: Context) {
         }.start()
     }
 
+    /** Car mode and full screen lyrics: the screen stays on. */
+    @JavascriptInterface
+    fun keepScreenOn(on: Boolean) {
+        if (!allowed()) return
+        val a = WebHost.activity ?: return
+        a.runOnUiThread {
+            if (on) a.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            else a.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     @JavascriptInterface
     fun setLightStatusBar(light: Boolean) {
         val a = WebHost.activity ?: return

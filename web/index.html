@@ -219,6 +219,28 @@
   .barlbl{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-bottom:14px}
   .toplist{counter-reset:n}.toplist .row .no{width:26px}
   .rule{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0}.rule select,.rule input{flex:1 1 90px;min-width:0}#sm-rules .rule [data-f],#sm-rules .rule [data-op]{flex:1 1 40%}#sm-rules .rule [data-v]{flex:1 1 60%}#sm-rules .rule .rb{flex:none}
+  #lyr-ctrl{display:none}
+  #np.lyrfull .left,#np.lyrfull #np-tabs,#np.lyrfull .np-switch,#np.lyrfull #np-fx,#np.lyrfull #np-more{display:none!important}
+  #np.lyrfull .body{grid-template-columns:1fr!important;grid-template-rows:1fr auto!important;max-width:980px}
+  #np.lyrfull .right{display:flex!important;order:0!important}
+  #np.lyrfull #pane-lyrics{display:block!important;mask-image:linear-gradient(transparent,#000 14%,#000 80%,transparent);-webkit-mask-image:linear-gradient(transparent,#000 14%,#000 80%,transparent)}
+  #np.lyrfull #lyr{font-size:clamp(26px,6.4vw,48px);text-align:center;padding-top:26vh}
+  #np.lyrfull #lyr .l{transform-origin:center}
+  #np.lyrfull #lyr-ctrl{display:flex;justify-content:center;align-items:center;gap:14px;padding:8px 0 calc(6px + var(--safe-b))}
+  #lyr-ctrl .cb.on{color:var(--accent)}
+  #car{position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;background:var(--bg,#000);color:var(--ink);padding:calc(14px + var(--sa-t,0px)) 20px calc(18px + var(--safe-b,0px))}
+  #car .bg{position:absolute;inset:0;background-size:cover;background-position:center;filter:blur(40px) brightness(.35);transform:scale(1.2);z-index:-1}
+  #car .top{display:flex;justify-content:space-between;align-items:center;font-size:22px;font-weight:800}
+  #car .mid{flex:1;display:flex;align-items:center;gap:22px;min-height:0}
+  #car .mid .art{width:min(38vw,34vh);aspect-ratio:1;border-radius:22px;overflow:hidden;flex:none;background:var(--panel);display:flex;align-items:center;justify-content:center}
+  #car .mid .art img{width:100%;height:100%;object-fit:cover}#car .mid .art .i{width:40%;height:40%}
+  #car .t1{font-size:clamp(24px,5vw,40px);font-weight:850;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  #car .t2{font-size:clamp(17px,3.4vw,26px);color:var(--muted);margin-top:6px}
+  #car .row1,#car .row2{display:flex;justify-content:space-around;align-items:center;gap:10px}
+  #car .row1 .cb{width:min(24vw,120px);height:min(24vw,120px);border-radius:50%;background:var(--panel)}#car .row1 .cb .i{width:46%;height:46%}
+  #car .row1 .cb.play{background:var(--accent);color:#fff}
+  #car .row2{margin-top:14px}#car .row2 .cb{width:72px;height:64px;border-radius:20px;background:var(--panel)}#car .row2 .cb .i{width:30px;height:30px}
+  @media (max-width:640px) and (orientation:portrait){#car .mid{flex-direction:column;justify-content:center;text-align:center}#car .mid .art{width:min(70vw,40vh)}}
   #fx-box{max-height:62vh;overflow:auto;margin:0 -4px;padding:0 4px}
   #fx-box h4{margin:16px 0 8px;font-size:14px}#fx-box h4:first-child{margin-top:0}
   #fx-box .chips{display:flex;flex-wrap:wrap;gap:6px}#fx-box .chip{padding:6px 12px}
@@ -577,6 +599,7 @@ try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) =
   <header>
     <button class="iconbtn" id="np-close" title="Close" aria-label="Close"><svg class="i"><use href="#i-down"/></svg></button>
     <div class="title">Now playing</div>
+    <button class="iconbtn" id="np-lyrfull" title="Lyrics full screen" aria-label="Lyrics full screen"><svg class="i"><use href="#i-expand"/></svg></button>
     <button class="iconbtn" data-act="fx" id="np-fx" title="Sound and sleep timer" aria-label="Sound and sleep timer"><svg class="i"><use href="#i-eq"/></svg></button>
     <button class="iconbtn" id="np-more" title="More" aria-label="More"><svg class="i"><use href="#i-more"/></svg></button>
   </header>
@@ -607,6 +630,13 @@ try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) =
         <button class="tab" data-pane="queue">Up next</button>
       </div>
       <div class="pane" id="pane-lyrics"><div id="lyr"></div></div>
+      <div id="lyr-ctrl">
+        <button class="cb" data-act="karaoke" title="Karaoke: lower the voice"><svg class="i"><use href="#i-mic"/></svg></button>
+        <button class="cb" data-act="prev" title="Previous"><svg class="i"><use href="#i-prev"/></svg></button>
+        <button class="cb play" data-act="toggle" title="Play"><svg class="i"><use href="#i-play"/></svg></button>
+        <button class="cb" data-act="next" title="Next"><svg class="i"><use href="#i-next"/></svg></button>
+        <button class="cb" id="lyr-exit" title="Leave full screen"><svg class="i"><use href="#i-close"/></svg></button>
+      </div>
       <div class="pane hidden" id="pane-queue"></div>
     </div>
   </div>
@@ -621,6 +651,9 @@ try { if ((localStorage.getItem('mfp.lite') ?? (window.MFPNative ? '1' : '0')) =
   <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8zm0 4.5-1.3 2.7-3 .4 2.2 2.1-.5 3 2.6-1.4 2.6 1.4-.5-3 2.2-2.1-3-.4z"/></symbol>
   <symbol id="i-star-f" viewBox="0 0 24 24"><path d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></symbol>
   <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10h3v10zm6.5 0V4h3v16zM17 20v-7h3v7z"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M18.9 6c-.2-.6-.8-1-1.4-1h-11c-.7 0-1.2.4-1.4 1L3 12v8c0 .6.4 1 1 1h1c.6 0 1-.4 1-1v-1h12v1c0 .6.4 1 1 1h1c.6 0 1-.4 1-1v-8zM6.5 16a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm11 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM5 11l1.5-4.5h11L19 11z"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.7 14.6A8.6 8.6 0 0 1 9.4 3.3 9 9 0 1 0 20.7 14.6z"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M12 3.2 3 10v10.2c0 .7.5 1.2 1.2 1.2H9v-6.2h6v6.2h4.8c.7 0 1.2-.5 1.2-1.2V10z"/></symbol>
   <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 3h3v18H4zm5 0h3v18H9zm5.2 1.3 2.9-.8 4.6 17.1-2.9.8z"/></symbol>
@@ -738,6 +771,20 @@ window.MFP_cmd = (c, v) => {
   else if (c === "seek") { audio.currentTime = Math.max(0, v / 1000); updateTime(true); nativeState(); }
   else if (c === "fav") toggleFav(Player.currentId());
 };
+// Android Auto: the item picked in the car (a song, a playlist, a mix…), in the form kind:id[:index]
+window.MFP_auto = what => {
+  if (!L.loaded) { widgetWant = null; setTimeout(() => window.MFP_auto(what), 1000); return; }
+  const [kind, id, k] = String(what).split(":");
+  const list = kind === "shuffle" ? shuffled(L.list) : kind === "fav" ? L.favorites.map(x => L.tracks.get(x)).filter(Boolean)
+    : kind === "pl" ? playlistTracks(L.playlists.find(p => p.id === id) || {tracks: []}) : kind === "mix" ? mixTracks(id) : [];
+  if (kind === "song" && L.tracks.has(id)) return Player.playList([id], 0, false);
+  if (list.length) Player.playList(list.map(t => t.id), Math.max(0, Math.min(list.length - 1, +k || 0)), kind === "shuffle" ? false : undefined);
+};
+window.MFP_autoSearch = q => {
+  const w = norm(q).split(" ").filter(Boolean); if (!w.length) return window.MFP_auto("shuffle:");
+  const hit = L.list.filter(t => w.every(x => t._q.includes(x)));
+  if (hit.length) Player.playList(hit.map(t => t.id), 0, false); else toast(`Nothing found for “${q}”`);
+};
 // Home screen widgets: their shortcuts open the app with an action, done once the library is there.
 let widgetWant = null;
 window.MFP_widget = a => {
@@ -748,6 +795,7 @@ window.MFP_widget = a => {
   else if (a === "favorites") { const f = L.favorites.filter(id => L.tracks.has(id)); if (f.length) Player.playList(f, 0, true); go("favorites"); }
   else if (a === "mixtop" || a === "mixnew") { const k = a.slice(3), t = mixTracks(k); if (t.length) Player.playList(ids(t), 0, false); go("mix/" + k); }
   else if (a === "queue") { openNow("queue"); }
+  else if (a === "car") { carMode(true); }
 };
 let widgetSent = "";
 function syncWidget() {
@@ -1146,19 +1194,25 @@ const FX = {
       const C = window.AudioContext || window.webkitAudioContext; if (!C) return false;
       const ctx = new C(), out = ctx.createGain(), comp = ctx.createDynamicsCompressor(), lvl = ctx.createGain();
       const bands = EQ_FREQ.map((f, k) => { const b = ctx.createBiquadFilter(); b.type = k === 0 ? "lowshelf" : k === EQ_FREQ.length - 1 ? "highshelf" : "peaking"; b.frequency.value = f; b.Q.value = 1.1; return b; });
-      const input = ctx.createGain();
+      const input = ctx.createGain(), mix = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
       for (const el of [audio, tail]) ctx.createMediaElementSource(el).connect(input);
-      let n = input; for (const b of bands) { n.connect(b); n = b; }
+      input.connect(dry); dry.connect(mix);
+      const split = ctx.createChannelSplitter(2), side = ctx.createGain(), inv = ctx.createGain(), low = ctx.createBiquadFilter(), lowG = ctx.createGain();
+      inv.gain.value = -1; low.type = "lowpass"; low.frequency.value = 140; lowG.gain.value = 0.9;
+      input.connect(split); split.connect(side, 0); split.connect(inv, 1); inv.connect(side);
+      input.connect(low); low.connect(lowG); lowG.connect(wet); side.connect(wet); wet.connect(mix);
+      let n = mix; for (const b of bands) { n.connect(b); n = b; }
       n.connect(comp); comp.connect(lvl); lvl.connect(out); out.connect(ctx.destination);
-      this.ctx = ctx; this.nodes = {bands, comp, lvl};
+      this.ctx = ctx; this.nodes = {bands, comp, lvl, dry, wet};
       audio.addEventListener("play", () => { if (ctx.state !== "running") ctx.resume().catch(() => {}); });
       return true;
     } catch (e) { console.log("MFP_FX", e.message); return false; }
   },
   applyAudio() {
-    if (!this.s.eq && !this.s.level && !this.ctx) return;
+    if (!this.s.eq && !this.s.level && !this.s.karaoke && !this.ctx) return;
     if (!this.graph()) return;
-    const {bands, comp, lvl} = this.nodes;
+    const {bands, comp, lvl, dry, wet} = this.nodes;
+    dry.gain.value = this.s.karaoke ? 0 : 1; wet.gain.value = this.s.karaoke ? 1 : 0;
     bands.forEach((b, k) => { b.gain.value = this.s.eq ? (this.s.bands[k] || 0) : 0; });
     // "Same volume": loud songs are brought down and quiet ones up, so they all play at about the same level
     const on = this.s.level;
@@ -1198,7 +1252,7 @@ const FX = {
     return "Stops in " + fmt(Math.ceil(l / 1000));
   },
   mark() {
-    const on = this.sleepAt || this.sleepEnd || this.s.eq || this.s.level || this.s.xfade || this.s.speed !== 1 || this.s.tone;
+    const on = this.sleepAt || this.sleepEnd || this.s.eq || this.s.level || this.s.karaoke || this.s.xfade || this.s.speed !== 1 || this.s.tone;
     for (const b of $$('[data-act="fx"]')) { b.classList.toggle("fx-on", !!on); b.classList.toggle("dim", !on && b.classList.contains("cb")); b.innerHTML = ico(this.sleepAt || this.sleepEnd ? "moon" : "eq"); }
   },
   // -------- crossfade: the end of the song keeps playing on a second player while the next one starts
@@ -1248,6 +1302,8 @@ const FX = {
       <div class="fxrow"><span>Tone</span><input type="range" id="fx-tone" min="-6" max="6" step="1" value="${s.tone}"><b id="fx-tone-v">${s.tone > 0 ? "+" : ""}${s.tone}</b></div>
       <p class="muted" style="margin:2px 0 0;font-size:12px">The speed keeps the tone. Changing the tone also changes the speed a little (6 % per step).</p>
       <button class="btn" id="fx-rate0" style="margin-top:8px">Normal speed and tone</button>
+      <h4>Karaoke</h4>
+      <label class="chk"><input type="checkbox" id="fx-kara"${s.karaoke ? " checked" : ""}> Lower the voice to sing along (with the lyrics full screen)</label>
       <h4>Same volume</h4>
       <label class="chk"><input type="checkbox" id="fx-level"${s.level ? " checked" : ""}> Play every song at about the same volume (quiet songs louder, loud ones softer)</label>
       <h4>Equalizer</h4>
@@ -1272,6 +1328,7 @@ const FX = {
     sp.oninput = () => { s.speed = sp.value / 100; $("#fx-speed-v").textContent = s.speed.toFixed(2) + "×"; paint(sp); this.applyRate(); this.save(); this.mark(); };
     tn.oninput = () => { s.tone = +tn.value; $("#fx-tone-v").textContent = (s.tone > 0 ? "+" : "") + s.tone; paint(tn); this.applyRate(); this.save(); this.mark(); };
     $("#fx-rate0").onclick = () => { sp.value = 100; tn.value = 0; sp.oninput(); tn.oninput(); };
+    $("#fx-kara").onchange = e => { if (!!s.karaoke !== e.target.checked) toggleKaraoke(); };
     $("#fx-level").onchange = e => { s.level = e.target.checked; this.save(); this.applyAudio(); this.mark(); };
     $("#fx-eq-on").onchange = e => { s.eq = e.target.checked; this.save(); this.applyAudio(); this.mark(); };
     for (const b of $$("[data-band]", d)) b.oninput = () => {
@@ -1286,7 +1343,7 @@ const FX = {
     audio.addEventListener("loadedmetadata", () => this.applyRate());
     audio.addEventListener("timeupdate", () => { this.tick(); if (this.sleepAt && this.sleepLeft() <= 0) this.sleepTick(); });
     // the Web Audio graph needs a tap first; it is built on the first play when the equalizer or the same volume is on
-    if (this.s.eq || this.s.level) audio.addEventListener("play", () => this.applyAudio(), {once: true});
+    if (this.s.eq || this.s.level || this.s.karaoke) audio.addEventListener("play", () => this.applyAudio(), {once: true});
     this.mark();
   },
 };
@@ -1305,6 +1362,7 @@ document.addEventListener("click", e => {
   else if (a === "repeat") Player.cycleRepeat();
   else if (a === "fav") toggleFav(Player.currentId());
   else if (a === "fx") FX.open();
+  else if (a === "karaoke") toggleKaraoke();
   else if (a === "mute") { audio.muted = !audio.muted; syncMute(); }
   else if (a === "lyrics") openNow("lyrics");
   else if (a === "queue") openNow("queue");
@@ -1344,6 +1402,7 @@ function updateNow() {
     navigator.mediaSession.metadata = t ? new MediaMetadata({title: t.title, artist: t.artist || UNKNOWN_ARTIST, album: t.album || "",
       artwork: t.cover ? [{src: new URL(coverUrl(t.id), location.href).href, sizes: "512x512"}] : [{src: new URL("icon.svg", location.href).href, sizes: "512x512", type: "image/svg+xml"}]}) : null;
   }
+  if (typeof carNow === "function") carNow();
   markPlaying(); refreshFavButtons(); syncPlayButtons(); renderQueuePane(); if (route().name === "queue" && $("#qlist")) $("#qlist").innerHTML = queueHtml(); updateTime(true);
 }
 
@@ -1445,7 +1504,7 @@ function closeNowAndGo(r) {
     history.back();
   } else { closeNow(); go(r); }
 }
-function closeNow(fromPop) { if (!$("#np").classList.contains("open")) return; $("#np").classList.remove("open"); if (!fromPop && history.state && history.state.np) history.back(); }
+function closeNow(fromPop) { if (!$("#np").classList.contains("open")) return; $("#np").classList.remove("open"); if ($("#np").classList.contains("lyrfull")) lyricsFull(false); if (!fromPop && history.state && history.state.np) history.back(); }
 window.addEventListener("popstate", () => { if ($("#np").classList.contains("open")) closeNow(true); });
 $("#bar-now").onclick = () => { if (Date.now() - lastSwipe > 400) openNow(); };
 
@@ -1479,7 +1538,7 @@ swipe($("#np-art"), {left: () => Player.next(false), right: () => Player.prev(),
 swipe($("#np header"), {down: () => closeNow()});
 $("#np-close").onclick = () => closeNow();
 for (const b of $$("#np .tab")) b.onclick = () => setPane(b.dataset.pane);
-$("#np-more").onclick = e => { const t = Player.current(); if (t) trackMenu(e.currentTarget, t.id, {}); };
+$("#np-more").onclick = e => { const t = Player.current(); if (t) trackMenu(e.currentTarget, t.id, {now: true}); };
 
 function renderQueuePane(force) {
   const box = $("#pane-queue");
@@ -1815,6 +1874,7 @@ function trackMenu(anchor, id, ctx) {
   items.push({label: "Delete from device", icon: "trash", run: () => { closeMenu(); deleteSongs([t.id]); }});
   const fk = folderOf(t); if (fk) items.push({label: "Go to folder", icon: "folder", run: () => { closeNowAndGo("folder/" + encodeURIComponent(fk)); }});
   if (t.album) items.push({label: "Go to album", icon: "album", run: () => { closeNowAndGo("album/" + encodeURIComponent(albumKey(t))); }});
+  if (ctx.now) items.push("-", {label: "Lyrics full screen", icon: "lyrics", run: () => lyricsFull(true)}, {label: FX.s.karaoke ? "Karaoke off" : "Karaoke (lower the voice)", icon: "mic", run: toggleKaraoke}, {label: "Car mode", icon: "car", run: () => { closeNow(); carMode(true); }});
   if (ctx.playlist) items.push("-", {label: "Remove from this playlist", icon: "close", run: () => removeFromPlaylist(ctx.playlist, ctx.pos)});
   menu(anchor, items);
 }
@@ -2149,6 +2209,48 @@ async function toggleFollow(name, id, btn) {
   if (btn) { btn.disabled = false; btn.innerHTML = followLabel(name); }
 }
 const followLabel = name => isFollowed(name) ? `${ico("heart-f")} Following` : `${ico("plus")} Follow`;
+
+// Lyrics full screen (with karaoke) and car mode -----------------------------------------------------------------
+function lyricsFull(on) {
+  const np = $("#np");
+  if (on) { if (!np.classList.contains("open")) openNow("lyrics"); else setPane("lyrics"); }
+  np.classList.toggle("lyrfull", on);
+  native("keepScreenOn", !!on || !!$("#car"));
+  if (on) setTimeout(() => syncLyrics(audio.currentTime || 0, true), 60);
+}
+$("#np-lyrfull").onclick = () => lyricsFull(!$("#np").classList.contains("lyrfull"));
+$("#lyr-exit").onclick = () => lyricsFull(false);
+function syncKaraoke() { for (const b of $$('[data-act="karaoke"]')) b.classList.toggle("on", !!FX.s.karaoke); }
+function toggleKaraoke() {
+  FX.s.karaoke = !FX.s.karaoke; FX.save(); FX.applyAudio(); syncKaraoke(); FX.mark();
+  toast(FX.s.karaoke ? "Karaoke: the voice is lowered (works best with songs mixed in stereo)" : "Karaoke off");
+}
+function carMode(on) {
+  $("#car")?.remove();
+  if (!on) { native("keepScreenOn", $("#np").classList.contains("lyrfull")); return; }
+  const c = document.createElement("div"); c.id = "car";
+  c.innerHTML = `<div class="bg"></div><div class="top"><span id="car-clock"></span><button class="iconbtn" id="car-exit" title="Leave car mode">${ico("close")}</button></div>
+    <div class="mid"><div class="art" id="car-art"></div><div style="min-width:0"><div class="t1" id="car-title"></div><div class="t2" id="car-artist"></div></div></div>
+    <div class="row1"><button class="cb" data-act="prev">${ico("prev")}</button><button class="cb play" data-act="toggle">${ico("play")}</button><button class="cb" data-act="next">${ico("next")}</button></div>
+    <div class="row2"><button class="cb" data-act="fav">${ico("heart")}</button><button class="cb" data-act="shuffle">${ico("shuffle")}</button><button class="cb" id="car-mix" title="Shuffle everything">${ico("library")}</button><button class="cb" data-act="repeat">${ico("repeat")}<span class="badge"></span></button></div>`;
+  document.body.append(c);
+  $("#car-exit").onclick = () => carMode(false);
+  $("#car-mix").onclick = () => Player.playList(L.list.map(t => t.id), 0, true);
+  swipe(c.querySelector(".mid"), {left: () => Player.next(false), right: () => Player.prev()});
+  const clock = () => { const el = $("#car-clock"); if (!el) return clearInterval(carClock); el.textContent = new Date().toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"}); };
+  clearInterval(carClock); carClock = setInterval(clock, 15000); clock();
+  carNow(); syncPlayButtons(); syncModeButtons(); refreshFavButtons();
+  native("keepScreenOn", true);
+}
+let carClock = 0;
+function carNow() {
+  if (!$("#car")) return;
+  const t = Player.current();
+  $("#car-title").textContent = t ? t.title : "Nothing playing";
+  $("#car-artist").textContent = t ? (t.artist || UNKNOWN_ARTIST) : "Tap play";
+  $("#car-art").innerHTML = t && t.cover ? `<img src="${coverUrl(t.id)}" alt="">` : ico("note");
+  $("#car .bg").style.backgroundImage = t && t.cover ? `url("${coverUrl(t.id)}")` : "none";
+}
 
 /* ---------- Views ---------- */
 // Library: the views reached from the Library tab on phones (chips at the top) and listed in the side panel.
@@ -2713,6 +2815,7 @@ const VIEWS = {
         ${cur ? `<button class="tile" id="h-cur"><span class="art">${artHtml(cur.cover ? cur.id : null)}</span><span style="min-width:0"><div class="t1">${esc(cur.title)}</div><div class="t2">Continue listening</div></span></button>` : ""}
         <button class="tile" data-go="favorites"><span class="ic" style="background:var(--fav);color:#fff">${ico("heart")}</span><span style="min-width:0"><div class="t1">Favorites</div><div class="t2">${plural(fav.length, "song")}</div></span></button>
         <button class="tile" data-go="playlists"><span class="ic">${ico("list")}</span><span style="min-width:0"><div class="t1">Playlists</div><div class="t2">${plural(L.playlists.length, "playlist")}</div></span></button>
+        <button class="tile" id="h-car"><span class="ic">${ico("car")}</span><span style="min-width:0"><div class="t1">Car mode</div><div class="t2">Big buttons for the road</div></span></button>
         <button class="tile" data-go="stats"><span class="ic">${ico("chart")}</span><span style="min-width:0"><div class="t1">Your listening</div><div class="t2">Statistics and history</div></span></button>
       </div>
       <div id="rel-box" class="mf-only"></div>
@@ -2727,6 +2830,7 @@ const VIEWS = {
     if (LYS.items.length) LYS.draw();
     if (!window.__testMode) LYS.load();
     if (cur) $("#h-cur").onclick = () => { if (audio.paused) Player.toggle(); openNow(); };
+    $("#h-car").onclick = () => carMode(true);
     if (!window.__testMode) { releasesBox($("#rel-box")); discoverBox($("#disc-box")); }
   },
   folders(main) { VIEWS.folder(main, ""); },
