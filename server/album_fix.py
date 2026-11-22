@@ -32,7 +32,7 @@ def _same(r: dict, titles: set, artist: str, length_s: float) -> bool:
     return bool(ra) and (artist in ra or ra in artist) and abs(float(r.get("duration") or 0) - length_s) <= 3
 
 
-def find(title: str, artist: str, length_s: float, album: str = "") -> dict | None:
+def find(title: str, artist: str, length_s: float, album: str = "", want_cover: bool = False) -> dict | None:
     """The checked album of this song: {"album", "album_artist", "track_info", "year"}; {} when its album is already
     right; None when nothing sure is found."""
     art = lyrics._artist(artist)
@@ -44,8 +44,11 @@ def find(title: str, artist: str, length_s: float, album: str = "") -> dict | No
     good = [r for r in res if _same(r, titles, lyrics._key(art), length_s)]
     if not good:
         return None
-    if album and any(lyrics._key((r.get("album") or {}).get("title")) == lyrics._key(album) for r in good):
-        return {}
+    same_album = [r for r in good if album and lyrics._key((r.get("album") or {}).get("title")) == lyrics._key(album)]
+    if same_album:
+        al = same_album[0].get("album") or {}
+        url = al.get("cover_xl") or al.get("cover_big") or ""
+        return {"cover": url} if want_cover and url else {}
     good.sort(key=lambda r: bool(_COMPIL.search((r.get("album") or {}).get("title") or "")))
     t = artists._get(f"/track/{good[0]['id']}") or {}
     al = t.get("album") or good[0].get("album") or {}
@@ -174,8 +177,10 @@ def cover(url: str) -> tuple[bytes, str] | None:
     return (data, "image/png" if "png" in mime else "image/jpeg") if data else None
 
 
-def start(tracks: list[dict], save, on_end=None, shorten_names: bool = False, covers: bool = False) -> bool:
-    """Runs in the background over these tracks. save(track, found) writes the tags (and found["_cover"], (bytes,
+def start(tracks: list[dict], save, on_end=None, shorten_names: bool = False, covers: bool = False,
+          covers_only: bool = False) -> bool:
+    """Runs in the background over these tracks. covers_only: only the cover is written, and it replaces the one the
+    song has (the album's original cover, in full size). save(track, found) writes the tags (and found["_cover"], (bytes,
     mime), when there is one) and returns "" or a problem."""
     with _lock:
         if STATUS["running"]:
@@ -206,8 +211,10 @@ def start(tracks: list[dict], save, on_end=None, shorten_names: bool = False, co
         if not found.get("genre") or t.get("genre"):
             found.pop("genre", None)
         url = found.pop("cover", "")
+        if covers_only:
+            found = {}
         same = all(str(t.get(k) if k != "track_info" else t.get("track_no") or "") == str(v) for k, v in found.items())
-        if covers and url and not t.get("cover"):
+        if (covers or covers_only) and url and (covers_only or not t.get("cover")):
             c = get_cover(url)
             if c:
                 found["_cover"] = c
@@ -229,7 +236,8 @@ def start(tracks: list[dict], save, on_end=None, shorten_names: bool = False, co
             return
         STATUS["current"] = t.get("title") or ""
         try:
-            found = find(t.get("title") or "", (t.get("artists") or [t.get("artist") or ""])[0], t.get("length_s") or 0, t.get("album") or "")
+            found = find(t.get("title") or "", (t.get("artists") or [t.get("artist") or ""])[0], t.get("length_s") or 0, t.get("album") or "",
+                         covers or covers_only)
             if found is None:
                 key = "not_found"
             elif not found:

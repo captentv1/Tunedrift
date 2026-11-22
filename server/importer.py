@@ -584,6 +584,37 @@ def _save_imports():
         CTX["imports"].save()
 
 
+def _own_covers(items: list[dict], url: str) -> None:
+    """A playlist or radio read from Spotify's embed page gives every song the playlist's picture. Each song gets
+    its own album cover instead: from Spotify by the song's address, else from its title and artist, else none (the
+    download then finds the album cover itself)."""
+    if "/album/" in url or len(items) < 2:
+        return
+    counts: dict = {}
+    for it in items:
+        if it["cover"]:
+            counts[it["cover"]] = counts.get(it["cover"], 0) + 1
+    shared = {c for c, n in counts.items() if n > 1 and n >= len(items) // 2}
+    todo = [it for it in items if it["cover"] in shared]
+    if not todo:
+        return
+    found: dict = {}
+    uris = [it["uri"] for it in todo if it.get("uri")]
+    if uris:
+        code, r = mf_bridge.call("track-covers", {"uris": uris})
+        if code == 200:
+            found = r.get("covers") or {}
+    rest = [(str(i), it) for i, it in enumerate(todo) if not found.get(it.get("uri") or "")]
+    by_name: dict = {}
+    if rest:
+        code, r = mf_bridge.call("covers-by-name", {"items": [{"k": k, "t": it["title"], "a": it["artist"]} for k, it in rest[:60]]})
+        if code == 200:
+            by_name = r.get("covers") or {}
+    names = dict(rest)
+    for i, it in enumerate(todo):
+        it["cover"] = found.get(it.get("uri") or "") or (by_name.get(str(i)) if str(i) in names else "") or ""
+
+
 def fetch(source: dict) -> tuple[str, list[dict]]:
     kind = source.get("kind")
     if kind == "link":
@@ -594,7 +625,8 @@ def fetch(source: dict) -> tuple[str, list[dict]]:
         for x in r.get("results") or []:
             items.append({"title": x.get("title") or "", "artist": x.get("uploader") or x.get("artist") or "",
                           "album": x.get("album") or "", "duration": seconds(x.get("duration")),
-                          "cover": x.get("thumbnail") or "", "url": x.get("url") or ""})
+                          "cover": x.get("thumbnail") or "", "url": x.get("url") or "", "uri": x.get("uri") or ""})
+        _own_covers(items, source.get("url", ""))
         return r.get("playlist_name") or "Playlist", items
     if kind == "spotify":
         return spotify_tracks(source.get("id", ""))

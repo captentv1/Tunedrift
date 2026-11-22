@@ -31,7 +31,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/tunedrift/releases"
-VERSION = "1.3.1.0"
+VERSION = "1.4.0.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -450,6 +450,54 @@ def api_online_artists():
         return jsonify({"error": f"Online search failed: {exc}"}), 502
 
 
+# Browse online (search › Browse): Popular, each genre and popular playlists, from Deezer's public charts.
+# Kept an hour, so going back and forth between categories is instant.
+_BROWSE_CACHE: dict = {}
+
+
+def _browse_cached(key, make, ttl=3600):
+    import time as _t
+    hit = _BROWSE_CACHE.get(key)
+    if hit and _t.time() - hit[0] < ttl:
+        return hit[1]
+    val = make()
+    _BROWSE_CACHE[key] = (_t.time(), val)
+    if len(_BROWSE_CACHE) > 60:
+        _BROWSE_CACHE.pop(next(iter(_BROWSE_CACHE)))
+    return val
+
+
+@app.route("/api/online/browse")
+def api_online_browse():
+    """The categories: genres (with their picture) and popular playlists."""
+    import discover
+    try:
+        return jsonify(_browse_cached("browse", lambda: {
+            "genres": [g for g in discover.genres() if g["id"] != 0],
+            "playlists": discover.popular_playlists(20)}))
+    except Exception as exc:
+        return jsonify({"error": f"Online search failed: {exc}"}), 502
+
+
+@app.route("/api/online/category")
+def api_online_category():
+    """?kind=popular | genre&id= | playlist&id= : the songs of one category."""
+    import artists
+    import discover
+    kind, cid = request.args.get("kind", "popular"), request.args.get("id", "")
+    if kind != "popular" and not cid.isdigit():
+        return jsonify({"error": "Missing category."}), 400
+    make = {"popular": lambda: discover.top(60),
+            "genre": lambda: discover.genre(int(cid), 60),
+            "playlist": lambda: [artists._track_item(t) for t in artists._everything(f"/playlist/{cid}/tracks", 100)]}.get(kind)
+    if not make:
+        return jsonify({"error": "Unknown category."}), 400
+    try:
+        return jsonify({"tracks": _browse_cached(f"{kind}:{cid}", make)})
+    except Exception as exc:
+        return jsonify({"error": f"Online search failed: {exc}"}), 502
+
+
 @app.route("/api/online/album")
 def api_online_album():
     """?id=<deezer album id>, or ?artist=&album= to find it."""
@@ -480,7 +528,8 @@ def api_album_fix():
         if data.get("stop"):
             album_fix.stop()
         else:
-            album_fix.start(index.all(), _save_album, shorten_names=bool(data.get("shorten")), covers=bool(data.get("covers")))
+            album_fix.start(index.all(), _save_album, shorten_names=bool(data.get("shorten")), covers=bool(data.get("covers")),
+                            covers_only=bool(data.get("covers_only")))
     return jsonify(album_fix.STATUS)
 
 
