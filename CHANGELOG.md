@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.2.0 — 2026-11-22 (Android and PC)
+
+- **Google Play build:** a second Android build, `Tunedrift-play.aab`, attached to every release, for the Play Store. It is the same app
+  without its own updates (Google Play updates it) and without the permission to install APKs. The GitHub APK
+  keeps its updates as before. Privacy policy: https://captentv1.github.io/tunedrift/privacy.html
+
 ## 1.4.1.0 — 2026-11-22 (Android and PC)
 
 - **Listen before downloading:** tap a song that is not downloaded (artist page, Browse online, search) and it

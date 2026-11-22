@@ -68,7 +68,7 @@ jobs:
       - name: Build the APK
         working-directory: android
         run: |
-          ./gradlew assembleRelease --no-daemon --stacktrace \
+          ./gradlew assembleRelease bundlePlay --no-daemon --stacktrace \
             -PbuildPython="$(which python3.13 || which python)" \
             -PciVersionCode="$((GITHUB_RUN_NUMBER + 1))" \
             -PciVersionName="${{ steps.version.outputs.version }}" -PciKeystore="$HOME/.android/debug.keystore"
@@ -78,6 +78,8 @@ jobs:
           got=$("$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner" verify --print-certs "$GITHUB_WORKSPACE/MusicFlowPlay.apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
           echo "key $want, APK $got"; [ -n "$want" ] && [ "$want" = "$got" ]
           ls -la "$GITHUB_WORKSPACE/MusicFlowPlay.apk"
+          # Google Play build (no self-updates), as an App Bundle to upload on the Play Console.
+          cp app/build/outputs/bundle/play/app-play.aab "$GITHUB_WORKSPACE/Tunedrift-play.aab"
 
       # Same app with WebView debugging on, only for the emulator test (never published).
       - name: Build the test APK
@@ -93,6 +95,11 @@ jobs:
         with:
           name: MusicFlowPlay-apk
           path: MusicFlowPlay.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tunedrift-play-aab
+          path: Tunedrift-play.aab
 
       - uses: actions/upload-artifact@v4
         with:
@@ -245,6 +252,10 @@ jobs:
         with:
           name: MusicFlowPlay-exe
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: Tunedrift-play-aab
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -252,7 +263,7 @@ jobs:
         run: |
           # A test build (fourth number not 0, e.g. 0.7.2.1) is published for Android only.
           cp MusicFlowPlay.apk Tunedrift.apk
-          FILES="Tunedrift.apk"
+          FILES="Tunedrift.apk Tunedrift-play.aab"
           # x.y.z.0 is a full release; x.y.z.N (N > 0) is a test build.
           if [ "$(echo "${TAG#v}" | tr -cd . | wc -c)" -lt 3 ] || [ "${TAG##*.}" = "0" ]; then cp MusicFlowPlay.exe Tunedrift.exe; FILES="$FILES Tunedrift.exe"; fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then

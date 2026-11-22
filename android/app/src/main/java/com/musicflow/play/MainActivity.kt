@@ -464,6 +464,10 @@ class PageBridge(private val app: Context) {
         } catch (e: Exception) { }
     }
 
+    // "play" in the Play Store build: Google Play updates it, so the page hides its own updates.
+    @JavascriptInterface
+    fun store(): String = BuildConfig.STORE
+
     /** Called by the page once its library is loaded: from then on commands go straight to it. Returns what a
      *  widget or the notification asked for while the page was starting in the background ("" if nothing). */
     @JavascriptInterface
@@ -531,7 +535,7 @@ class PageBridge(private val app: Context) {
 
     @JavascriptInterface
     fun installUpdate(apkUrl: String) {
-        if (!allowed()) return
+        if (!allowed() || BuildConfig.STORE == "play") return
         // Security: updates only from this repository's GitHub releases (current name, or the old one, which redirects).
         val fromRepo = listOf("https://github.com/captentv1/tunedrift/releases/download/",
             "https://github.com/captentv1/musicflow-play/releases/download/").any { apkUrl.startsWith(it, ignoreCase = true) }
