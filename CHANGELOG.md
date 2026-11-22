@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.2.0 — 2026-11-22 (Android)
+
+**Five home screen widgets** (hold the home screen › Widgets › MusicFlow Play):
+
+- **Bar** (4×1): cover, song, previous, play/pause, next.
+- **Square** (2×2): the cover full size, the song and play/pause.
+- **Card** (4×2): cover, song, favorite, shuffle, previous, play/pause, next, repeat.
+- **Large** (4×4): everything above, plus the next 3 songs and shortcuts.
+- **Shortcuts** (4×1): shuffle everything, favorites, most played, recently added (opens the app and plays).
+
 ## 1.2.1.0 — 2026-11-22 (Android and PC)
 
 - **Star ratings:** rate a song from 1 to 5 stars (⋯ › Rate).

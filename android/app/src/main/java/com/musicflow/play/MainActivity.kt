@@ -217,6 +217,10 @@ class MainActivity : AppCompatActivity() {
             window.decorView.postDelayed({ finishAndRemoveTask() }, 500)
             return
         }
+        i?.getStringExtra(PlayerWidget.EXTRA_ACTION)?.let { a ->
+            i.removeExtra(PlayerWidget.EXTRA_ACTION)
+            if (a.matches(Regex("[a-z]+"))) callPage("window.MFP_widget && MFP_widget('$a')")
+        }
         val r = i?.getStringExtra(EXTRA_ROUTE) ?: return
         i.removeExtra(EXTRA_ROUTE)
         if (r.matches(Regex("[a-z]+"))) callPage("location.hash = '$r'")
@@ -449,6 +453,15 @@ class PageBridge(private val app: Context) {
         PlaybackService.shuffle = shuffle
         PlaybackService.repeat = repeat ?: "off"
         updateService()
+    }
+
+    /** For the widgets: whether the song is a favorite, and the next songs of the queue. */
+    @JavascriptInterface
+    fun widgetInfo(favorite: Boolean, next: String?) {
+        if (!allowed()) return
+        PlayerWidget.favorite = favorite
+        PlayerWidget.upNext = (next ?: "").split("\n").filter { it.isNotBlank() }.take(3)
+        PlayerWidget.draw(app)
     }
 
     @JavascriptInterface

@@ -736,7 +736,27 @@ window.MFP_cmd = (c, v) => {
   else if (c === "next") Player.next(false);
   else if (c === "prev") Player.prev();
   else if (c === "seek") { audio.currentTime = Math.max(0, v / 1000); updateTime(true); nativeState(); }
+  else if (c === "fav") toggleFav(Player.currentId());
 };
+// Home screen widgets: their shortcuts open the app with an action, done once the library is there.
+let widgetWant = null;
+window.MFP_widget = a => {
+  if (!L.loaded) { widgetWant = a; return; }
+  const ids = ts => ts.map(t => t.id);
+  if (a === "play") { if (audio.paused) Player.toggle(); }
+  else if (a === "shuffleall") Player.playList(ids(L.list), 0, true);
+  else if (a === "favorites") { const f = L.favorites.filter(id => L.tracks.has(id)); if (f.length) Player.playList(f, 0, true); go("favorites"); }
+  else if (a === "mixtop" || a === "mixnew") { const k = a.slice(3), t = mixTracks(k); if (t.length) Player.playList(ids(t), 0, false); go("mix/" + k); }
+  else if (a === "queue") { openNow("queue"); }
+};
+let widgetSent = "";
+function syncWidget() {
+  if (!NATIVE || !NATIVE.widgetInfo) return;
+  const id = Player.currentId(), next = Player.queue.slice(Player.i + 1, Player.i + 4).map(x => L.tracks.get(x)).filter(Boolean).map(t => `${t.title} · ${t.artist || UNKNOWN_ARTIST}`);
+  const key = (id && isFav(id) ? "1" : "0") + next.join("\n");
+  if (key === widgetSent) return;
+  widgetSent = key; native("widgetInfo", !!(id && isFav(id)), next.join("\n"));
+}
 async function useFolder(folder, replace) {
   try {
     const st = await api("state");
@@ -857,6 +877,7 @@ async function loadLibrary(quiet) {
     Player.restoreIfNeeded();
     render();
     updateNow();
+    if (widgetWant) { const w = widgetWant; widgetWant = null; setTimeout(() => window.MFP_widget(w), 300); }
     if (L.scan.running) scanWatch(); else clearTimeout(L.scanTimer);
   } catch (e) {
     if (e instanceof TypeError && !L.loaded && ++L.tries < 80) { setTimeout(() => loadLibrary(quiet), 500); return; }
@@ -876,7 +897,7 @@ async function toggleFav(id) {
   if (route().name === "favorites") render();
 }
 function refreshFavButtons() {
-  const id = Player.currentId();
+  const id = Player.currentId(); syncWidget();
   for (const b of $$('[data-act="fav"]')) { const on = id && isFav(id); b.classList.toggle("dim", !on); b.classList.toggle("rb-fav", on); b.style.color = on ? "var(--fav)" : ""; b.innerHTML = ico(on ? "heart-f" : "heart"); }
   for (const b of $$(".rb[data-fav]")) { const on = isFav(b.dataset.fav); b.classList.toggle("fav-on", on); b.innerHTML = ico(on ? "heart-f" : "heart"); }
 }
@@ -889,7 +910,7 @@ const Player = {
   errors: 0, restored: false,
   currentId() { return this.queue[this.i] || null; },
   current() { return L.tracks.get(this.currentId()) || null; },
-  save() { store.set("queue", this.queue); store.set("original", this.original); store.set("index", this.i); store.set("shuffle", this.shuffle); store.set("repeat", this.repeat); },
+  save() { store.set("queue", this.queue); store.set("original", this.original); store.set("index", this.i); store.set("shuffle", this.shuffle); store.set("repeat", this.repeat); syncWidget(); },
   restoreIfNeeded() {
     if (this.restored) return;
     this.restored = true;
