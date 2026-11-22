@@ -31,7 +31,7 @@ from library_index import LibraryIndex, cover_bytes, file_lyrics, plain_from_syn
 
 PORT = 5091
 RELEASES = "https://github.com/captentv1/musicflow-play/releases"
-VERSION = "1.3.0.0"
+VERSION = "1.3.1.0"
 DATA_DIR = paths.data_dir()
 DEFAULT_FOLDERS = [f for f in os.environ.get("MFP_DEFAULT_FOLDERS", "").split(os.pathsep) if f] or [str(Path.home() / "Music")]
 BROWSE_ROOTS = [f for f in os.environ.get("MFP_BROWSE_ROOTS", "").split(os.pathsep) if f]
@@ -206,7 +206,7 @@ def api_latest_version():
     if not re.fullmatch(r"v?\d+(\.\d+)*", tag):
         return jsonify({"error": "No release found."}), 502
     return jsonify({"tag_name": tag, "body": "", "assets": [
-        {"name": n, "url": f"{releases}/download/{tag}/{n}"} for n in ("Playwave.apk", "Playwave.exe", "MusicFlowPlay.apk", "MusicFlowPlay.exe")]})
+        {"name": n, "url": f"{releases}/download/{tag}/{n}"} for n in ("Tunedrift.apk", "Tunedrift.exe", "MusicFlowPlay.apk", "MusicFlowPlay.exe")]})
 
 
 @app.route("/api/folders", methods=["POST"])
@@ -849,7 +849,7 @@ def _inside(path: Path, folder: Path) -> bool:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Playwave")
+    parser = argparse.ArgumentParser(description="Tunedrift")
     parser.add_argument("--lan", action="store_true", help="let phones on the same Wi-Fi open the player")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--no-musicflow", action="store_true", help="don't start MusicFlow (search and download)")
@@ -872,7 +872,7 @@ def main(argv=None):
     if not args.no_musicflow:
         start_musicflow()
     _scan_async()
-    print(f"Playwave {VERSION} on {url}")
+    print(f"Tunedrift {VERSION} on {url}")
     if args.lan:
         print(f"On your phone (same Wi-Fi): http://{_lan_address()}:{PORT}/?t={CONFIG['token']}")
     if not args.no_browser:

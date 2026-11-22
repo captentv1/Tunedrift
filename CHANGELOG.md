@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1.0 — 2026-11-22 (Android and PC)
+
+- **Playwave is now Tunedrift**, a name no other app uses. New name in the app, the widgets, the notifications
+  and the downloads (`Tunedrift.apk`, `Tunedrift.exe`). Your music, playlists, favorites, settings and backups stay
+  as they are, and installed apps update on their own.
+
 ## 1.3.0.0 — 2026-11-22 (Android and PC)
 
 - **MusicFlow Play is now Playwave.** New name in the app, the widgets, the notifications and the downloads

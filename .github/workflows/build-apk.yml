@@ -1,6 +1,6 @@
 # Builds the Android app (APK) and the Windows app (exe). On main, both are published as a GitHub release
 # (tag = VERSION in server/mfp_server.py), so the latest ones are always at
-# https://github.com/<owner>/<repo>/releases/latest/download/Playwave.apk (and Playwave.exe)
+# https://github.com/<owner>/<repo>/releases/latest/download/Tunedrift.apk (and Tunedrift.exe)
 name: Build APK
 
 on:
@@ -145,9 +145,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # A computer's Playwave on the same network (the emulator reaches it at 10.0.2.2): the phone imports one
+      # A computer's Tunedrift on the same network (the emulator reaches it at 10.0.2.2): the phone imports one
       # of its playlists while a song plays (the "it crashes when I download and play" case).
-      - name: Start a Playwave "computer" with a playlist
+      - name: Start a Tunedrift "computer" with a playlist
         run: |
           sudo apt-get install -y -qq ffmpeg > /dev/null
           python -m pip install -q flask mutagen
@@ -212,7 +212,7 @@ jobs:
           $ok = $false; $tok = ""
           for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
             Start-Sleep 2
-            try { $r = Invoke-WebRequest http://127.0.0.1:5091/ -UseBasicParsing -TimeoutSec 5; $ok = $r.Content -match "Playwave"
+            try { $r = Invoke-WebRequest http://127.0.0.1:5091/ -UseBasicParsing -TimeoutSec 5; $ok = $r.Content -match "Tunedrift"
                   if ($r.Content -match "MFP_TOKEN='([^']+)'") { $tok = $Matches[1] } } catch {}
           }
           $mf = ""
@@ -251,16 +251,16 @@ jobs:
           TAG: v${{ needs.build.outputs.version }}
         run: |
           # A test build (fourth number not 0, e.g. 0.7.2.1) is published for Android only.
-          # Playwave.* are the names people download; MusicFlowPlay.* stay because apps installed before the
+          # Tunedrift.* are the names people download; MusicFlowPlay.* stay because apps installed before the
           # rename look for those names to update themselves.
-          cp MusicFlowPlay.apk Playwave.apk
-          FILES="Playwave.apk MusicFlowPlay.apk"
+          cp MusicFlowPlay.apk Tunedrift.apk
+          FILES="Tunedrift.apk MusicFlowPlay.apk"
           # x.y.z.0 is a full release; x.y.z.N (N > 0) is a test build.
-          if [ "$(echo "${TAG#v}" | tr -cd . | wc -c)" -lt 3 ] || [ "${TAG##*.}" = "0" ]; then cp MusicFlowPlay.exe Playwave.exe; FILES="$FILES Playwave.exe MusicFlowPlay.exe"; fi
+          if [ "$(echo "${TAG#v}" | tr -cd . | wc -c)" -lt 3 ] || [ "${TAG##*.}" = "0" ]; then cp MusicFlowPlay.exe Tunedrift.exe; FILES="$FILES Tunedrift.exe MusicFlowPlay.exe"; fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" $FILES --clobber --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" $FILES --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-              --title "Playwave ${TAG#v}" \
-              --notes "Android: download Playwave.apk below, open it and allow installing from this source. Windows: download Playwave.exe and double-click it (if Windows warns: More info, Run anyway). Changes: see CHANGELOG.md."
+              --title "Tunedrift ${TAG#v}" \
+              --notes "Android: download Tunedrift.apk below, open it and allow installing from this source. Windows: download Tunedrift.exe and double-click it (if Windows warns: More info, Run anyway). Changes: see CHANGELOG.md."
           fi
