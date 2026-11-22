@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.1.0 — 2026-11-22 (Android and PC)
+
+- **Star ratings:** rate a song from 1 to 5 stars (⋯ › Rate).
+- **Your listening:** statistics for 7 days, 30 days, 12 months or all time: time listened, plays, top songs,
+  top artists, top genres, a chart per day or per month, and the **history** of what you played. A song counts
+  after 30 seconds. It is on Home and in the side menu.
+- **Mixes made for you** on Home and in Playlists: Most played, On repeat, Recently added, Rediscover (liked but not
+  played in a month), Never played, Top rated, Favorites mix. Each one can be saved as a playlist.
+- **Smart playlists:** songs chosen by rules (title, artist, album, genre, folder, format, year, length, stars,
+  plays, last played, added, favorite) that update by themselves, with an order and a maximum number of songs.
+- **More ways to sort songs:** year, genre, length, most played, recently played, rating.
+
 ## 1.2.0.0 — 2026-11-22 (Android and PC)
 
 New **Sound** panel (the equalizer button at the top of Now playing, or in the player bar on a computer):
