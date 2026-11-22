@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0.0 — 2026-11-22 (Android and PC)
+
+New **Sound** panel (the equalizer button at the top of Now playing, or in the player bar on a computer):
+
+- **Sleep timer:** 15, 30, 45 min, 1 h, 1 h 30, or at the end of the song. The music fades out, then pauses.
+  The button shows a moon while the timer runs.
+- **Between songs:** normal, **no gap** (the next song starts right as the last one ends), or a **crossfade** of
+  2 to 12 seconds (the end of a song fades out while the next one fades in).
+- **Speed** (0.5× to 2×, the tone stays the same) and **tone** (−6 to +6 half steps).
+- **Same volume:** every song plays at about the same level.
+- **10-band equalizer** with presets (Bass, Treble, Voice, Pop, Rock, Rap, Electro, Classical, Acoustic) or your own.
+
+All settings are kept. The queue and the position in the song were already kept when the app closes.
+
 ## 1.1.4.1 — 2026-11-21 (Android and PC)
 
 - **Lyrics readable in the light themes** (Light glass, Sakura, White): the lines before and after the one sung were
