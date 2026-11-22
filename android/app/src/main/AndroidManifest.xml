@@ -52,31 +52,31 @@
             android:name=".WorkService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
-        <receiver android:name=".PlayerWidget" android:exported="false" android:label="Playwave · Bar">
+        <receiver android:name=".PlayerWidget" android:exported="false" android:label="Tunedrift · Bar">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_player_info" />
         </receiver>
-        <receiver android:name=".WidgetMini" android:exported="false" android:label="Playwave · Square">
+        <receiver android:name=".WidgetMini" android:exported="false" android:label="Tunedrift · Square">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_mini_info" />
         </receiver>
-        <receiver android:name=".WidgetCard" android:exported="false" android:label="Playwave · Card">
+        <receiver android:name=".WidgetCard" android:exported="false" android:label="Tunedrift · Card">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_card_info" />
         </receiver>
-        <receiver android:name=".WidgetBig" android:exported="false" android:label="Playwave · Large">
+        <receiver android:name=".WidgetBig" android:exported="false" android:label="Tunedrift · Large">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_big_info" />
         </receiver>
-        <receiver android:name=".WidgetShortcuts" android:exported="false" android:label="Playwave · Shortcuts">
+        <receiver android:name=".WidgetShortcuts" android:exported="false" android:label="Tunedrift · Shortcuts">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

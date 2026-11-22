@@ -1,5 +1,5 @@
 """Import: playlists from a link, the person's Spotify account (signed in on Spotify's own page, no developer key),
-a YouTube channel's public playlists, another Playwave on the
+a YouTube channel's public playlists, another Tunedrift on the
 same Wi-Fi (local server), or a playlist file / a list of titles. An imported playlist becomes a playlist of the
 player, its songs go into the download queue (into the root folder chosen once), and the songs already on the
 device are only linked, never downloaded again. A .m3u8 file is written next to the songs, so other players
@@ -468,13 +468,13 @@ def youtube_tracks(pid: str) -> tuple[str, list[dict]]:
     return info.get("title") or "Playlist", out
 
 
-# ---------------------------------------------------------------- other Playwave (local server)
+# ---------------------------------------------------------------- other Tunedrift (local server)
 
 def parse_server(address: str) -> tuple[str, str]:
     """The link printed by `run_lan.bat` on the computer: http://192.168.1.20:5091/?t=…"""
     u = urllib.parse.urlsplit(address.strip() if "://" in address else "http://" + address.strip())
     if u.scheme not in ("http", "https") or not u.hostname:
-        raise ImportError_("Paste the link shown by Playwave on the computer (http://…:5091/?t=…).")
+        raise ImportError_("Paste the link shown by Tunedrift on the computer (http://…:5091/?t=…).")
     token = (urllib.parse.parse_qs(u.query).get("t") or [""])[0]
     if not token:
         raise ImportError_("The link has no key (?t=…). Copy the whole link.")

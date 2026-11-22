@@ -1,18 +1,18 @@
 <div align="center">
 
-# Playwave
+# Tunedrift
 
 **A free, open-source offline music player for Android and Windows, with synced lyrics.**
 Plays the songs in your folders, with cover art, synced lyrics, playlists and favorites.
 Goes with [MusicFlow](https://github.com/captentv1/musicflow) to download music. No account, no ads.
 
-[![Download for Android](https://img.shields.io/github/v/release/captentv1/musicflow-play?label=Download%20APK&style=for-the-badge)](https://github.com/captentv1/musicflow-play/releases/latest/download/Playwave.apk)
-[![Download for Windows](https://img.shields.io/badge/Windows-Download%20.exe-0078d4?style=for-the-badge)](https://github.com/captentv1/musicflow-play/releases/latest/download/Playwave.exe)
+[![Download for Android](https://img.shields.io/github/v/release/captentv1/tunedrift?label=Download%20APK&style=for-the-badge)](https://github.com/captentv1/tunedrift/releases/latest/download/Tunedrift.apk)
+[![Download for Windows](https://img.shields.io/badge/Windows-Download%20.exe-0078d4?style=for-the-badge)](https://github.com/captentv1/tunedrift/releases/latest/download/Tunedrift.exe)
 [![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 
-[Website](https://captentv1.github.io/musicflow-play/) · [Download](https://github.com/captentv1/musicflow-play/releases/latest) · [Report a bug](https://github.com/captentv1/musicflow-play/issues)
+[Website](https://captentv1.github.io/tunedrift/) · [Download](https://github.com/captentv1/tunedrift/releases/latest) · [Report a bug](https://github.com/captentv1/tunedrift/issues)
 
-<sub>Formerly “MusicFlow Play”.</sub>
+<sub>Formerly “MusicFlow Play” and “Playwave”.</sub>
 
 </div>
 
@@ -25,7 +25,7 @@ Goes with [MusicFlow](https://github.com/captentv1/musicflow) to download music.
 
 ## Features
 
-Playwave is a **local music player** (MP3, FLAC, M4A, Opus, OGG, WAV) with **synced lyrics** (LRC), **karaoke mode**, **car mode**, **Android Auto**, home-screen widgets, playlists, favorites and smart mixes. It can also **import Spotify and YouTube playlists** and download them with MusicFlow, with clean tags and album art.
+Tunedrift is a **local music player** (MP3, FLAC, M4A, Opus, OGG, WAV) with **synced lyrics** (LRC), **karaoke mode**, **car mode**, **Android Auto**, home-screen widgets, playlists, favorites and smart mixes. It can also **import Spotify and YouTube playlists** and download them with MusicFlow, with clean tags and album art.
 
 
 - **Library** by songs, artists and albums, subfolders included; search without accents
@@ -42,14 +42,14 @@ Playwave is a **local music player** (MP3, FLAC, M4A, Opus, OGG, WAV) with **syn
 ## Install
 
 **Android (8.0 or newer, 64-bit)**
-1. Download [`Playwave.apk`](https://github.com/captentv1/musicflow-play/releases/latest/download/Playwave.apk).
+1. Download [`Tunedrift.apk`](https://github.com/captentv1/tunedrift/releases/latest/download/Tunedrift.apk).
 2. Open it and allow installing from this source.
 3. Allow access to music and notifications. Songs in `Music` and `Download` appear; add other folders in **Settings**.
 
 In **Import**, choose the root folder (e.g. `Music/MusicFlow`) and allow access to all files when asked.
 
 **Windows 10/11**
-1. Download [`Playwave.exe`](https://github.com/captentv1/musicflow-play/releases/latest/download/Playwave.exe).
+1. Download [`Tunedrift.exe`](https://github.com/captentv1/tunedrift/releases/latest/download/Tunedrift.exe).
 2. Double-click it: the player opens in your browser. (If Windows shows “Windows protected your PC”: *More info › Run anyway*.)
 
 Search, download and **Import** come from MusicFlow's code inside the player. From source they need
@@ -60,8 +60,8 @@ Other systems: run from source, below.
 ## Run from source
 
 ```bash
-git clone --recurse-submodules https://github.com/captentv1/musicflow-play.git
-cd musicflow-play
+git clone --recurse-submodules https://github.com/captentv1/tunedrift.git
+cd tunedrift
 python -m pip install -r requirements.txt
 python server/mfp_server.py              # opens http://127.0.0.1:5091
 ```
@@ -83,7 +83,7 @@ The music is read from the computer, so the computer stays on.
 | Folder | Content |
 |---|---|
 | `musicflow/` | Git submodule of MusicFlow. Its code is used as is, inside the player's server: `core/`, and its server (`desktop/app.py` on PC, `mobile_app.py` on Android) for search and download. Its page is not used. |
-| `server/` | Small Flask server: reads the folders, serves the audio (with seeking), covers, lyrics, playlists and favorites. `downloads.py` is the download queue (songs already on the device are linked), `importer.py` the Import tab (links, Spotify account, YouTube channel, another Playwave, files), `mf_bridge.py` calls MusicFlow's code. |
+| `server/` | Small Flask server: reads the folders, serves the audio (with seeking), covers, lyrics, playlists and favorites. `downloads.py` is the download queue (songs already on the device are linked), `importer.py` the Import tab (links, Spotify account, YouTube channel, another Tunedrift, files), `mf_bridge.py` calls MusicFlow's code. |
 | `web/` | The single page, for PC and phone. |
 | `android/` | The Android app: a WebView on the same page, the same server run by [Chaquopy](https://chaquo.com/chaquopy/), and a media session for the notification and lock screen. |
 | `.github/workflows/build-apk.yml` | Builds the APK, starts it on an Android 12 emulator, plays every format, imports a playlist from a "computer" while playing and swipes the app away (`ci/smoke_test.py`), publishes it as a release on `main`. |

@@ -492,8 +492,10 @@ class PageBridge(private val app: Context) {
     @JavascriptInterface
     fun installUpdate(apkUrl: String) {
         if (!allowed()) return
-        // Security: updates only from this repository's GitHub releases.
-        if (!apkUrl.startsWith("https://github.com/captentv1/musicflow-play/releases/download/") || !apkUrl.endsWith(".apk")) {
+        // Security: updates only from this repository's GitHub releases (current name, or the old one, which redirects).
+        val fromRepo = listOf("https://github.com/captentv1/tunedrift/releases/download/",
+            "https://github.com/captentv1/musicflow-play/releases/download/").any { apkUrl.startsWith(it, ignoreCase = true) }
+        if (!fromRepo || !apkUrl.endsWith(".apk")) {
             MainActivity.callPage("window.MFP_updateError && MFP_updateError('download address refused')"); return
         }
         val a = WebHost.activity
