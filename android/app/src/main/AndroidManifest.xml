@@ -38,10 +38,16 @@
             </intent-filter>
         </activity>
 
+        <!-- Exported for Android Auto, which browses and controls the music through it. -->
         <service
             android:name=".PlaybackService"
             android:foregroundServiceType="mediaPlayback"
-            android:exported="false" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
         <service
             android:name=".WorkService"
             android:foregroundServiceType="dataSync"
