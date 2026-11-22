@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_bg" android:clipToOutline="true">
+    <ImageView android:id="@+id/w_cover" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="centerCrop" android:src="@mipmap/ic_launcher" android:contentDescription="Cover" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom"
+        android:orientation="horizontal" android:gravity="center_vertical" android:background="@drawable/widget_scrim"
+        android:paddingStart="12dp" android:paddingEnd="8dp" android:paddingTop="22dp" android:paddingBottom="8dp">
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/w_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="MusicFlow Play" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"
+                android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@+id/w_artist" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="" android:textColor="#CCFFFFFF" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" />
+        </LinearLayout>
+        <ImageButton android:id="@+id/w_play" android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp"
+            android:background="@drawable/widget_play_bg" android:scaleType="fitCenter" android:src="@drawable/ic_w_play" android:contentDescription="Play or pause" />
+    </LinearLayout>
+</FrameLayout>

@@ -169,7 +169,7 @@ class PlaybackService : Service() {
     private fun refresh() {
         loadCoverIfNeeded()
         val coverId = System.identityHashCode(cover)
-        val widgetKey = "$title|$artist|$playing|$coverId"
+        val widgetKey = "$title|$artist|$playing|$coverId|$shuffle|$repeat"
         if (widgetKey != sentWidget) {
             sentWidget = widgetKey
             PlayerWidget.update(this, widgetCover)
