@@ -1,6 +1,7 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
+apply plugin: 'com.google.devtools.ksp'
 
 def keyProperties = new Properties()
 def keyFile = rootProject.file("keystore.properties")
@@ -129,4 +130,5 @@ dependencies {
 
     implementation "androidx.room:room-runtime:${rootProject.ext.room_version}"
     implementation "androidx.room:room-ktx:${rootProject.ext.room_version}"
+    ksp "androidx.room:room-compiler:${rootProject.ext.room_version}"
 }
