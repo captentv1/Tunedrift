@@ -1,157 +1,666 @@
 package com.musicflow.play
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
+import android.os.Environment
+import android.provider.DocumentsContract
+import android.provider.Settings
+import android.util.Log
+import android.view.KeyEvent
+import android.view.View
+import android.webkit.ConsoleMessage
+import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.musicflow.play.ui.AppTab
-import com.musicflow.play.ui.TunedriftApp
-import com.musicflow.play.ui.TunedriftViewModel
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
+import java.io.File
+import java.net.Socket
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
     companion object {
+        private const val SERVER_PORT = 5091
+        const val PAGE_URL = "http://127.0.0.1:5091/"
         const val EXTRA_ROUTE = "route"
-    }
+        @Volatile private var watching = false
+        @Volatile private var serverStarted = false
+        @Volatile var localPage = true
+        private const val ALLOWED_UPDATE_URL = "https://github.com/captentv1/musicflow-play/releases/download/"
 
-    private val viewModel: TunedriftViewModel by viewModels()
-    private var hasAudioPermissionState by mutableStateOf(false)
-
-    private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            val granted = hasRequiredAudioPermission()
-            hasAudioPermissionState = granted
-            if (granted) {
-                viewModel.scanLibrary()
-            }
-        }
-
-    private val folderLauncher =
-        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-            if (uri != null) {
-                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                try {
-                    contentResolver.takePersistableUriPermission(uri, flags)
-                } catch (_: SecurityException) {
-                }
-                viewModel.addSafFolder(uri)
-            }
-        }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        hasAudioPermissionState = hasRequiredAudioPermission()
-
-        setContent {
-            TunedriftApp(
-                viewModel = viewModel,
-                hasAudioPermission = hasAudioPermissionState,
-                onRequestPermissions = { requestAudioPermissions() },
-                onPickSafFolder = { pickMusicFolder() },
-                onOpenUrl = { openExternal(it) }
+        val API_TOKEN: String by lazy {
+            val b = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+            android.util.Base64.encodeToString(
+                b, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
             )
         }
 
-        handleIntentRoute(intent)
-        if (hasAudioPermissionState) {
-            viewModel.scanLibrary()
-        } else {
-            requestAudioPermissions()
+        fun callPage(js: String) = WebHost.eval(js)
+
+        fun isLocal(url: String?) = url?.startsWith(PAGE_URL) == true
+
+        /** Commands sent to the page (notification, lock screen, headset, widgets). */
+        val pageSink: (String, Long) -> Unit = { command, value ->
+            if (command.matches(Regex("[a-z]+"))) callPage("window.MFP_cmd && MFP_cmd('$command', $value)")
         }
+
+        /** Starts the local server once for the whole life of the app (with or without a window). */
+        fun startServerOnce(ctx: Context) {
+            if (serverStarted) return
+            serverStarted = true
+            val app = ctx.applicationContext
+            Thread {
+                if (!Python.isStarted()) Python.start(AndroidPlatform(app))
+                startPythonServer(app)
+            }.start()
+        }
+
+        /** Settings, bridge and clients of a new page, then loads it once the server answers. */
+        fun setUpPage(w: WebView, ctx: Context) {
+            w.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+            w.settings.javaScriptEnabled = true
+            w.settings.domStorageEnabled = true
+            w.settings.mediaPlaybackRequiresUserGesture = false
+            w.addJavascriptInterface(PageBridge(ctx.applicationContext), "MFPNative")
+            setClients(w)
+            Thread { waitForServerThenLoad() }.start()
+        }
+
+        /**
+         * The page without a window: a widget, the notification or the lock screen asks for music while the app
+         * is closed (swiped away, or ended by Android). The page starts in the background and plays; the app's
+         * window does not open.
+         */
+        fun startHeadless(ctx: Context) {
+            if (WebHost.webView != null) return
+            startServerOnce(ctx)
+            PlaybackService.commandSink = pageSink
+            setUpPage(WebHost.obtainHeadless(ctx.applicationContext), ctx)
+        }
+
+        fun openExternal(ctx: Context, url: String) {
+            if (Uri.parse(url).scheme?.lowercase() !in setOf("https", "http")) return
+            try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) { }
+        }
+
+        fun setClients(w: WebView) {
+            w.webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
+                    Log.i("MFPConsole", message?.message() ?: "")
+                    return true
+                }
+
+                override fun onShowFileChooser(
+                    view: WebView?, callback: android.webkit.ValueCallback<Array<Uri>>?, params: FileChooserParams?
+                ): Boolean {
+                    val act = WebHost.activity ?: return false
+                    act.fileCallback?.onReceiveValue(null)
+                    act.fileCallback = callback
+                    return try { act.fileLauncher.launch("*/*"); true } catch (e: Exception) { act.fileCallback = null; false }
+                }
+            }
+            w.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val url = request?.url ?: return false
+                    if (isLocal(url.toString())) return false
+                    WebHost.appContext()?.let { openExternal(it, url.toString()) }
+                    return true
+                }
+
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                    localPage = isLocal(url)
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    WebHost.activity?.let { act ->
+                        act.loadingView.visibility = View.GONE
+                        if (act.insetsJs.isNotEmpty() && isLocal(url)) view?.evaluateJavascript(act.insetsJs, null)
+                        act.routeFrom(act.intent)
+                    }
+                }
+
+                // Android can end the page's renderer to get memory back (a phone busy downloading and converting):
+                // without this the whole app was closed ("it crashes when I download and play"). Now the page loads again.
+                override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                    Log.w("MFP", "page renderer gone (crash=${detail?.didCrash()})")
+                    if (view !== WebHost.webView) return true
+                    val ctx = view?.context?.applicationContext
+                    WebHost.release()
+                    PlaybackService.playing = false
+                    val act = WebHost.activity
+                    if (act != null) {
+                        act.loadingView.visibility = View.VISIBLE
+                        act.attachPage()
+                    } else if (ctx != null && PlaybackService.running) {
+                        try { ctx.startService(Intent(ctx, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP)) } catch (e: Exception) { }
+                    }
+                    return true
+                }
+            }
+        }
+
+        private fun startPythonServer(ctx: Context) {
+            try {
+                val storage = Environment.getExternalStorageDirectory()
+                val folders = listOf(File(storage, "Music"), File(storage, "Download"))
+                    .joinToString(File.pathSeparator) { it.absolutePath }
+                val roots = listOf(storage.absolutePath, "/storage").joinToString(File.pathSeparator)
+                val dataDir = File(ctx.filesDir, "data").apply { mkdirs() }
+                // Where songs go until a root folder is chosen: Music/MusicFlow (seen by every music player) when the
+                // app may write there, else the app's own folder.
+                val mfDest = if (hasAllFilesAccess(ctx)) File(storage, "Music/MusicFlow")
+                else (ctx.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: File(ctx.filesDir, "Music"))
+                Python.getInstance().getModule("mfp_mobile").callAttr(
+                    "start", dataDir.absolutePath, API_TOKEN, folders, roots,
+                    mfDest.absolutePath, File(ctx.filesDir, "musicflow-config.json").absolutePath
+                )
+            } catch (e: Exception) {
+                Log.e("MFP", "server did not start", e)
+            }
+        }
+
+        private fun waitForServerThenLoad() {
+            var attempts = 0
+            while (attempts < 400) {
+                try {
+                    Socket("127.0.0.1", SERVER_PORT).close()
+                    break
+                } catch (e: Exception) {
+                    attempts++
+                    Thread.sleep(150)
+                }
+            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post { WebHost.webView?.loadUrl(PAGE_URL) }
+        }
+
+        fun hasAllFilesAccess(ctx: Context): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Environment.isExternalStorageManager()
+            } else {
+                ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                    PackageManager.PERMISSION_GRANTED
+            }
+        }
+    }
+
+    private lateinit var webView: WebView
+    private lateinit var loadingView: LinearLayout
+    private var hadAllFiles = false
+
+    private val permissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { rescanFromPage() }
+
+    private val folderLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            val folder = if (uri != null) treeUriToPath(uri) ?: "" else null
+            if (folder != null) callPage("window.MFP_folderPicked && MFP_folderPicked(${org.json.JSONObject.quote(folder)})")
+        }
+
+    private fun treeUriToPath(uri: Uri): String? {
+        if (uri.authority != "com.android.externalstorage.documents") return null
+        val id = try { DocumentsContract.getTreeDocumentId(uri) } catch (e: Exception) { return null }
+        val parts = id.split(":", limit = 2)
+        val volume = parts[0]
+        val inside = parts.getOrElse(1) { "" }.trim('/')
+        val base = if (volume.equals("primary", ignoreCase = true)) Environment.getExternalStorageDirectory().absolutePath
+        else "/storage/$volume"
+        val folder = File(if (inside.isEmpty()) base else "$base/$inside")
+        return if (folder.isDirectory) folder.absolutePath else null
+    }
+
+    private var fileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
+    private val fileLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        fileCallback?.onReceiveValue(if (uri != null) arrayOf(uri) else null)
+        fileCallback = null
+    }
+
+    fun pickFolder() {
+        try { folderLauncher.launch(null) } catch (e: Exception) {
+            callPage("window.MFP_folderPicked && MFP_folderPicked('')")
+        }
+    }
+
+    private fun rescanFromPage() = callPage("window.MFP_rescan && MFP_rescan()")
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        applySystemInsets()
+        if (intent?.getBooleanExtra(UpdateManager.EXTRA_INSTALLER, false) == true) window.decorView.post { installDownloadedApk() }
+        loadingView = findViewById(R.id.loading)
+        if (BuildConfig.WEB_DEBUG) WebView.setWebContentsDebuggingEnabled(true)
+        try { com.musicflow.app.SpotifySearch.init(this) } catch (e: Exception) { }
+        SpotifyBot.init(this)
+        Thread { try { UpdateManager.forgetOldDownload(applicationContext) } catch (e: Exception) { } }.start()
+        if (BuildConfig.WEB_DEBUG) intent?.getStringExtra("test_spotify_base")?.let { SpotifyBot.useTestSite(it) }
+
+        PlaybackService.commandSink = pageSink
+        watchNewSongs()
+        hadAllFiles = hasAllFilesAccess(this)
+        startServerOnce(this)
+        attachPage()
+        askPermissions()
+    }
+
+    /** Songs added to the phone (downloaded by another app, copied from a computer): the page reads the folders
+     *  again a few seconds later and adds them. Watched once for the whole life of the app. */
+    private fun watchNewSongs() {
+        if (watching) return
+        watching = true
+        try {
+            applicationContext.contentResolver.registerContentObserver(
+                android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true,
+                object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+                    override fun onChange(selfChange: Boolean) { callPage("window.MFP_newFiles && MFP_newFiles()") }
+                })
+        } catch (e: Exception) { }
+    }
+
+    /** Puts the page in this window: the one kept from before (music still playing) or a new one. */
+    fun attachPage() {
+        val (w, fresh) = WebHost.obtain(this)
+        webView = w
+        findViewById<FrameLayout>(R.id.page_holder).addView(
+            w, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        )
+        setClients(w)
+        if (!fresh) {
+            loadingView.visibility = View.GONE
+            if (insetsJs.isNotEmpty()) callPage(insetsJs)
+            // The new window starts with light status bar icons: the page applies its theme again.
+            callPage("window.MFP_resume && MFP_resume()")
+            routeFrom(intent)
+            return
+        }
+        setUpPage(w, this)
+    }
+
+
+    private fun routeFrom(i: Intent?) {
+        // Emulator test build only: removes the task as swiping it away from the recent apps does.
+        if (BuildConfig.WEB_DEBUG && i?.getBooleanExtra("test_remove_task", false) == true) {
+            i.removeExtra("test_remove_task")
+            window.decorView.postDelayed({ finishAndRemoveTask() }, 500)
+            return
+        }
+        i?.getStringExtra(PlayerWidget.EXTRA_ACTION)?.let { a ->
+            i.removeExtra(PlayerWidget.EXTRA_ACTION)
+            if (a.matches(Regex("[a-z]+"))) callPage("window.MFP_widget && MFP_widget('$a')")
+        }
+        val r = i?.getStringExtra(EXTRA_ROUTE) ?: return
+        i.removeExtra(EXTRA_ROUTE)
+        if (r.matches(Regex("[a-z]+"))) callPage("location.hash = '$r'")
+    }
+
+    fun openExternal(url: String) = openExternal(this, url)
+
+    private var insetsJs = ""
+
+    private fun applySystemInsets() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+        val rootView = findViewById<FrameLayout>(android.R.id.content)
+        ViewCompat.setOnApplyWindowInsetsListener(rootView) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val typing = keyboard.bottom > bars.bottom
+            view.setPadding(bars.left, 0, bars.right, if (typing) keyboard.bottom else 0)
+            val d = resources.displayMetrics.density
+            insetsJs = "document.documentElement.style.setProperty('--sa-t','${bars.top / d}px');" +
+                "document.documentElement.style.setProperty('--safe-b','${if (typing) 0f else bars.bottom / d}px')"
+            if (::webView.isInitialized) callPage(insetsJs)
+            insets
+        }
+    }
+
+    fun askPermissions() {
+        val wanted = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            wanted.add(Manifest.permission.READ_MEDIA_AUDIO)
+            wanted.add(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            wanted.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        val missing = wanted.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
+    }
+
+
+
+    private var pendingApk: File? = null
+    @Volatile var inForeground = false
+
+    /** Downloads the update (or, while one is under way, only shows its progress again), then installs it. */
+    fun downloadUpdate(url: String) {
+        val ctx = applicationContext
+        UpdateManager.progress?.let { p -> callPage("window.MFP_updateProgress && MFP_updateProgress($p)"); return }
+        Thread {
+            try {
+                callPage("window.MFP_updateProgress && MFP_updateProgress(-1)")
+                val started = UpdateManager.download(ctx, url) { p -> callPage("window.MFP_updateProgress && MFP_updateProgress($p)") }
+                if (!started) return@Thread
+                val apk = UpdateManager.file(ctx)
+                UpdateManager.verify(ctx, apk)
+                callPage("window.MFP_updateProgress && MFP_updateProgress(100)")
+                val act = WebHost.activity
+                if (act == null || !act.inForeground) {
+                    UpdateManager.notifyReady(ctx, ctx.packageManager.getPackageArchiveInfo(apk.path, 0)?.versionName ?: "")
+                    return@Thread
+                }
+                act.runOnUiThread { act.pendingApk = apk; act.installApk() }
+            } catch (e: Exception) {
+                callPage("window.MFP_updateError && MFP_updateError(${org.json.JSONObject.quote(e.message ?: e.toString())})")
+            }
+        }.start()
+    }
+
+    fun installDownloadedApk() {
+        UpdateManager.clearNotification(this)
+        val apk = UpdateManager.file(this)
+        try { UpdateManager.verify(this, apk) } catch (e: Exception) {
+            callPage("window.MFP_updateError && MFP_updateError(${org.json.JSONObject.quote(e.message ?: "")})"); return
+        }
+        pendingApk = apk
+        installApk()
+    }
+
+    private fun installApk() {
+        val apk = pendingApk ?: return
+        if (!packageManager.canRequestPackageInstalls()) {
+            callPage("window.MFP_updateProgress && MFP_updateProgress(-2)")
+            try { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) } catch (e: Exception) { }
+            return
+        }
+        pendingApk = null
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fichiers", apk)
+        startActivity(Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleIntentRoute(intent)
+        if (intent.getBooleanExtra(UpdateManager.EXTRA_INSTALLER, false)) installDownloadedApk()
+        routeFrom(intent)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        inForeground = false
     }
 
     override fun onResume() {
         super.onResume()
-        val nowGranted = hasRequiredAudioPermission()
-        if (nowGranted && !hasAudioPermissionState) {
-            viewModel.scanLibrary()
+        inForeground = true
+        if (pendingApk != null) {
+            if (packageManager.canRequestPackageInstalls()) installApk()
+            else { pendingApk = null; callPage("window.MFP_updateError && MFP_updateError('permission to install apps refused')") }
         }
-        hasAudioPermissionState = nowGranted
-    }
-
-    private fun handleIntentRoute(intent: Intent?) {
-        val widgetAction = intent?.getStringExtra(PlayerWidget.EXTRA_ACTION)
-        if (widgetAction == "queue") {
-            intent.removeExtra(PlayerWidget.EXTRA_ACTION)
-            viewModel.setShowQueueSheet(true)
-        }
-        val route = intent?.getStringExtra(EXTRA_ROUTE) ?: return
-        intent.removeExtra(EXTRA_ROUTE)
-        when (route) {
-            "library" -> viewModel.selectTab(AppTab.LIBRARY)
-            "search", "download" -> viewModel.selectTab(AppTab.SEARCH)
-            "playlists" -> viewModel.selectTab(AppTab.PLAYLISTS)
-            "settings" -> viewModel.selectTab(AppTab.SETTINGS)
-            "player" -> viewModel.setShowFullPlayer(true)
+        val now = hasAllFilesAccess(this)
+        if (now != hadAllFiles) {
+            hadAllFiles = now
+            rescanFromPage()
         }
     }
 
-    fun hasRequiredAudioPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED
-        } else {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) ==
-                PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    fun requestAudioPermissions() {
-        val wanted = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                wanted.add(Manifest.permission.READ_MEDIA_AUDIO)
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (SpotifyBot.closeLogin()) {
+                callPage("window.MFP_spotifyDone && MFP_spotifyDone(false)")
+                return true
             }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                wanted.add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                wanted.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
+            if (webView.canGoBack()) webView.goBack() else moveTaskToBack(true)
+            return true
         }
-        if (wanted.isNotEmpty()) {
-            permissionLauncher.launch(wanted.toTypedArray())
-        }
+        return super.onKeyDown(keyCode, event)
     }
 
-    fun pickMusicFolder() {
+    override fun onDestroy() {
+        // The window closes (e.g. swiped away from the recent apps): while the player's notification is there
+        // (playing or paused), the page stays alive in WebHost with the playback service, so the music goes on and
+        // the notification, lock screen and widgets keep working. Otherwise the page is freed.
+        val player = PlaybackService.running
+        SpotifyBot.closeLogin()
+        SpotifyBot.detach()
+        WebHost.detach(this, keep = player || isChangingConfigurations)
+        super.onDestroy()
+    }
+}
+
+/** What the player's page asks the phone for. Works with or without a window (music playing after a swipe). */
+class PageBridge(private val app: Context) {
+
+    private fun allowed() = MainActivity.localPage
+
+    private fun updateService() {
         try {
-            folderLauncher.launch(null)
-        } catch (_: Exception) {
+            val intent = Intent(app, PlaybackService::class.java).setAction(PlaybackService.ACTION_UPDATE)
+            if (PlaybackService.running) app.startService(intent)
+            else if (PlaybackService.playing) ContextCompat.startForegroundService(app, intent.putExtra(PlaybackService.EXTRA_FOREGROUND, true))
+        } catch (e: Exception) { }
+    }
+
+    // "play" in the Play Store build: Google Play updates it, so the page hides its own updates.
+    @JavascriptInterface
+    fun store(): String = BuildConfig.STORE
+
+    /** Called by the page once its library is loaded: from then on commands go straight to it. Returns what a
+     *  widget or the notification asked for while the page was starting in the background ("" if nothing). */
+    @JavascriptInterface
+    fun takePending(): String {
+        if (!allowed()) return ""
+        WebHost.ready = true
+        val p = WebHost.pending
+        WebHost.pending = ""
+        return p
+    }
+
+    // Security: the token is only given to the app's own page.
+    @JavascriptInterface
+    fun token(): String = if (allowed()) MainActivity.API_TOKEN else ""
+
+    @JavascriptInterface
+    fun appVersion(): String = app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: ""
+
+    @JavascriptInterface
+    fun nowPlaying(title: String?, artist: String?, album: String?, coverUrl: String?, durationMs: Double) {
+        if (!allowed()) return
+        PlaybackService.title = title ?: ""
+        PlaybackService.artist = artist ?: ""
+        PlaybackService.album = album ?: ""
+        PlaybackService.coverUrl = coverUrl ?: ""
+        PlaybackService.durationMs = durationMs.toLong()
+        PlaybackService.positionMs = 0
+        updateService()
+    }
+
+    @JavascriptInterface
+    fun playback(playing: Boolean, positionMs: Double, durationMs: Double) {
+        if (!allowed()) return
+        PlaybackService.playing = playing
+        PlaybackService.positionMs = positionMs.toLong()
+        if (durationMs > 0) PlaybackService.durationMs = durationMs.toLong()
+        updateService()
+    }
+
+    @JavascriptInterface
+    fun modes(shuffle: Boolean, repeat: String?) {
+        if (!allowed()) return
+        PlaybackService.shuffle = shuffle
+        PlaybackService.repeat = repeat ?: "off"
+        updateService()
+    }
+
+    /** For the widgets: whether the song is a favorite, and the next songs of the queue. */
+    @JavascriptInterface
+    fun widgetInfo(favorite: Boolean, next: String?) {
+        if (!allowed()) return
+        PlayerWidget.favorite = favorite
+        PlayerWidget.upNext = (next ?: "").split("\n").filter { it.isNotBlank() }.take(3)
+        PlayerWidget.draw(app)
+    }
+
+    @JavascriptInterface
+    fun stop() {
+        if (!allowed()) return
+        PlaybackService.playing = false
+        if (PlaybackService.running) {
+            try { app.startService(Intent(app, PlaybackService::class.java).setAction(PlaybackService.ACTION_STOP)) } catch (e: Exception) { }
         }
     }
 
-    fun openExternal(url: String) {
-        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return
-        val scheme = uri.scheme?.lowercase()
-        if (scheme != "https" && scheme != "http") return
-        runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    @JavascriptInterface
+    fun installUpdate(apkUrl: String) {
+        if (!allowed() || BuildConfig.STORE == "play") return
+        // Security: updates only from this repository's GitHub releases (current name, or the old one, which redirects).
+        val fromRepo = listOf("https://github.com/captentv1/tunedrift/releases/download/",
+            "https://github.com/captentv1/musicflow-play/releases/download/").any { apkUrl.startsWith(it, ignoreCase = true) }
+        if (!fromRepo || !apkUrl.endsWith(".apk")) {
+            MainActivity.callPage("window.MFP_updateError && MFP_updateError('download address refused')"); return
         }
+        val a = WebHost.activity
+        if (a == null) { MainActivity.callPage("window.MFP_updateError && MFP_updateError('open the app and try again')"); return }
+        a.downloadUpdate(apkUrl)
+    }
+
+    @JavascriptInterface
+    fun updateReady(): String = if (allowed()) UpdateManager.readyVersion(app) else ""
+
+    @JavascriptInterface
+    fun installDownloadedUpdate() {
+        if (!allowed()) return
+        WebHost.activity?.let { a -> a.runOnUiThread { a.installDownloadedApk() } }
+    }
+
+    /** Downloads, imports, lyrics synchronization and the albums fix go on with the app closed: a notification shows them. */
+    @JavascriptInterface
+    fun backgroundWork() {
+        if (!allowed()) return
+        synchronized(this) {
+            if (backgroundWorking) return
+            backgroundWorking = true
+        }
+        Thread {
+            try {
+                val jobs = listOf("downloads" to "Downloading", "lyrics_sync" to "Lyrics synchronization", "album_fix" to "Albums fix")
+                var shown = ""
+                while (true) {
+                    val job = jobs.firstOrNull { (m, _) ->
+                        try { Python.getInstance().getModule(m)["STATUS"]!!.callAttr("get", "running").toBoolean() } catch (e: Exception) { false }
+                    } ?: break
+                    val status = Python.getInstance().getModule(job.first)["STATUS"]!!
+                    val done = status.callAttr("get", "done").toInt()
+                    val total = maxOf(1, status.callAttr("get", "total").toInt())
+                    val current = try { status.callAttr("get", "current")?.toString() ?: "" } catch (e: Exception) { "" }
+                    val text = "${job.second}: $done / $total" + if (current.isNotEmpty() && current != "None") " · $current" else ""
+                    if (text != shown) {
+                        shown = text
+                        WorkService.update(app, text, done * 100 / total)
+                    }
+                    Thread.sleep(3000)
+                }
+            } catch (e: Exception) {
+                Log.e("MFP", "background work notification", e)
+            } finally {
+                WorkService.stop(app)
+                backgroundWorking = false
+            }
+        }.start()
+    }
+
+    /** Car mode and full screen lyrics: the screen stays on. */
+    @JavascriptInterface
+    fun keepScreenOn(on: Boolean) {
+        if (!allowed()) return
+        val a = WebHost.activity ?: return
+        a.runOnUiThread {
+            if (on) a.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            else a.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    @JavascriptInterface
+    fun setLightStatusBar(light: Boolean) {
+        val a = WebHost.activity ?: return
+        a.runOnUiThread {
+            WindowCompat.getInsetsController(a.window, a.window.decorView).apply {
+                isAppearanceLightStatusBars = light
+                isAppearanceLightNavigationBars = light
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun pickFolder() {
+        if (!allowed()) return
+        val a = WebHost.activity ?: return MainActivity.callPage("window.MFP_folderPicked && MFP_folderPicked('')")
+        a.runOnUiThread { a.pickFolder() }
+    }
+
+    @JavascriptInterface
+    fun openUrl(url: String) {
+        if (!allowed()) return
+        val a = WebHost.activity ?: return
+        a.runOnUiThread { a.openExternal(url) }
+    }
+
+    @JavascriptInterface
+    fun spotifyLogin() {
+        if (!allowed()) return
+        val a = WebHost.activity ?: return
+        a.runOnUiThread { SpotifyBot.login(a) }
+    }
+
+    @JavascriptInterface
+    fun spotifyLogout() {
+        if (allowed()) SpotifyBot.logout()
+    }
+
+    @JavascriptInterface
+    fun hasAllFiles(): Boolean = MainActivity.hasAllFilesAccess(app)
+
+    @JavascriptInterface
+    fun requestAllFiles() {
+        if (!allowed()) return
+        val a = WebHost.activity ?: return
+        a.runOnUiThread {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    a.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${a.packageName}")))
+                } catch (e: Exception) {
+                    try { a.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) } catch (e2: Exception) { }
+                }
+            } else {
+                a.askPermissions()
+            }
+        }
+    }
+
+    companion object {
+        @Volatile private var backgroundWorking = false
     }
 }

@@ -3,19 +3,20 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission
-        android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Downloads and imports keep going in the background -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="false"
@@ -23,7 +24,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:theme="@style/Theme.MusicFlowPlay"
-        android:enableOnBackInvokedCallback="true"
+        android:requestLegacyExternalStorage="true"
         android:networkSecurityConfig="${netConfig}">
 
         <activity
@@ -37,85 +38,50 @@
             </intent-filter>
         </activity>
 
+        <!-- Exported for Android Auto, which browses and controls the music through it. -->
         <service
             android:name=".PlaybackService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="true">
             <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
-
-        <meta-data
-            android:name="com.google.android.gms.car.application"
-            android:resource="@xml/automotive_app_desc" />
-
+        <meta-data android:name="com.google.android.gms.car.application" android:resource="@xml/automotive_app_desc" />
         <service
             android:name=".WorkService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
-
-        <receiver
-            android:name=".PlayerWidget"
-            android:exported="false"
-            android:label="Tunedrift · Bar">
+        <receiver android:name=".PlayerWidget" android:exported="false" android:label="Tunedrift · Bar">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_player_info" />
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_player_info" />
         </receiver>
-
-        <receiver
-            android:name=".WidgetMini"
-            android:exported="false"
-            android:label="Tunedrift · Square">
+        <receiver android:name=".WidgetMini" android:exported="false" android:label="Tunedrift · Square">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_mini_info" />
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_mini_info" />
         </receiver>
-
-        <receiver
-            android:name=".WidgetCard"
-            android:exported="false"
-            android:label="Tunedrift · Card">
+        <receiver android:name=".WidgetCard" android:exported="false" android:label="Tunedrift · Card">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_card_info" />
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_card_info" />
         </receiver>
-
-        <receiver
-            android:name=".WidgetBig"
-            android:exported="false"
-            android:label="Tunedrift · Large">
+        <receiver android:name=".WidgetBig" android:exported="false" android:label="Tunedrift · Large">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_big_info" />
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_big_info" />
         </receiver>
-
-        <receiver
-            android:name=".WidgetShortcuts"
-            android:exported="false"
-            android:label="Tunedrift · Shortcuts">
+        <receiver android:name=".WidgetShortcuts" android:exported="false" android:label="Tunedrift · Shortcuts">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_shortcuts_info" />
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_shortcuts_info" />
         </receiver>
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fichiers"
