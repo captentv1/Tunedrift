@@ -1,39 +1,23 @@
 package com.musicflow.play
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.common.util.concurrent.MoreExecutors
+import com.musicflow.play.ui.AppTab
+import com.musicflow.play.ui.TunedriftApp
+import com.musicflow.play.ui.TunedriftViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -41,13 +25,16 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_ROUTE = "route"
     }
 
-    private var controllerFuture: ListenableFuture<MediaController>? = null
-    private var mediaController: MediaController? = null
+    private val viewModel: TunedriftViewModel by viewModels()
     private var hasAudioPermissionState by mutableStateOf(false)
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            hasAudioPermissionState = hasRequiredAudioPermission()
+            val granted = hasRequiredAudioPermission()
+            hasAudioPermissionState = granted
+            if (granted) {
+                viewModel.scanLibrary()
+            }
         }
 
     private val folderLauncher =
@@ -58,6 +45,7 @@ class MainActivity : ComponentActivity() {
                     contentResolver.takePersistableUriPermission(uri, flags)
                 } catch (_: SecurityException) {
                 }
+                viewModel.addSafFolder(uri)
             }
         }
 
@@ -67,43 +55,53 @@ class MainActivity : ComponentActivity() {
         hasAudioPermissionState = hasRequiredAudioPermission()
 
         setContent {
-            MaterialTheme {
-                TunedriftShellScreen(
-                    hasAudioPermission = hasAudioPermissionState,
-                    onRequestPermissions = { requestAudioPermissions() },
-                    onPickFolder = { pickMusicFolder() }
-                )
-            }
+            TunedriftApp(
+                viewModel = viewModel,
+                hasAudioPermission = hasAudioPermissionState,
+                onRequestPermissions = { requestAudioPermissions() },
+                onPickSafFolder = { pickMusicFolder() },
+                onOpenUrl = { openExternal(it) }
+            )
         }
 
-        requestAudioPermissions()
+        handleIntentRoute(intent)
+        if (hasAudioPermissionState) {
+            viewModel.scanLibrary()
+        } else {
+            requestAudioPermissions()
+        }
     }
 
-    override fun onStart() {
-        super.onStart()
-        val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        val future = MediaController.Builder(this, sessionToken).buildAsync()
-        controllerFuture = future
-        future.addListener(
-            {
-                if (!future.isCancelled) {
-                    mediaController = runCatching { future.get() }.getOrNull()
-                }
-            },
-            MoreExecutors.directExecutor()
-        )
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntentRoute(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        hasAudioPermissionState = hasRequiredAudioPermission()
+        val nowGranted = hasRequiredAudioPermission()
+        if (nowGranted && !hasAudioPermissionState) {
+            viewModel.scanLibrary()
+        }
+        hasAudioPermissionState = nowGranted
     }
 
-    override fun onStop() {
-        controllerFuture?.let { MediaController.releaseFuture(it) }
-        controllerFuture = null
-        mediaController = null
-        super.onStop()
+    private fun handleIntentRoute(intent: Intent?) {
+        val widgetAction = intent?.getStringExtra(PlayerWidget.EXTRA_ACTION)
+        if (widgetAction == "queue") {
+            intent.removeExtra(PlayerWidget.EXTRA_ACTION)
+            viewModel.setShowQueueSheet(true)
+        }
+        val route = intent?.getStringExtra(EXTRA_ROUTE) ?: return
+        intent.removeExtra(EXTRA_ROUTE)
+        when (route) {
+            "library" -> viewModel.selectTab(AppTab.LIBRARY)
+            "search", "download" -> viewModel.selectTab(AppTab.SEARCH)
+            "playlists" -> viewModel.selectTab(AppTab.PLAYLISTS)
+            "settings" -> viewModel.selectTab(AppTab.SETTINGS)
+            "player" -> viewModel.setShowFullPlayer(true)
+        }
     }
 
     fun hasRequiredAudioPermission(): Boolean {
@@ -154,56 +152,6 @@ class MainActivity : ComponentActivity() {
         if (scheme != "https" && scheme != "http") return
         runCatching {
             startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
-    }
-
-    fun openAppSettings() {
-        runCatching {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", packageName, null)
-            }
-            startActivity(intent)
-        }
-    }
-}
-
-@Composable
-private fun TunedriftShellScreen(
-    hasAudioPermission: Boolean,
-    onRequestPermissions: () -> Unit,
-    onPickFolder: () -> Unit
-) {
-    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "Tunedrift",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Étape 1 : socle natif initialisé (${BuildConfig.VERSION_NAME} · ${BuildConfig.DISTRIBUTION})",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = if (hasAudioPermission) "Accès audio : accordé" else "Accès audio : en attente",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-            Button(onClick = onRequestPermissions) {
-                Text("Vérifier les permissions")
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Button(onClick = onPickFolder) {
-                Text("Choisir un dossier (SAF)")
-            }
         }
     }
 }

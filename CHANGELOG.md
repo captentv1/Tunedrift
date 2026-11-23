@@ -1,9 +1,12 @@
 # Changelog
 
-## 2.0.0.0 — 2026-11-23 (Android natif — en cours)
+## 2.0.0.0 — 2026-11-23 (Android natif)
 
-- **Socle natif en cours d'intégration** : transition progressive de l'app Android vers Kotlin, Jetpack Compose et Media3/ExoPlayer (`com.musicflow.play`, version cible `2.0.0.0`), avec suppression des bases WebView/Chaquopy côté mobile.
-- **Stockage et variantes en cours** : préparation des permissions modernes (`READ_MEDIA_AUDIO`, `SAF` sans `MANAGE_EXTERNAL_STORAGE`), des variantes `github` et `play`, et de la signature release via les secrets GitHub.
+- **Interface 100 % native en Kotlin + Jetpack Compose (Material 3)** : écrans Accueil, Bibliothèque (Titres, Artistes, Albums, Dossiers, Favoris), Recherche insensible aux accents, Lecteur complet + Mini-lecteur, File d'attente réorganisable, Paroles synchronisées LRC + API LRCLIB, Playlists, Édition des tags et Réglages (thèmes Sombre, OLED, Clair, Auto et Material You).
+- **Moteur audio natif Media3 / ExoPlayer + `MediaLibraryService`** : lecture locale (MP3, FLAC, M4A, OPUS, OGG, WAV), contrôles notification et écran verrouillé, Android Auto et synchronisation des 5 widgets d'écran d'accueil.
+- **Base de données Room & stockage moderne** : indexation rapide via `MediaStore` (`READ_MEDIA_AUDIO`) et dossiers `SAF`, sans `MANAGE_EXTERNAL_STORAGE`.
+- **Variantes `github` et `play`** : téléchargement MusicFlow conservé uniquement dans la variante `github`, retiré de la variante `play` (ainsi que `REQUEST_INSTALL_PACKAGES`).
+- **Signature release CI** : signature via les secrets GitHub (`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`) en conservant l'`applicationId` `com.musicflow.play`.
 - **Version PC / Windows** : le serveur Python et `MusicFlowPlay.exe` restent inchangés.
 
 ## 1.4.3.0 — 2026-11-22 (Android and PC)
