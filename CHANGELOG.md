@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.0.0 — 2026-11-23 (Android natif — en cours)
+
+- **Socle natif en cours d'intégration** : transition progressive de l'app Android vers Kotlin, Jetpack Compose et Media3/ExoPlayer (`com.musicflow.play`, version cible `2.0.0.0`), avec suppression des bases WebView/Chaquopy côté mobile.
+- **Stockage et variantes en cours** : préparation des permissions modernes (`READ_MEDIA_AUDIO`, `SAF` sans `MANAGE_EXTERNAL_STORAGE`), des variantes `github` et `play`, et de la signature release via les secrets GitHub.
+- **Version PC / Windows** : le serveur Python et `MusicFlowPlay.exe` restent inchangés.
+
 ## 1.4.3.0 — 2026-11-22 (Android and PC)
 
 - **DJ mixer** (Settings): two decks side by side with vertical tempo (50 to 150 %) and volume faders, choose a

@@ -1,13 +1,19 @@
 buildscript {
+    ext {
+        kotlin_version = '2.2.20'
+        agp_version = '8.13.1'
+        media3_version = '1.5.1'
+        room_version = '2.6.1'
+        compose_bom_version = '2025.02.00'
+    }
     repositories {
         google()
         mavenCentral()
-        maven { url "https://chaquo.com/maven" }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.13.1'
-        classpath 'com.chaquo.python:gradle:17.0.0'
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20'
+        classpath "com.android.tools.build:gradle:${agp_version}"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlin_version}"
+        classpath "org.jetbrains.kotlin:compose-compiler-gradle-plugin:${kotlin_version}"
     }
 }
 
