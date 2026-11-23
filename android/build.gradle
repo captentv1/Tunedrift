@@ -4,7 +4,7 @@ buildscript {
         ksp_version = '2.2.20-2.0.2'
         agp_version = '8.13.1'
         media3_version = '1.5.1'
-        room_version = '2.6.1'
+        room_version = '2.7.2'
         compose_bom_version = '2025.02.00'
     }
     repositories {
