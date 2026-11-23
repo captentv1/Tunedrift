@@ -3,7 +3,6 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        maven { url "https://chaquo.com/maven" }
     }
 }
 dependencyResolutionManagement {
@@ -11,8 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url "https://chaquo.com/maven" }
     }
 }
-rootProject.name = "MusicFlowPlay"
+rootProject.name = "Tunedrift"
 include ':app'

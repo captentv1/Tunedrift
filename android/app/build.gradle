@@ -1,124 +1,88 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
-apply plugin: 'com.chaquo.python'
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 def keyProperties = new Properties()
 def keyFile = rootProject.file("keystore.properties")
-if (keyFile.exists()) { keyFile.withInputStream { keyProperties.load(it) } }
-
-// MusicFlow (search and download) comes from the musicflow submodule, as it is: its Android server code (Python),
-// used inside the player's own server, and the Kotlin helper its online search uses. Its page is not used.
-def mfDir = file('../../musicflow')
-def mfGenerated = file("$buildDir/generated/musicflow")
-def mfVersion = '0'
-try { mfVersion = (file("$mfDir/android/app/build.gradle").text =~ /ciVersionName'\) \?: '([^']+)'/)[0][1] } catch (ignored) { }
-
-tasks.register('copyMusicFlowCode') {
-    inputs.dir("$mfDir/android/app/src/main/java")
-    inputs.dir('../../web')
-    inputs.file('../../CHANGELOG.md')
-    outputs.dir(mfGenerated)
-    doLast {
-        def javaOut = file("$mfGenerated/java/com/musicflow/app")
-        javaOut.mkdirs()
-        def src = file("$mfDir/android/app/src/main/java/com/musicflow/app")
-        file("$javaOut/SpotifySearch.kt").text = file("$src/SpotifySearch.kt").text
-        // The player's page goes in web/.
-        copy { from '../../web'; into "$mfGenerated/python/web" }
-        // The changelog, for "What's new" after an update.
-        copy { from '../../CHANGELOG.md'; into "$mfGenerated/python/web" }
-    }
+if (keyFile.exists()) {
+    keyFile.withInputStream { keyProperties.load(it) }
 }
-preBuild.dependsOn 'copyMusicFlowCode'
-tasks.configureEach { t ->
-    if (t.name != 'copyMusicFlowCode' && (t.name.contains('Python') || t.name.contains('Kotlin') || t.name.contains('Java'))) {
-        t.dependsOn 'copyMusicFlowCode'
-    }
-}
+
+def envStoreFile = System.getenv("TD_KEYSTORE_PATH")
+def envStorePassword = System.getenv("KEYSTORE_PASSWORD")
+def envKeyAlias = System.getenv("KEY_ALIAS")
+def envKeyPassword = System.getenv("KEY_PASSWORD")
 
 android {
+    namespace 'com.musicflow.play'
+    compileSdk 36
+
     signingConfigs {
-        // CI test key: one fixed keystore (kept in the CI cache), so each build installs over the previous one.
-        ciTest {
-            if (project.hasProperty('ciKeystore')) {
-                storeFile file(project.property('ciKeystore').toString())
-                storePassword 'android'
-                keyAlias 'androiddebugkey'
-                keyPassword 'android'
-            }
-        }
         release {
             if (keyFile.exists()) {
                 storeFile file(keyProperties["storeFile"])
                 storePassword keyProperties["storePassword"]
                 keyAlias keyProperties["keyAlias"]
                 keyPassword keyProperties["keyPassword"]
+            } else if (envStoreFile && envStorePassword && envKeyAlias && envKeyPassword) {
+                storeFile file(envStoreFile)
+                storePassword envStorePassword
+                keyAlias envKeyAlias
+                keyPassword envKeyPassword
             }
         }
     }
-    namespace 'com.musicflow.play'
 
-    sourceSets {
-        main {
-            // MusicFlow's code is part of the app (nothing to install): its Android server module (mobile_app.py,
-            // secrets_store.py) and core/ run inside the player's server.
-            python.srcDirs = ['src/main/python', '../../server', '../../musicflow/core',
-                              '../../musicflow/android/app/src/main/python', "$buildDir/generated/musicflow/python"]
-            java.srcDirs += ["$buildDir/generated/musicflow/java"]
+    flavorDimensions "distribution"
+    productFlavors {
+        github {
+            dimension "distribution"
+            buildConfigField "String", "DISTRIBUTION", "\"github\""
+            buildConfigField "boolean", "HAS_DOWNLOADER", "true"
+            buildConfigField "boolean", "HAS_SELF_UPDATE", "true"
+        }
+        play {
+            dimension "distribution"
+            buildConfigField "String", "DISTRIBUTION", "\"play\""
+            buildConfigField "boolean", "HAS_DOWNLOADER", "false"
+            buildConfigField "boolean", "HAS_SELF_UPDATE", "false"
         }
     }
-    compileSdk 36
 
     buildFeatures {
         buildConfig true
+        compose true
     }
 
     defaultConfig {
         applicationId "com.musicflow.play"
         minSdk 26
         targetSdk 35
-        versionCode Integer.parseInt((project.findProperty('ciVersionCode') ?: '2').toString())
-        versionName((project.findProperty('ciVersionName') ?: '1.2.5.0').toString())
+        versionCode Integer.parseInt((project.findProperty('ciVersionCode') ?: '20000').toString())
+        versionName((project.findProperty('ciVersionName') ?: '2.0.0.0').toString())
 
         ndk {
             abiFilters "arm64-v8a"
         }
 
-        // Only the emulator test build turns this on (-PciWebDebug=true), so the test can drive the page.
-        buildConfigField "String", "MF_VERSION", "\"${mfVersion}\""
-        buildConfigField "String", "STORE", "\"github\""
         buildConfigField "boolean", "WEB_DEBUG", (project.findProperty('ciWebDebug') ?: 'false').toString()
-        // Emulator test build only: also reaches the test computer (10.0.2.2) over http, for its fake Spotify.
-        manifestPlaceholders = [netConfig: (project.findProperty('ciWebDebug') ?: 'false').toString() == 'true'
-            ? '@xml/network_security_config_test' : '@xml/network_security_config']
-
-        python {
-            version "3.13"
-            if (project.hasProperty('buildPython')) {
-                buildPython project.property('buildPython').toString()
-            }
-            pip {
-                install "yt-dlp"
-                install "flask"
-                install "mutagen"
-                install "certifi"
-                install "Pillow"
-            }
-        }
+        manifestPlaceholders = [
+            netConfig: (project.findProperty('ciWebDebug') ?: 'false').toString() == 'true'
+                ? '@xml/network_security_config_test' : '@xml/network_security_config'
+        ]
     }
 
     buildTypes {
-        release {
-            signingConfig keyFile.exists() ? signingConfigs.release : (project.hasProperty('ciKeystore') ? signingConfigs.ciTest : signingConfigs.debug)
+        debug {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
-        // Google Play build (./gradlew bundlePlay): the same app without its own updates, which Play does.
-        // src/play/AndroidManifest.xml removes the permission to install APKs.
-        play {
-            initWith release
-            matchingFallbacks = ['release']
-            buildConfigField "String", "STORE", "\"play\""
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -133,12 +97,36 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
 dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:${rootProject.ext.kotlin_version}"
+    implementation 'androidx.core:core-ktx:1.15.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'androidx.webkit:webkit:1.12.1'
-    implementation 'androidx.activity:activity-ktx:1.9.3'
-    implementation 'androidx.media:media:1.7.0'
+    implementation 'androidx.activity:activity-compose:1.10.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
     implementation 'androidx.documentfile:documentfile:1.0.1'
-    implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-audio:8.1.9'
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.20'
+
+    def composeBom = platform("androidx.compose:compose-bom:${rootProject.ext.compose_bom_version}")
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+
+    implementation "androidx.media3:media3-exoplayer:${rootProject.ext.media3_version}"
+    implementation "androidx.media3:media3-session:${rootProject.ext.media3_version}"
+    implementation "androidx.media3:media3-ui:${rootProject.ext.media3_version}"
+    implementation "androidx.media3:media3-datasource:${rootProject.ext.media3_version}"
+    implementation "androidx.media3:media3-extractor:${rootProject.ext.media3_version}"
+
+    implementation "androidx.room:room-runtime:${rootProject.ext.room_version}"
+    implementation "androidx.room:room-ktx:${rootProject.ext.room_version}"
 }
